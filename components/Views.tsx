@@ -879,6 +879,22 @@ const getLevelDesign = (level: number) => {
   return designs[Math.min(level - 1, designs.length - 1)];
 };
 
+const getDifficultyProfile = (level: number, playerRank: number) => {
+  const normalizedLevel = Math.min(1, Math.max(0, (level - 1) / 49));
+  const normalizedRank = Math.min(1, Math.max(0, (playerRank - 1) / 49));
+  const combinedDifficulty = Math.min(1, normalizedLevel + normalizedRank * 0.25);
+
+  return {
+    levelLength: Math.floor(7000 + level * 1150 + combinedDifficulty * 1600),
+    holeChance: 0.01 + combinedDifficulty * 0.08,
+    holeSize: 0.12 + combinedDifficulty * 0.22,
+    platformCount: Math.floor(12 + level * 1.1 + combinedDifficulty * 6),
+    enemyCount: Math.floor(2 + level * 0.7 + combinedDifficulty * 5),
+    enemySpeed: 1.4 + level * 0.08 + combinedDifficulty * 0.8,
+    fishCount: Math.floor(12 + level * 0.9 + combinedDifficulty * 4),
+  };
+};
+
 // BACKGROUND ELEMENTS GENERATOR
 const THEME_CONFIGS: Record<string, { buildings: string[], animals: string[], buildingColors: string[] }> = {
   park: { buildings: ['house', 'windmill', 'fountain'], animals: ['bird', 'rabbit', 'squirrel'], buildingColors: ['#a0c878', '#8fbc8f', '#7da87d'] },
@@ -1015,8 +1031,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
-    // Massively increase level length by 10x
-    const levelLength = 80000 + (level * 24000);
+    const difficultyProfile = getDifficultyProfile(level, progress.level);
+    const levelLength = difficultyProfile.levelLength;
     const levelDesign = getLevelDesign(level);
     const weather = levelDesign.weather;
     const intensity = levelDesign.intensity;
@@ -1028,7 +1044,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       level: level,
       score: existingScore,
       lives: existingLives,
-      ammo: stats.ammo || 5,
+      ammo: Math.max(stats.ammo || progress.upgrades.maxAmmo, progress.upgrades.maxAmmo),
       levelLength: levelLength,
       weather: weather,
       intensity: intensity,
@@ -1042,8 +1058,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       player: {
         x: 100, y: 150, width: 50, height: 70,
         velocityX: 0, velocityY: 0,
-        speed: 5 + (level * 0.15),
-        jumpPower: 15, doubleJumpPower: 18,
+        speed: 4.6 + (level * 0.08),
+        jumpPower: progress.upgrades.jumpPower,
+        doubleJumpPower: progress.upgrades.jumpPower + 3,
         isJumping: false, canDoubleJump: true, hasDoubleJumped: false,
         color: '#4169E1', invincible: false, invincibleTimer: 0,
         isBlinking: false, blinkTimer: 0,
@@ -1101,10 +1118,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const segmentWidth = 200;
     const segments = Math.ceil(levelLength / segmentWidth);
     for (let i = 0; i < segments; i++) {
-      // Progressive difficulty for holes - size increases with level
-      // Level 1: ~20% hole, Level 50: ~70% hole
-      const baseHoleSize = 0.2 + (Math.min(level, 50) * 0.01);
-      const holeChance = Math.min(0.25, 0.015 + (levelDesign.difficulty * 0.01));
+      // Level 1 should be very forgiving, then increase steadily by level and rank.
+      const baseHoleSize = difficultyProfile.holeSize;
+      const holeChance = difficultyProfile.holeChance;
       if (i > 3 && i < segments - 3 && Math.random() < holeChance) {
         // Hole size based on level
         const holeWidth = segmentWidth * baseHoleSize;
@@ -1127,10 +1143,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
 
     // MANY MORE platforms - but ALL reachable with double jump!
-    const platCount = Math.floor(25 + (level * 3));
+    const platCount = difficultyProfile.platformCount;
     // Maximum height player can reach with double jump is about 250px
     const maxJumpHeight = 250;
-    const minGap = Math.max(50, 120 - (level * 1.5));
+    const minGap = Math.max(55, 130 - (level * 0.8));
 
     for (let i = 0; i < platCount; i++) {
       let attempts = 0;
@@ -1174,7 +1190,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
     // MUCH MORE enemies - spread throughout the entire level for excitement!
     // More enemies on EVERY level, not just higher levels
-    const enemyCount = Math.floor(8 + (level * 1.5)); // Start with 8 enemies at level 1, up to 80+ at level 50
+    const enemyCount = difficultyProfile.enemyCount;
     let enemiesPlaced = 0;
     let spawnAttempts = 0;
     const minEnemyDistance = 250; // Enemies closer together for more action
@@ -1201,21 +1217,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const enemyType = Math.floor(Math.random() * 3);
       game.enemies.push({
         x: ex, y: plat.y - 40, width: 40, height: 40,
-        velocityX: (2 + (level * 0.15)) * (Math.random() > 0.5 ? 1 : -1),
+        velocityX: difficultyProfile.enemySpeed * (Math.random() > 0.5 ? 1 : -1),
         direction: 1, platform: randomSegment, type: enemyType
       });
       enemiesPlaced++;
     }
 
     // MORE coins - more rewards throughout the level
-    const fishCount = Math.floor(20 + (level * 2)); // Start with 20 coins at level 1
+    const fishCount = difficultyProfile.fishCount;
     let placedFish = 0;
+    let fishPlacementAttempts = 0;
 
     // Add dynamic moving items on later levels
     // More coins - ALL reachable with double jump!
     const flyingItems = level > 3;
 
-    while (placedFish < fishCount) {
+    while (placedFish < fishCount && fishPlacementAttempts < fishCount * 25) {
+      fishPlacementAttempts++;
       const randomPlatIndex = Math.floor(Math.random() * game.platforms.length);
       const plat = game.platforms[randomPlatIndex];
 
@@ -1315,6 +1333,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
 
     const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < 0.001) return;
     const bulletSpeed = 10;
     game.bullets.push({
       x: playerCenterX, y: playerCenterY, vx: (dx / distance) * bulletSpeed, vy: (dy / distance) * bulletSpeed, radius: 6, life: 100
