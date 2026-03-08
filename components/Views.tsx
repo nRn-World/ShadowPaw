@@ -926,7 +926,7 @@ const useBackgroundMusic = (level: number, isMuted: boolean = false) => {
   useEffect(() => {
     // Only play music for levels 1-10
     if (level >= 1 && level <= 10) {
-      const musicPath = `/Sounds/Level ${level}.mp3`;
+      const musicPath = `Sounds/Level ${level}.mp3`;
 
       // Create new audio element
       const audio = new Audio(musicPath);

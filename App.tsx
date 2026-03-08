@@ -18,7 +18,7 @@ const App: React.FC = () => {
     const shouldPlayMusic = MENU_VIEWS.includes(currentView);
     
     if (shouldPlayMusic && !menuMusicRef.current) {
-      const audio = new Audio('/Sounds/Effects/meny.mp3');
+      const audio = new Audio('Sounds/Effects/meny.mp3');
       audio.loop = true;
       audio.volume = 0;
       audio.play().catch(() => {});
