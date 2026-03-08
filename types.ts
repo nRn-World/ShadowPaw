@@ -49,4 +49,31 @@ export interface PlayerProgress {
     completed: boolean;
     claimed: boolean;
   }[];
+  weeklyQuests: {
+    id: string;
+    description: string;
+    target: number;
+    current: number;
+    reward: number;
+    completed: boolean;
+    claimed: boolean;
+  }[];
+  dailySeed: string;
+  weeklySeed: string;
+  settings: {
+    uiScale: number;
+    textScale: number;
+    colorBlindMode: boolean;
+    reduceMotion: boolean;
+    debugOverlay: boolean;
+    haptics: boolean;
+  };
+  stats: {
+    totalEnemiesDefeated: number;
+    totalFishCollected: number;
+    totalDeaths: number;
+    perfectLevels: number;
+    bestCombo: number;
+    bossesDefeated: number;
+  };
 }

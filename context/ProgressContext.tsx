@@ -2,7 +2,43 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { PlayerProgress } from '../types';
 
-const STORAGE_KEY = 'shadow_paw_progress_v1';
+const STORAGE_KEY = 'shadow_paw_progress_v2';
+const STORAGE_BACKUP_KEY = 'shadow_paw_progress_backup_v2';
+
+const seededRandom = (seed: number) => {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+const getTodaySeed = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+};
+
+const getWeekSeed = () => {
+  const d = new Date();
+  const dayNum = (d.getDay() + 6) % 7;
+  const weekStart = new Date(d);
+  weekStart.setDate(d.getDate() - dayNum);
+  return `${weekStart.getFullYear()}-${weekStart.getMonth() + 1}-${weekStart.getDate()}`;
+};
+
+const createDailyQuests = (seedText: string) => {
+  const seed = Array.from(seedText).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return [
+    { id: 'd1', description: 'Samla fiskar idag', target: 30 + Math.floor(seededRandom(seed + 1) * 40), current: 0, reward: 100, completed: false, claimed: false },
+    { id: 'd2', description: 'Besegra fiender idag', target: 8 + Math.floor(seededRandom(seed + 2) * 12), current: 0, reward: 140, completed: false, claimed: false },
+    { id: 'd3', description: 'Klara nivåer idag', target: 2 + Math.floor(seededRandom(seed + 3) * 3), current: 0, reward: 180, completed: false, claimed: false },
+  ];
+};
+
+const createWeeklyQuests = (seedText: string) => {
+  const seed = Array.from(seedText).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return [
+    { id: 'w1', description: 'Vecko-jakt: samla fisk', target: 220 + Math.floor(seededRandom(seed + 7) * 180), current: 0, reward: 500, completed: false, claimed: false },
+    { id: 'w2', description: 'Vecko-jakt: besegra fiender', target: 70 + Math.floor(seededRandom(seed + 11) * 60), current: 0, reward: 650, completed: false, claimed: false },
+  ];
+};
 
 const defaultProgress: PlayerProgress = {
   coins: 0,
@@ -17,11 +53,26 @@ const defaultProgress: PlayerProgress = {
     speed: 5,
   },
   achievements: [],
-  dailyQuests: [
-    { id: '1', description: 'Samla 50 fiskar', target: 50, current: 0, reward: 100, completed: false, claimed: false },
-    { id: '2', description: 'Nivå 5', target: 5, current: 0, reward: 200, completed: false, claimed: false },
-    { id: '3', description: 'Besegra 20 fiender', target: 20, current: 0, reward: 150, completed: false, claimed: false },
-  ],
+  dailyQuests: createDailyQuests(getTodaySeed()),
+  weeklyQuests: createWeeklyQuests(getWeekSeed()),
+  dailySeed: getTodaySeed(),
+  weeklySeed: getWeekSeed(),
+  settings: {
+    uiScale: 1,
+    textScale: 1,
+    colorBlindMode: false,
+    reduceMotion: false,
+    debugOverlay: false,
+    haptics: true,
+  },
+  stats: {
+    totalEnemiesDefeated: 0,
+    totalFishCollected: 0,
+    totalDeaths: 0,
+    perfectLevels: 0,
+    bestCombo: 0,
+    bossesDefeated: 0,
+  },
 };
 
 interface ProgressContextType {
@@ -34,6 +85,21 @@ interface ProgressContextType {
   equipSkin: (skinId: string) => void;
   resetDailyQuests: () => void;
   claimQuestReward: (questId: string) => void;
+  updateSettings: (updates: Partial<PlayerProgress['settings']>) => void;
+  updateStats: (updates: Partial<PlayerProgress['stats']>) => void;
+  unlockAchievement: (achievementId: string) => void;
+  unlockSkin: (skinId: string) => void;
+  applyRunResults: (results: {
+    fishesCollected: number;
+    enemiesDefeated: number;
+    levelsCompleted: number;
+    perfectLevel: boolean;
+    bestCombo: number;
+    bossDefeated: boolean;
+    deaths: number;
+  }) => void;
+  exportProgressCode: () => string;
+  importProgressCode: (encoded: string) => boolean;
 }
 
 const ProgressContext = createContext<ProgressContextType | undefined>(undefined);
@@ -41,10 +107,21 @@ const ProgressContext = createContext<ProgressContextType | undefined>(undefined
 export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [progress, setProgress] = useState<PlayerProgress>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('shadow_paw_progress_v1');
       if (saved) {
         try {
-          return { ...defaultProgress, ...JSON.parse(saved) };
+          const parsed = JSON.parse(saved);
+          return {
+            ...defaultProgress,
+            ...parsed,
+            upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
+            settings: { ...defaultProgress.settings, ...(parsed.settings || {}) },
+            stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
+            dailyQuests: parsed.dailyQuests || defaultProgress.dailyQuests,
+            weeklyQuests: parsed.weeklyQuests || defaultProgress.weeklyQuests,
+            dailySeed: parsed.dailySeed || defaultProgress.dailySeed,
+            weeklySeed: parsed.weeklySeed || defaultProgress.weeklySeed,
+          };
         } catch {
           return defaultProgress;
         }
@@ -54,8 +131,25 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
   });
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_BACKUP_KEY, localStorage.getItem(STORAGE_KEY) || '');
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   }, [progress]);
+
+  useEffect(() => {
+    const today = getTodaySeed();
+    const week = getWeekSeed();
+    setProgress((p) => {
+      const mustResetDaily = p.dailySeed !== today;
+      const mustResetWeekly = p.weeklySeed !== week;
+      return {
+        ...p,
+        dailySeed: today,
+        weeklySeed: week,
+        dailyQuests: mustResetDaily ? createDailyQuests(today) : (p.dailyQuests.some((q) => q.id.startsWith('d')) ? p.dailyQuests : createDailyQuests(today)),
+        weeklyQuests: mustResetWeekly ? createWeeklyQuests(week) : (p.weeklyQuests.some((q) => q.id.startsWith('w')) ? p.weeklyQuests : createWeeklyQuests(week)),
+      };
+    });
+  }, []);
 
   const addCoins = (amount: number) => {
     setProgress(p => ({
@@ -123,13 +217,16 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
   const resetDailyQuests = () => {
     setProgress(p => ({
       ...p,
-      dailyQuests: defaultProgress.dailyQuests,
+      dailyQuests: createDailyQuests(getTodaySeed()),
+      weeklyQuests: createWeeklyQuests(getWeekSeed()),
+      dailySeed: getTodaySeed(),
+      weeklySeed: getWeekSeed(),
     }));
   };
 
   const claimQuestReward = (questId: string) => {
     setProgress(p => {
-      const quest = p.dailyQuests.find(q => q.id === questId);
+      const quest = [...p.dailyQuests, ...p.weeklyQuests].find(q => q.id === questId);
       if (!quest || !quest.completed || quest.claimed) return p;
       return {
         ...p,
@@ -138,8 +235,114 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
         dailyQuests: p.dailyQuests.map(q =>
           q.id === questId ? { ...q, claimed: true } : q
         ),
+        weeklyQuests: p.weeklyQuests.map(q =>
+          q.id === questId ? { ...q, claimed: true } : q
+        ),
       };
     });
+  };
+
+  const updateSettings = (updates: Partial<PlayerProgress['settings']>) => {
+    setProgress((p) => ({ ...p, settings: { ...p.settings, ...updates } }));
+  };
+
+  const updateStats = (updates: Partial<PlayerProgress['stats']>) => {
+    setProgress((p) => ({ ...p, stats: { ...p.stats, ...updates } }));
+  };
+
+  const unlockAchievement = (achievementId: string) => {
+    setProgress((p) => {
+      if (p.achievements.includes(achievementId)) return p;
+      return { ...p, achievements: [...p.achievements, achievementId] };
+    });
+  };
+
+  const unlockSkin = (skinId: string) => {
+    setProgress((p) => {
+      if (p.unlockedSkins.includes(skinId)) return p;
+      return { ...p, unlockedSkins: [...p.unlockedSkins, skinId] };
+    });
+  };
+
+  const applyRunResults = (results: {
+    fishesCollected: number;
+    enemiesDefeated: number;
+    levelsCompleted: number;
+    perfectLevel: boolean;
+    bestCombo: number;
+    bossDefeated: boolean;
+    deaths: number;
+  }) => {
+    setProgress((p) => {
+      const daily = p.dailyQuests.map((q) => {
+        if (q.id === 'd1') {
+          const current = Math.min(q.target, q.current + results.fishesCollected);
+          return { ...q, current, completed: current >= q.target };
+        }
+        if (q.id === 'd2') {
+          const current = Math.min(q.target, q.current + results.enemiesDefeated);
+          return { ...q, current, completed: current >= q.target };
+        }
+        if (q.id === 'd3') {
+          const current = Math.min(q.target, q.current + results.levelsCompleted);
+          return { ...q, current, completed: current >= q.target };
+        }
+        return q;
+      });
+
+      const weekly = p.weeklyQuests.map((q) => {
+        if (q.id === 'w1') {
+          const current = Math.min(q.target, q.current + results.fishesCollected);
+          return { ...q, current, completed: current >= q.target };
+        }
+        if (q.id === 'w2') {
+          const current = Math.min(q.target, q.current + results.enemiesDefeated);
+          return { ...q, current, completed: current >= q.target };
+        }
+        return q;
+      });
+
+      return {
+        ...p,
+        dailyQuests: daily,
+        weeklyQuests: weekly,
+        stats: {
+          ...p.stats,
+          totalFishCollected: p.stats.totalFishCollected + results.fishesCollected,
+          totalEnemiesDefeated: p.stats.totalEnemiesDefeated + results.enemiesDefeated,
+          totalDeaths: p.stats.totalDeaths + results.deaths,
+          perfectLevels: p.stats.perfectLevels + (results.perfectLevel ? 1 : 0),
+          bestCombo: Math.max(p.stats.bestCombo, results.bestCombo),
+          bossesDefeated: p.stats.bossesDefeated + (results.bossDefeated ? 1 : 0),
+        },
+      };
+    });
+  };
+
+  const exportProgressCode = () => {
+    try {
+      return btoa(unescape(encodeURIComponent(JSON.stringify(progress))));
+    } catch {
+      return '';
+    }
+  };
+
+  const importProgressCode = (encoded: string) => {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(escape(atob(encoded.trim()))));
+      setProgress({
+        ...defaultProgress,
+        ...parsed,
+        upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
+        settings: { ...defaultProgress.settings, ...(parsed.settings || {}) },
+        stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
+        dailySeed: parsed.dailySeed || defaultProgress.dailySeed,
+        weeklySeed: parsed.weeklySeed || defaultProgress.weeklySeed,
+      });
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   return (
@@ -153,6 +356,13 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       equipSkin,
       resetDailyQuests,
       claimQuestReward,
+      updateSettings,
+      updateStats,
+      unlockAchievement,
+      unlockSkin,
+      applyRunResults,
+      exportProgressCode,
+      importProgressCode,
     }}>
       {children}
     </ProgressContext.Provider>

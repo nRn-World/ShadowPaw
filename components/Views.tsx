@@ -5,6 +5,22 @@ import { getJerryTaunt } from '../services/geminiService';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
 
+const getSeasonTheme = () => {
+  const month = new Date().getMonth();
+  if (month === 11 || month <= 1) return 'winter';
+  if (month >= 2 && month <= 4) return 'spring';
+  if (month >= 5 && month <= 7) return 'summer';
+  return 'autumn';
+};
+
+const SKINS: Record<string, { name: string; color: string; accent: string; unlockHint: string }> = {
+  default: { name: 'Neon Blue', color: '#4169E1', accent: '#333', unlockHint: 'Default' },
+  ember: { name: 'Ember', color: '#e85d2c', accent: '#4a1d0d', unlockHint: 'Defeat 60 enemies' },
+  frost: { name: 'Frost', color: '#62b7ff', accent: '#27415f', unlockHint: 'Collect 300 fish' },
+  shadow: { name: 'Shadow', color: '#4f5d75', accent: '#141b2d', unlockHint: 'Reach combo x10' },
+  aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Beat 3 bosses' },
+};
+
 /** Stylized Cat Component for Menu that matches the in-game character **/
 const CatMenuIcon: React.FC = () => {
   const [isBlinking, setIsBlinking] = useState(false);
@@ -277,9 +293,12 @@ export const StartMenuView: React.FC<{ onNavigate: (v: AppView) => void }> = ({ 
 
 /** SETTINGS **/
 export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const { progress, updateSettings, exportProgressCode, importProgressCode } = useProgress();
   const [music, setMusic] = useState(75);
   const [sfx, setSfx] = useState(50);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  const [importCode, setImportCode] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -335,6 +354,30 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
               />
             </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-white/80 text-sm font-medium">UI-skala</span>
+                <span className="text-primary font-mono text-sm">{Math.round(progress.settings.uiScale * 100)}%</span>
+              </div>
+              <input
+                type="range" min="80" max="120" value={Math.round(progress.settings.uiScale * 100)}
+                onChange={(e) => updateSettings({ uiScale: Number(e.target.value) / 100 })}
+                className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-white/80 text-sm font-medium">Textstorlek</span>
+                <span className="text-primary font-mono text-sm">{Math.round(progress.settings.textScale * 100)}%</span>
+              </div>
+              <input
+                type="range" min="90" max="130" value={Math.round(progress.settings.textScale * 100)}
+                onChange={(e) => updateSettings({ textScale: Number(e.target.value) / 100 })}
+                className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+              />
+            </div>
           </div>
         </div>
 
@@ -360,6 +403,58 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${isFullscreen ? 'left-5' : 'left-0.5'}`} />
             </div>
           </button>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4">
+            <button onClick={() => updateSettings({ colorBlindMode: !progress.settings.colorBlindMode })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
+              Färgblind: {progress.settings.colorBlindMode ? 'På' : 'Av'}
+            </button>
+            <button onClick={() => updateSettings({ reduceMotion: !progress.settings.reduceMotion })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
+              Reducera motion: {progress.settings.reduceMotion ? 'På' : 'Av'}
+            </button>
+            <button onClick={() => updateSettings({ debugOverlay: !progress.settings.debugOverlay })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
+              Debug HUD: {progress.settings.debugOverlay ? 'På' : 'Av'}
+            </button>
+          </div>
+        </div>
+
+        {/* Save Sync Section */}
+        <div className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-primary">sync</span>
+            <span className="text-white font-bold text-sm uppercase tracking-wider">Backup lokalt</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mb-3">
+            <button
+              onClick={async () => {
+                const code = exportProgressCode();
+                if (code) {
+                  await navigator.clipboard.writeText(code);
+                  setSyncMessage('Exportkod kopierad!');
+                  setTimeout(() => setSyncMessage(''), 2000);
+                }
+              }}
+              className="px-4 py-2 rounded-lg bg-primary text-[#112218] font-black text-xs uppercase"
+            >
+              Exportera kod
+            </button>
+            <button
+              onClick={() => {
+                const ok = importProgressCode(importCode);
+                setSyncMessage(ok ? 'Progress importerad!' : 'Ogiltig kod');
+                setTimeout(() => setSyncMessage(''), 2000);
+              }}
+              className="px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white font-black text-xs uppercase"
+            >
+              Importera kod
+            </button>
+          </div>
+          <textarea
+            value={importCode}
+            onChange={(e) => setImportCode(e.target.value)}
+            placeholder="Klistra in exportkod här"
+            className="w-full h-20 bg-black/30 rounded-xl border border-white/10 p-3 text-xs text-white/80"
+          />
+          {syncMessage && <p className="text-primary text-xs mt-2 font-bold">{syncMessage}</p>}
         </div>
       </div>
 
@@ -576,7 +671,15 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   const [taunt, setTaunt] = useState<string>("Bättre lycka nästa gång!");
   const [name, setName] = useState("");
   const [isSaved, setIsSaved] = useState(false);
-  const { progress, addCoins, addXP, updateQuestProgress } = useProgress();
+  const [shareMessage, setShareMessage] = useState('');
+  const { progress, addCoins, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
+  const lastRun = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('shadow_paw_last_run') || '{}');
+    } catch {
+      return {};
+    }
+  })();
 
   // Get coins: every 10 fish = 5 coins. So fish / 2
   const coinsEarned = Math.floor(fishesCollected / 2);
@@ -589,9 +692,32 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       addCoins(coinsEarned);
     }
     addXP(Math.floor(score / 10));
-    // Update quest progress
-    updateQuestProgress('1', fishesCollected); // Fish collection quest
-    updateQuestProgress('2', 1); // Level completion quest
+    applyRunResults({
+      fishesCollected,
+      enemiesDefeated: lastRun.enemiesDefeated || 0,
+      levelsCompleted: lastRun.levelsCompleted || 0,
+      perfectLevel: !!lastRun.perfectLevel,
+      bestCombo: lastRun.bestCombo || 0,
+      bossDefeated: !!lastRun.bossDefeated,
+      deaths: 1,
+    });
+
+    if ((lastRun.bestCombo || 0) >= 10) {
+      unlockAchievement('combo_10');
+      unlockSkin('shadow');
+    }
+    if ((progress.stats.totalEnemiesDefeated + (lastRun.enemiesDefeated || 0)) >= 60) {
+      unlockAchievement('enemy_60');
+      unlockSkin('ember');
+    }
+    if ((progress.stats.totalFishCollected + fishesCollected) >= 300) {
+      unlockAchievement('fish_300');
+      unlockSkin('frost');
+    }
+    if ((progress.stats.bossesDefeated + (lastRun.bossDefeated ? 1 : 0)) >= 3) {
+      unlockAchievement('boss_3');
+      unlockSkin('aurora');
+    }
   }, [score, fishesCollected, coinsEarned]);
 
   const handleSaveScore = () => {
@@ -601,6 +727,43 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       highScores.push({ name: name.trim(), score, date: new Date().toLocaleDateString() });
       localStorage.setItem('shadow_paw_scores', JSON.stringify(highScores));
     }
+  };
+
+  const handleShareCard = async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 900;
+    canvas.height = 500;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const grd = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    grd.addColorStop(0, '#08111f');
+    grd.addColorStop(1, '#142b19');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#2bee79';
+    ctx.font = 'bold 56px Outfit, sans-serif';
+    ctx.fillText('SHADOW PAW', 48, 90);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 42px Outfit, sans-serif';
+    ctx.fillText(`Score: ${score.toLocaleString()}`, 48, 180);
+    ctx.fillText(`Fish: ${fishesCollected}`, 48, 240);
+    ctx.fillText(`Combo: x${lastRun.bestCombo || 0}`, 48, 300);
+    ctx.fillStyle = '#95a3b8';
+    ctx.font = 'bold 24px Outfit, sans-serif';
+    ctx.fillText('shadow-paw-game.vercel.app', 48, 430);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `shadow-paw-score-${score}.png`;
+    a.click();
+
+    const summary = `Jag fick ${score} poäng i Shadow Paw!`; 
+    await navigator.clipboard.writeText(summary);
+    setShareMessage('Bild nedladdad + text kopierad!');
+    setTimeout(() => setShareMessage(''), 2500);
   };
 
   return (
@@ -721,6 +884,13 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-3">
         <button
+          onClick={handleShareCard}
+          className="flex-1 glass-card border-2 border-primary/30 py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 hover:bg-primary/10 transition-colors uppercase text-white"
+        >
+          <span className="material-symbols-outlined">ios_share</span>
+          Dela Score
+        </button>
+        <button
           onClick={onRestart}
           className="flex-1 bg-primary-red py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 hover:scale-[1.01] transition-transform shadow-[0_0_30px_rgba(238,43,43,0.25)] uppercase text-white"
         >
@@ -735,6 +905,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
           Huvudmeny
         </button>
       </div>
+      {shareMessage && <p className="text-center text-primary text-sm font-bold mt-4">{shareMessage}</p>}
     </div>
   );
 };
@@ -1004,11 +1175,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [totalScore, setTotalScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT' });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE' });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [combo, setCombo] = useState(0);
+  const [seasonTheme] = useState(getSeasonTheme());
   const { progress, addCoins } = useProgress();
 
   const gameRef = useRef<any>(null);
@@ -1067,6 +1240,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const intensity = randomWeather.intensity;
     const timeOfDay = randomWeather.timeOfDay;
     const theme = baseLevelDesign.theme;
+    const skin = SKINS[progress.equippedSkin] || SKINS.default;
+    const levelMode = level % 4 === 1 ? 'Classic' : (level % 4 === 2 ? 'Speed Run' : (level % 4 === 3 ? 'Collection' : 'Survival'));
 
     const game = {
       running: true,
@@ -1079,19 +1254,37 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       intensity: intensity,
       timeOfDay: timeOfDay,
       scrollX: 0,
-      gravity: 0.8,
+      gravity: levelMode === 'Speed Run' ? 0.75 : 0.8,
       friction: 0.85,
+      levelType: levelMode,
+      levelTimer: levelMode === 'Speed Run' ? 95 : 0,
+      combo: 0,
+      comboTimer: 0,
+      bestComboInRun: 0,
+      enemiesDefeatedInRun: 0,
+      levelsCompletedInRun: 0,
+      bossDefeatedInRun: false,
+      deathsInRun: 0,
+      screenShake: 0,
+      hitStop: 0,
+      miniEvent: {
+        type: level > 2 ? ['WIND', 'LOW_GRAVITY', 'BLACKOUT'][Math.floor(seededRandom(level * 13.5) * 3)] : 'NONE',
+        active: false,
+        timer: 420,
+        duration: 360,
+      },
       flashTimer: 0,
       bolts: [] as any[], // Current active lightning bolts
       weatherParticles: [] as any[],
       player: {
         x: 100, y: 150, width: 50, height: 70,
         velocityX: 0, velocityY: 0,
-        speed: 4.6 + (level * 0.08),
+        speed: (4.6 + (level * 0.08)) * (progress.settings.uiScale < 0.95 ? 0.98 : 1),
         jumpPower: progress.upgrades.jumpPower,
         doubleJumpPower: progress.upgrades.jumpPower + 3,
         isJumping: false, canDoubleJump: true, hasDoubleJumped: false,
-        color: '#4169E1', invincible: false, invincibleTimer: 0,
+        color: skin.color, invincible: false, invincibleTimer: 0,
+        accent: skin.accent,
         isBlinking: false, blinkTimer: 0,
         facing: 1 // 1 for right, -1 for left
       },
@@ -1104,12 +1297,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       particles: [] as any[],
       floatingTexts: [] as any[],
       hazards: [] as any[],
+      boss: null as any,
       keys: {} as Record<number, boolean>,
       showFishWarning: false,
       totalCollectedInLevel: 0,
       backgroundElements: [] as any[], // Trees, buildings, etc.
       lastStatUpdate: 0
     };
+
+    // Passive perks from skill tree milestones.
+    if (progress.level >= 5) game.player.speed += 0.6;
+    if (progress.level >= 10) game.ammo += 2;
+    if (progress.level >= 15) game.player.invincibleTimer = 20;
 
     // Generate background elements
     game.backgroundElements = generateBackgroundElements(level, levelLength, theme);
@@ -1220,7 +1419,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
     // MUCH MORE enemies - spread throughout the entire level for excitement!
     // More enemies on EVERY level, not just higher levels
-    const enemyCount = difficultyProfile.enemyCount;
+    const enemyCount = levelMode === 'Survival' ? Math.floor(difficultyProfile.enemyCount * 1.45) : difficultyProfile.enemyCount;
     let enemiesPlaced = 0;
     let spawnAttempts = 0;
     const minEnemyDistance = 250; // Enemies closer together for more action
@@ -1253,8 +1452,26 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       enemiesPlaced++;
     }
 
+    if (level % 5 === 0) {
+      const bossPlatform = game.platforms[Math.max(2, game.platforms.length - 4)];
+      if (bossPlatform) {
+        game.boss = {
+          x: Math.min(levelLength - 360, bossPlatform.x + 20),
+          y: bossPlatform.y - 70,
+          width: 90,
+          height: 70,
+          hp: 10 + Math.floor(level / 2),
+          maxHp: 10 + Math.floor(level / 2),
+          velocityX: 1.8 + level * 0.03,
+          platformX: bossPlatform.x,
+          platformW: bossPlatform.width,
+          phase: 0,
+        };
+      }
+    }
+
     // MORE coins - more rewards throughout the level
-    const fishCount = difficultyProfile.fishCount;
+    const fishCount = levelMode === 'Collection' ? Math.floor(difficultyProfile.fishCount * 1.6) : difficultyProfile.fishCount;
     let placedFish = 0;
     let fishPlacementAttempts = 0;
 
@@ -1315,7 +1532,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
 
     // Add fun hazards to keep levels unique and less repetitive.
-    const hazardCount = difficultyProfile.hazardCount;
+    const hazardCount = levelMode === 'Survival' ? Math.floor(difficultyProfile.hazardCount * 1.25) : difficultyProfile.hazardCount;
     let hazardAttempts = 0;
     while (game.hazards.length < hazardCount && hazardAttempts < hazardCount * 20) {
       hazardAttempts++;
@@ -1374,11 +1591,56 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (!game.player.isJumping) {
       game.player.velocityY = -game.player.jumpPower;
       game.player.isJumping = true;
+      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
       AudioEngine.playJump();
     } else if (game.player.canDoubleJump && !game.player.hasDoubleJumped) {
       game.player.velocityY = -game.player.doubleJumpPower;
       game.player.hasDoubleJumped = true;
+      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(9);
       AudioEngine.playJump();
+    }
+  };
+
+  const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
+    game.combo = (game.combo || 0) + 1;
+    game.comboTimer = 180;
+    game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
+    const comboBonus = Math.max(0, (game.combo - 1) * 8);
+    if (comboBonus > 0) {
+      game.score += comboBonus;
+      game.floatingTexts.push({ x, y: y - 18, text: `COMBO x${game.combo} +${comboBonus}`, life: 35, color: '#7ef7c2' });
+    }
+    game.score += baseScore;
+  };
+
+  const persistRunSummary = (game: any, perfectLevel: boolean) => {
+    localStorage.setItem('shadow_paw_last_run', JSON.stringify({
+      enemiesDefeated: game.enemiesDefeatedInRun || 0,
+      levelsCompleted: game.levelsCompletedInRun || 0,
+      bestCombo: game.bestComboInRun || 0,
+      bossDefeated: game.bossDefeatedInRun || false,
+      perfectLevel,
+    }));
+  };
+
+  const trackDeathCause = (cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
+    try {
+      const key = 'shadow_paw_telemetry';
+      const prev = JSON.parse(localStorage.getItem(key) || '{}');
+      const next = {
+        ...prev,
+        totalRuns: (prev.totalRuns || 0) + 1,
+        deathsByCause: {
+          enemy: (prev.deathsByCause?.enemy || 0) + (cause === 'enemy' ? 1 : 0),
+          hazard: (prev.deathsByCause?.hazard || 0) + (cause === 'hazard' ? 1 : 0),
+          hole: (prev.deathsByCause?.hole || 0) + (cause === 'hole' ? 1 : 0),
+          timer: (prev.deathsByCause?.timer || 0) + (cause === 'timer' ? 1 : 0),
+          boss: (prev.deathsByCause?.boss || 0) + (cause === 'boss' ? 1 : 0),
+        },
+      };
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      // ignore telemetry failures
     }
   };
 
@@ -1420,6 +1682,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       x: playerCenterX, y: playerCenterY, vx: (dx / distance) * bulletSpeed, vy: (dy / distance) * bulletSpeed, radius: 6, life: 100
     });
     game.ammo--;
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(8);
     AudioEngine.playShoot();
   };
 
@@ -1524,10 +1787,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     let animationId: number;
     const loop = () => {
       if (!game.running) return;
+      if (game.hitStop > 0) {
+        game.hitStop--;
+        animationId = requestAnimationFrame(loop);
+        return;
+      }
 
       // Player Logic
-      game.player.velocityY += game.gravity;
+      const gravityMod = game.miniEvent.active && game.miniEvent.type === 'LOW_GRAVITY' ? 0.65 : 1;
+      game.player.velocityY += game.gravity * gravityMod;
       game.player.velocityX *= game.friction;
+      if (game.miniEvent.active && game.miniEvent.type === 'WIND') {
+        game.player.velocityX += Math.sin(Date.now() / 250) * 0.2;
+      }
       if (game.keys[37] || game.keys[65]) {
         game.player.velocityX = -game.player.speed;
         game.player.facing = -1;
@@ -1556,7 +1828,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         b.x += b.vx; b.y += b.vy; b.life--;
         game.enemies.forEach((e: any) => {
           if (e.x < b.x + b.radius && e.x + e.width > b.x - b.radius && e.y < b.y + b.radius && e.y + e.height > b.y - b.radius) {
-            e.x = -1000; b.life = 0; game.score += 200;
+            e.x = -1000; b.life = 0;
+            registerCombo(game, 200, e.x, e.y);
+            game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
             AudioEngine.playExplosion();
 
             // Explosion particles
@@ -1571,6 +1845,22 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.floatingTexts.push({ x: e.x, y: e.y, text: '+200', life: 40, color: '#ff2222' });
           }
         });
+
+        if (game.boss && game.boss.hp > 0) {
+          const boss = game.boss;
+          if (boss.x < b.x + b.radius && boss.x + boss.width > b.x - b.radius && boss.y < b.y + b.radius && boss.y + boss.height > b.y - b.radius) {
+            b.life = 0;
+            boss.hp--;
+            game.hitStop = 2;
+            game.screenShake = 10;
+            game.floatingTexts.push({ x: boss.x + boss.width / 2, y: boss.y - 10, text: `BOSS HP ${boss.hp}`, life: 25, color: '#ff6b6b' });
+            if (boss.hp <= 0) {
+              registerCombo(game, 1200, boss.x, boss.y);
+              game.bossDefeatedInRun = true;
+              AudioEngine.playExplosion();
+            }
+          }
+        }
       });
 
       // Update Particles
@@ -1588,6 +1878,30 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         t.y -= 1; // float up
         t.life--;
       });
+
+      if (game.comboTimer > 0) game.comboTimer--;
+      else game.combo = 0;
+
+      if (game.levelType === 'Speed Run') {
+        game.levelTimer = Math.max(0, game.levelTimer - 1 / 60);
+        if (game.levelTimer <= 0) {
+          game.lives--;
+          game.deathsInRun = (game.deathsInRun || 0) + 1;
+          game.running = false;
+          trackDeathCause('timer');
+          persistRunSummary(game, false);
+          onEnd(game.score, game.totalCollectedInLevel);
+          return;
+        }
+      }
+
+      if (game.miniEvent.type !== 'NONE') {
+        game.miniEvent.timer--;
+        if (game.miniEvent.timer <= 0) {
+          game.miniEvent.active = !game.miniEvent.active;
+          game.miniEvent.timer = game.miniEvent.active ? game.miniEvent.duration : 420;
+        }
+      }
 
       // Weather Logic
       game.weatherParticles.forEach((p: any) => {
@@ -1706,7 +2020,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               const enemyCenterXBeforeRemove = e.x + e.width / 2;
               const enemyCenterYBeforeRemove = e.y + e.height / 2;
               e.x = -1000;
-              game.score += 200;
+              registerCombo(game, 200, enemyCenterXBeforeRemove, enemyCenterYBeforeRemove);
+              game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
               game.player.velocityY = -12;
               AudioEngine.playExplosion();
               for (let i = 0; i < 15; i++) {
@@ -1725,12 +2040,51 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               game.player.x = Math.max(100, game.player.x - 150);
               game.player.y = Math.max(50, game.player.y - 50);
               game.player.velocityY = 0;
+              game.combo = 0;
               AudioEngine.playDamage();
-              if (game.lives <= 0) { game.running = false; onEnd(game.score, game.totalCollectedInLevel); }
+              if (game.lives <= 0) {
+                game.running = false;
+                trackDeathCause('enemy');
+                persistRunSummary(game, false);
+                onEnd(game.score, game.totalCollectedInLevel);
+              }
             }
           }
         }
       });
+
+      if (game.boss && game.boss.hp > 0) {
+        const boss = game.boss;
+        boss.phase += 0.04;
+        boss.x += boss.velocityX;
+        if (boss.x < boss.platformX || boss.x + boss.width > boss.platformX + boss.platformW) {
+          boss.velocityX *= -1;
+        }
+        boss.y += Math.sin(boss.phase) * 0.6;
+
+        if (!game.player.invincible) {
+          const overlapX = game.player.x + game.player.width > boss.x && game.player.x < boss.x + boss.width;
+          const overlapY = game.player.y + game.player.height > boss.y && game.player.y < boss.y + boss.height;
+          if (overlapX && overlapY) {
+            game.lives--;
+            game.player.invincible = true;
+            game.player.invincibleTimer = 110;
+            game.player.x = Math.max(100, game.player.x - 190);
+            game.player.y = Math.max(60, game.player.y - 45);
+            game.player.velocityY = -5;
+            game.combo = 0;
+            game.screenShake = 14;
+            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(35);
+            AudioEngine.playDamage();
+            if (game.lives <= 0) {
+              game.running = false;
+              trackDeathCause('boss');
+              persistRunSummary(game, false);
+              onEnd(game.score, game.totalCollectedInLevel);
+            }
+          }
+        }
+      }
 
       // Hazards damage player on touch
       if (!game.player.invincible) {
@@ -1745,9 +2099,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.player.x = Math.max(100, game.player.x - 170);
             game.player.y = Math.max(60, game.player.y - 45);
             game.player.velocityY = -3;
+            game.combo = 0;
+            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(26);
             AudioEngine.playDamage();
             if (game.lives <= 0) {
               game.running = false;
+              trackDeathCause('hazard');
+              persistRunSummary(game, false);
               onEnd(game.score, game.totalCollectedInLevel);
             }
             break;
@@ -1764,7 +2122,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         game.player.x = Math.max(100, game.player.x - 200);
         game.player.y = 100;
         game.player.velocityY = 0;
-        if (game.lives <= 0) { game.running = false; onEnd(game.score, game.totalCollectedInLevel); }
+        if (game.lives <= 0) {
+          game.running = false;
+          trackDeathCause('hole');
+          persistRunSummary(game, false);
+          onEnd(game.score, game.totalCollectedInLevel);
+        }
       }
 
 
@@ -1792,7 +2155,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x &&
             game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {
             f.collected = true;
-            game.score += 50;
+            registerCombo(game, 50, f.x, f.y);
             game.totalCollectedInLevel++;
 
             // Every 10 fish = 5 coins + 1 ammo!
@@ -1813,10 +2176,26 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       // --- DRAWING ---
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      const applyScreenShake = game.screenShake > 0;
+      if (applyScreenShake) {
+        game.screenShake--;
+        const shakeX = (Math.random() - 0.5) * 8;
+        const shakeY = (Math.random() - 0.5) * 8;
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+      }
+
       // Background - Simple sky gradient with clouds (Tom & Jerry style)
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, '#87CEEB');
-      gradient.addColorStop(1, '#E0F7FF');
+      const seasonPalette: Record<string, [string, string]> = {
+        winter: ['#8ab4df', '#e4f5ff'],
+        spring: ['#8fd7b2', '#dff8ef'],
+        summer: ['#87CEEB', '#E0F7FF'],
+        autumn: ['#d19352', '#f3d6a6'],
+      };
+      const palette = seasonPalette[seasonTheme] || seasonPalette.summer;
+      gradient.addColorStop(0, palette[0]);
+      gradient.addColorStop(1, palette[1]);
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -3017,6 +3396,35 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         }
       });
 
+      if (game.boss && game.boss.hp > 0) {
+        const bx = game.boss.x - game.scrollX;
+        const by = game.boss.y;
+        const bw = game.boss.width;
+        const bh = game.boss.height;
+
+        ctx.fillStyle = '#6f1d1b';
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 14);
+        ctx.fill();
+
+        ctx.fillStyle = '#fca311';
+        ctx.beginPath();
+        ctx.arc(bx + 25, by + 25, 8, 0, Math.PI * 2);
+        ctx.arc(bx + bw - 25, by + 25, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(bx + 25, by + 25, 3, 0, Math.PI * 2);
+        ctx.arc(bx + bw - 25, by + 25, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(bx, by - 16, bw, 8);
+        ctx.fillStyle = '#ff4d4d';
+        ctx.fillRect(bx, by - 16, (bw * game.boss.hp) / game.boss.maxHp, 8);
+      }
+
       // Draw Fishes (Yellow/Gold Fish) - Now drawn after background and platforms
       game.fishes.forEach((f: any) => {
         if (f.collected) return;
@@ -3076,9 +3484,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       // Goal Logic - check if player can complete level
       const allFishesCollected = collectedCountInFrame === game.fishes.length;
+      const bossCleared = !game.boss || game.boss.hp <= 0;
       const overlapsGoal = game.player.x < game.jerry.x + game.jerry.width && game.player.x + game.player.width > game.jerry.x && game.player.y < game.jerry.y + game.jerry.height && game.player.y + game.player.height > game.jerry.y;
       if (overlapsGoal) {
-        if (allFishesCollected) { game.running = false; setTotalScore(game.score + 1000); setShowLevelComplete(true); }
+        if (allFishesCollected && bossCleared) {
+          game.running = false;
+          const perfectLevel = game.lives === lives;
+          const perfectBonus = perfectLevel ? 500 : 0;
+          game.levelsCompletedInRun = (game.levelsCompletedInRun || 0) + 1;
+          persistRunSummary(game, perfectLevel);
+          setTotalScore(game.score + 1000 + perfectBonus);
+          setShowLevelComplete(true);
+        }
         else { game.showFishWarning = true; }
       } else { game.showFishWarning = false; }
 
@@ -3150,7 +3567,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       ctx.shadowBlur = 15; ctx.shadowColor = '#FF8C00'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.strokeRect(jx - 5, jy - 5, jw + 10, jh + 10); ctx.shadowBlur = 0;
       if (game.showFishWarning) {
         ctx.fillStyle = '#ee2b2b'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('SAMLA ALLA FISKAR FÖRST!', jx + jw / 2, jy - 15);
+        const needBoss = game.boss && game.boss.hp > 0;
+        ctx.fillText(needBoss ? 'BESEGRA BOSS + SAMLA FISK!' : 'SAMLA ALLA FISKAR FÖRST!', jx + jw / 2, jy - 15);
       }
 
       // Player
@@ -3164,7 +3582,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const tailDir = isMovingRight ? -1 : 1;
       const tailWiggle = Math.sin(Date.now() / 150) * 5;
 
-      ctx.strokeStyle = '#4169E1'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+      ctx.strokeStyle = game.player.color; ctx.lineWidth = 8; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(tailX, py + ph * 0.7);
       ctx.bezierCurveTo(
@@ -3175,15 +3593,15 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       ctx.stroke();
 
       // Kropp (Ellipse)
-      ctx.fillStyle = '#4169E1'; ctx.beginPath(); ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = game.player.color; ctx.beginPath(); ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2); ctx.fill();
 
       // Öron (Trianglar)
-      ctx.fillStyle = '#333'; ctx.beginPath(); ctx.moveTo(px + 5, py + 15); ctx.lineTo(px - 5, py - 10); ctx.lineTo(px + 20, py + 5); ctx.fill();
+      ctx.fillStyle = game.player.accent; ctx.beginPath(); ctx.moveTo(px + 5, py + 15); ctx.lineTo(px - 5, py - 10); ctx.lineTo(px + 20, py + 5); ctx.fill();
       ctx.beginPath(); ctx.moveTo(px + pw - 5, py + ph * 0.15); ctx.lineTo(px + pw + 5, py - 10); ctx.lineTo(px + pw - 20, py + 5); ctx.fill();
 
       // Ögon med blink-logik
       if (game.player.isBlinking) {
-        ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + pw * 0.25, py + ph * 0.4); ctx.lineTo(px + pw * 0.45, py + ph * 0.4); ctx.moveTo(px + pw * 0.55, py + ph * 0.4); ctx.lineTo(px + pw * 0.75, py + ph * 0.4); ctx.stroke();
+        ctx.strokeStyle = game.player.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + pw * 0.25, py + ph * 0.4); ctx.lineTo(px + pw * 0.45, py + ph * 0.4); ctx.moveTo(px + pw * 0.55, py + ph * 0.4); ctx.lineTo(px + pw * 0.75, py + ph * 0.4); ctx.stroke();
       } else {
         ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(px + pw * 0.35, py + ph * 0.4, 8, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(px + pw * 0.65, py + ph * 0.4, 8, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'green'; ctx.beginPath(); ctx.arc(px + pw * 0.35, py + ph * 0.4, 4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(px + pw * 0.65, py + ph * 0.4, 4, 0, Math.PI * 2); ctx.fill();
@@ -3210,7 +3628,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       // Mun
       ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + pw * 0.5, py + ph * 0.55 + 6); ctx.lineTo(px + pw * 0.5, py + ph * 0.65); ctx.stroke(); ctx.beginPath(); ctx.arc(px + pw * 0.4, py + ph * 0.65, 5, 0, Math.PI); ctx.stroke(); ctx.beginPath(); ctx.arc(px + pw * 0.6, py + ph * 0.65, 5, 0, Math.PI); ctx.stroke();
 
-      ctx.fillStyle = '#4169E1'; ctx.fillRect(px + 10, py + ph - 5, 12, 10); ctx.fillRect(px + pw - 22, py + ph - 5, 12, 10);
+      ctx.fillStyle = game.player.color; ctx.fillRect(px + 10, py + ph - 5, 12, 10); ctx.fillRect(px + pw - 22, py + ph - 5, 12, 10);
       ctx.restore();
 
       // Draw Particles
@@ -3266,6 +3684,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
+      if (game.miniEvent.active && game.miniEvent.type === 'BLACKOUT') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      if (applyScreenShake) ctx.restore();
+
       // Throttle React state updates to prevent infinite loops and improve performance
       if (Date.now() - game.lastStatUpdate > 250) {
         setStats({
@@ -3273,10 +3698,15 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           collectedCount: collectedCountInFrame, totalFish: game.fishes.length, ammo: game.ammo,
           weather: game.weather,
           intensity: game.intensity,
-          timeOfDay: game.timeOfDay
+          timeOfDay: game.timeOfDay,
+          combo: game.combo || 0,
+          levelType: game.levelType,
+          timer: game.levelTimer || 0,
+          miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
         });
         setLives(game.lives);
         setTotalScore(game.score);
+        setCombo(game.combo || 0);
         game.lastStatUpdate = Date.now();
       }
       animationId = requestAnimationFrame(loop);
@@ -3303,7 +3733,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   }, [currentLevel, onEnd, isTouchDevice]);
 
   return (
-    <div className={`w-full h-full flex flex-col items-center justify-start gap-3 md:gap-6 py-2 md:py-4 animate-fade-in-up px-2 overflow-hidden max-h-screen ${isFullscreen ? 'fixed inset-0 z-[100] bg-background-dark' : ''}`}>
+    <div
+      className={`w-full h-full flex flex-col items-center justify-start gap-3 md:gap-6 py-2 md:py-4 animate-fade-in-up px-2 overflow-hidden max-h-screen ${isFullscreen ? 'fixed inset-0 z-[100] bg-background-dark' : ''}`}
+      style={{ fontSize: `${progress.settings.textScale}em`, transform: `scale(${progress.settings.uiScale})`, transformOrigin: 'top center' }}
+    >
       {/* HUD - Mobiloptimerad */}
       <div className="flex flex-wrap justify-center gap-2 md:gap-8 lg:gap-12 glass-card px-3 md:px-8 py-2 md:py-4 rounded-2xl md:rounded-full border border-primary/30 w-full max-w-4xl flex-shrink-0">
         <div className="flex items-center gap-1.5 md:gap-2">
@@ -3337,6 +3770,16 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <span className="text-sm md:text-2xl font-black text-white leading-none">{stats.progress}%</span>
           </div>
         </div>
+        <div className="flex items-center gap-1.5 md:gap-2 border-l border-white/10 pl-3 md:pl-6">
+          <span className="text-[10px] md:text-xs text-white/50 uppercase">{stats.levelType}</span>
+          <span className="text-sm md:text-xl font-black text-primary">x{combo}</span>
+        </div>
+        {stats.levelType === 'Speed Run' && (
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <span className="material-symbols-outlined text-orange-300 text-lg md:text-2xl">timer</span>
+            <span className="text-sm md:text-xl font-black text-orange-300">{Math.ceil(stats.timer)}s</span>
+          </div>
+        )}
         <button
           onClick={() => setIsMuted(!isMuted)}
           className="flex items-center gap-1.5 md:gap-2 pl-2 md:pl-4 hover:scale-110 transition-transform"
@@ -3354,6 +3797,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           </span>
         </button>
       </div>
+
+      {progress.settings.debugOverlay && (
+        <div className="w-full max-w-4xl text-[11px] text-white/70 bg-black/40 rounded-lg px-3 py-2 border border-white/10">
+          MODE {stats.levelType} | EVENT {stats.miniEvent} | COMBO x{combo} | WEATHER {stats.weather} | THEME {seasonTheme}
+        </div>
+      )}
 
       {/* Mobile Touch Controls Overlay */}
       {isTouchDevice && (
@@ -3373,6 +3822,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         <canvas
           ref={canvasRef}
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
+          style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
         />
 
         {showLevelComplete && (
@@ -3436,7 +3886,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
 /** SHOP VIEW **/
 export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { progress, buyUpgrade, addCoins } = useProgress();
+  const { progress, buyUpgrade, equipSkin } = useProgress();
   const [message, setMessage] = useState('');
 
   const handleBuy = (type: 'maxAmmo' | 'jumpPower' | 'speed', cost: number) => {
@@ -3483,6 +3933,17 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           {message}
         </div>
       )}
+
+      {/* Skill Tree Light */}
+      <div className="glass-card rounded-2xl p-5 mb-6 border border-primary/20 bg-primary/5">
+        <h3 className="text-white font-bold uppercase mb-2">Skill Tree Light</h3>
+        <p className="text-white/60 text-xs mb-3">Passiva perks låses upp automatiskt med din rank.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+          <div className={`rounded-lg p-3 border ${progress.level >= 5 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Lv5: Agile Paws (+speed)</div>
+          <div className={`rounded-lg p-3 border ${progress.level >= 10 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Lv10: Ammo Saver</div>
+          <div className={`rounded-lg p-3 border ${progress.level >= 15 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Lv15: Guard Instinct</div>
+        </div>
+      </div>
 
       {/* Upgrades */}
       <div className="space-y-4">
@@ -3550,6 +4011,35 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
       </div>
 
+      {/* Skins */}
+      <div className="glass-card rounded-2xl p-5 mt-6 border border-white/10">
+        <h3 className="text-white font-bold uppercase mb-3">Skins</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Object.entries(SKINS).map(([id, skin]) => {
+            const unlocked = progress.unlockedSkins.includes(id);
+            const equipped = progress.equippedSkin === id;
+            return (
+              <div key={id} className={`rounded-xl p-3 border ${equipped ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-black/20'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-white font-bold text-sm">{skin.name}</p>
+                    <p className="text-white/50 text-xs">{unlocked ? 'Unlocked' : skin.unlockHint}</p>
+                  </div>
+                  <div className="w-7 h-7 rounded-full border border-white/20" style={{ backgroundColor: skin.color }} />
+                </div>
+                <button
+                  onClick={() => unlocked && equipSkin(id)}
+                  disabled={!unlocked || equipped}
+                  className="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white disabled:opacity-40"
+                >
+                  {equipped ? 'Aktiv' : 'Utrusta'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <button
         onClick={onBack}
         className="w-full mt-6 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 transition-colors"
@@ -3572,8 +4062,8 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <span className="material-symbols-outlined text-primary text-sm">task_alt</span>
           <span className="text-primary text-[10px] font-bold uppercase tracking-widest">Quests</span>
         </div>
-        <h1 className="text-white text-3xl md:text-4xl font-black uppercase tracking-tight">Daily Quests</h1>
-        <p className="mt-2 text-white/70 text-sm">Complete quests to earn coins</p>
+        <h1 className="text-white text-3xl md:text-4xl font-black uppercase tracking-tight">Daily + Weekly</h1>
+        <p className="mt-2 text-white/70 text-sm">Gratis challenges som roterar automatiskt</p>
       </div>
 
       {/* XP Progress */}
@@ -3594,7 +4084,8 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <p className="text-white/40 text-xs mt-2">{1000 - (progress.xp % 1000)} XP till nästa nivå</p>
       </div>
 
-      {/* Quests */}
+      {/* Daily Quests */}
+      <h3 className="text-white/80 font-bold uppercase tracking-wider text-xs mb-3">Daily</h3>
       <div className="space-y-4">
         {progress.dailyQuests.map((quest) => (
           <div
@@ -3636,6 +4127,56 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Weekly Quests */}
+      <h3 className="text-white/80 font-bold uppercase tracking-wider text-xs mt-6 mb-3">Weekly</h3>
+      <div className="space-y-4">
+        {progress.weeklyQuests.map((quest) => (
+          <div
+            key={quest.id}
+            className={`glass-card rounded-2xl p-5 border ${quest.completed ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/10'}`}
+          >
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${quest.completed ? 'bg-yellow-500/20' : 'bg-white/5'}`}>
+                <span className={`material-symbols-outlined ${quest.completed ? 'text-yellow-400' : 'text-white/40'}`}>
+                  {quest.completed ? 'workspace_premium' : 'pending'}
+                </span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-white font-bold">{quest.description}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(100, (quest.current / quest.target) * 100)}%` }} />
+                  </div>
+                  <span className="text-white/60 text-xs">{quest.current}/{quest.target}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-yellow-500 font-black">+{quest.reward} 🪙</p>
+                {quest.completed && !quest.claimed && (
+                  <button onClick={() => claimQuestReward(quest.id)} className="mt-1 px-3 py-1 rounded-lg bg-yellow-400 text-[#1a1f2a] text-xs font-black">
+                    Hämta
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Achievements + skins */}
+      <div className="glass-card rounded-2xl p-5 border border-white/10 mt-6">
+        <h3 className="text-white font-bold uppercase tracking-wider text-xs mb-3">Achievements & skins</h3>
+        <p className="text-white/60 text-xs mb-3">Låsta upp: {progress.achievements.length} achievements, {progress.unlockedSkins.length} skins</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {Object.entries(SKINS).map(([id, skin]) => (
+            <div key={id} className={`rounded-xl border p-3 ${progress.unlockedSkins.includes(id) ? 'border-primary/30 bg-primary/5' : 'border-white/10 bg-black/20'}`}>
+              <p className="text-white font-bold text-sm">{skin.name}</p>
+              <p className="text-white/60 text-xs">{progress.unlockedSkins.includes(id) ? 'Unlocked' : skin.unlockHint}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <button
