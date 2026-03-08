@@ -767,7 +767,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto py-8 md:py-12 px-4 animate-fade-in-up">
+    <div className="w-full max-w-6xl mx-auto py-8 md:py-12 px-4 animate-fade-in-up max-h-[calc(100vh-110px)] overflow-y-auto overscroll-contain pb-24">
       {/* Header Section */}
       <div className="mb-8 md:mb-10 grid grid-cols-1 md:grid-cols-[360px_1fr] gap-6 md:gap-8 items-center">
         <div className="glass-card rounded-3xl border border-white/10 overflow-hidden">
@@ -895,14 +895,14 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
           className="flex-1 bg-primary-red py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 hover:scale-[1.01] transition-transform shadow-[0_0_30px_rgba(238,43,43,0.25)] uppercase text-white"
         >
           <span className="material-symbols-outlined">replay</span>
-          Play Igen
+          Spela Igen
         </button>
         <button
           onClick={onMenu}
           className="flex-1 glass-card border-2 border-white/10 py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 hover:bg-white/5 transition-colors uppercase text-white"
         >
           <span className="material-symbols-outlined">home</span>
-          Huvudmeny
+          HUVUDMENY
         </button>
       </div>
       {shareMessage && <p className="text-center text-primary text-sm font-bold mt-4">{shareMessage}</p>}

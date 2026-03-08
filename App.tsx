@@ -43,6 +43,16 @@ const App: React.FC = () => {
     }
   }, [currentView, isMuted]);
 
+  useEffect(() => {
+    const isPlaying = currentView === AppView.PLAYING;
+    document.body.style.overflowY = isPlaying ? 'hidden' : 'auto';
+    document.body.style.overflowX = 'hidden';
+    return () => {
+      document.body.style.overflowY = 'auto';
+      document.body.style.overflowX = 'hidden';
+    };
+  }, [currentView]);
+
   const handleNavigate = (view: AppView) => {
     setCurrentView(view);
   };
