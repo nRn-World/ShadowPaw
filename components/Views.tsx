@@ -883,16 +883,48 @@ const getDifficultyProfile = (level: number, playerRank: number) => {
   const normalizedLevel = Math.min(1, Math.max(0, (level - 1) / 49));
   const normalizedRank = Math.min(1, Math.max(0, (playerRank - 1) / 49));
   const combinedDifficulty = Math.min(1, normalizedLevel + normalizedRank * 0.25);
+  const variant = (level - 1) % 6;
+  const variantLengthBonus = [500, 1100, 1800, 700, 1400, 2200][variant];
 
   return {
-    levelLength: Math.floor(7000 + level * 1150 + combinedDifficulty * 1600),
+    levelLength: Math.floor(9000 + level * 1400 + combinedDifficulty * 2200 + variantLengthBonus),
     holeChance: 0.01 + combinedDifficulty * 0.08,
     holeSize: 0.12 + combinedDifficulty * 0.22,
     platformCount: Math.floor(12 + level * 1.1 + combinedDifficulty * 6),
     enemyCount: Math.floor(2 + level * 0.7 + combinedDifficulty * 5),
     enemySpeed: 1.4 + level * 0.08 + combinedDifficulty * 0.8,
     fishCount: Math.floor(12 + level * 0.9 + combinedDifficulty * 4),
+    hazardCount: Math.floor(Math.max(0, level - 1) * 0.55 + combinedDifficulty * 5),
+    variant,
   };
+};
+
+const seededRandom = (seed: number) => {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+const getWeatherForLevel = (level: number) => {
+  if (level === 1) {
+    return { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY' };
+  }
+
+  const weatherPresets = [
+    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY' },
+    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'SUNSET' },
+    { weather: 'REGNIGT', intensity: 'LIGHT', timeOfDay: 'DAY' },
+    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT' },
+    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT' },
+    { weather: 'SNÖIGT', intensity: 'LIGHT', timeOfDay: 'DAY' },
+    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT' },
+    { weather: 'DIMMIGT', intensity: 'LIGHT', timeOfDay: 'DAWN' },
+  ] as const;
+
+  const index = Math.floor(seededRandom(level * 17.371) * weatherPresets.length);
+  const previousIndex = Math.floor(seededRandom((level - 1) * 17.371) * weatherPresets.length);
+  const safeIndex = index === previousIndex ? (index + 1) % weatherPresets.length : index;
+
+  return weatherPresets[safeIndex];
 };
 
 // BACKGROUND ELEMENTS GENERATOR
@@ -1019,10 +1051,6 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   useEffect(() => {
-    AudioEngine.setVolume(isMuted ? 0 : 0.5);
-  }, [isMuted]);
-
-  useEffect(() => {
     setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
     setIsMobile(window.innerWidth < 768);
   }, []);
@@ -1033,11 +1061,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
     const difficultyProfile = getDifficultyProfile(level, progress.level);
     const levelLength = difficultyProfile.levelLength;
-    const levelDesign = getLevelDesign(level);
-    const weather = levelDesign.weather;
-    const intensity = levelDesign.intensity;
-    const timeOfDay = levelDesign.timeOfDay;
-    const theme = levelDesign.theme;
+    const baseLevelDesign = getLevelDesign(level);
+    const randomWeather = getWeatherForLevel(level);
+    const weather = randomWeather.weather;
+    const intensity = randomWeather.intensity;
+    const timeOfDay = randomWeather.timeOfDay;
+    const theme = baseLevelDesign.theme;
 
     const game = {
       running: true,
@@ -1074,6 +1103,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       bullets: [] as any[],
       particles: [] as any[],
       floatingTexts: [] as any[],
+      hazards: [] as any[],
       keys: {} as Record<number, boolean>,
       showFishWarning: false,
       totalCollectedInLevel: 0,
@@ -1115,7 +1145,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
     }
 
-    const segmentWidth = 200;
+    const segmentWidth = 180 + difficultyProfile.variant * 10;
     const segments = Math.ceil(levelLength / segmentWidth);
     for (let i = 0; i < segments; i++) {
       // Level 1 should be very forgiving, then increase steadily by level and rank.
@@ -1281,6 +1311,57 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           baseY: fy
         });
         placedFish++;
+      }
+    }
+
+    // Add fun hazards to keep levels unique and less repetitive.
+    const hazardCount = difficultyProfile.hazardCount;
+    let hazardAttempts = 0;
+    while (game.hazards.length < hazardCount && hazardAttempts < hazardCount * 20) {
+      hazardAttempts++;
+      const randomPlatIndex = Math.floor(Math.random() * Math.max(1, game.platforms.length - 8)) + 4;
+      const plat = game.platforms[randomPlatIndex];
+      if (!plat || plat.width < 80) continue;
+
+      const hx = plat.x + 10 + Math.random() * Math.max(10, plat.width - 70);
+      if (hx < 450 || hx > levelLength - 400) continue;
+
+      const tooClose = game.hazards.some((h: any) => Math.abs(h.x - hx) < 180);
+      if (tooClose) continue;
+
+      const hazardRoll = Math.random();
+      if (difficultyProfile.variant % 2 === 0 && hazardRoll < 0.45) {
+        game.hazards.push({
+          type: 'movingSaw',
+          x: hx,
+          baseX: hx,
+          y: plat.y - 24,
+          width: 28,
+          height: 28,
+          range: 35 + Math.random() * 50,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.03 + Math.random() * 0.04,
+        });
+      } else if (hazardRoll < 0.78) {
+        game.hazards.push({
+          type: 'spike',
+          x: hx,
+          y: plat.y - 16,
+          width: 46,
+          height: 16,
+        });
+      } else if (level > 4) {
+        game.hazards.push({
+          type: 'laser',
+          x: hx + 20,
+          y: Math.max(120, plat.y - 160),
+          width: 10,
+          height: Math.min(220, canvas.height - plat.y + 95),
+          active: Math.random() > 0.4,
+          timer: 70 + Math.floor(Math.random() * 60),
+          onDuration: 60 + Math.floor(Math.random() * 70),
+          offDuration: 70 + Math.floor(Math.random() * 90),
+        });
       }
     }
 
@@ -1546,6 +1627,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         if (Math.random() < 0.002) game.flashTimer = 4;
       }
 
+      // Hazard Logic
+      game.hazards.forEach((h: any) => {
+        if (h.type === 'movingSaw') {
+          h.phase += h.speed;
+          h.x = h.baseX + Math.sin(h.phase) * h.range;
+        } else if (h.type === 'laser') {
+          h.timer--;
+          if (h.timer <= 0) {
+            h.active = !h.active;
+            h.timer = h.active ? h.onDuration : h.offDuration;
+          }
+        }
+      });
+
       // Check if player is over a hole - if so, they fall through!
       let isOverHole = false;
       const playerFeetX = game.player.x + game.player.width / 2;
@@ -1636,6 +1731,29 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           }
         }
       });
+
+      // Hazards damage player on touch
+      if (!game.player.invincible) {
+        for (const h of game.hazards) {
+          if (h.type === 'laser' && !h.active) continue;
+          const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
+          const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
+          if (overlapX && overlapY) {
+            game.lives--;
+            game.player.invincible = true;
+            game.player.invincibleTimer = 90;
+            game.player.x = Math.max(100, game.player.x - 170);
+            game.player.y = Math.max(60, game.player.y - 45);
+            game.player.velocityY = -3;
+            AudioEngine.playDamage();
+            if (game.lives <= 0) {
+              game.running = false;
+              onEnd(game.score, game.totalCollectedInLevel);
+            }
+            break;
+          }
+        }
+      }
 
       if (game.player.invincibleTimer > 0) game.player.invincibleTimer--;
       else game.player.invincible = false;
@@ -2704,6 +2822,56 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           // Add depth effect
           ctx.fillStyle = '#333333';
           ctx.fillRect(hole.x - game.scrollX, hole.y + 20, hole.width, 80);
+        }
+      });
+
+      // Hazards
+      game.hazards.forEach((h: any) => {
+        const hx = h.x - game.scrollX;
+        if (hx + h.width < -40 || hx > canvas.width + 40) return;
+
+        if (h.type === 'spike') {
+          ctx.fillStyle = '#cc2b2b';
+          const spikeCount = 4;
+          const spikeW = h.width / spikeCount;
+          for (let i = 0; i < spikeCount; i++) {
+            ctx.beginPath();
+            ctx.moveTo(hx + i * spikeW, h.y + h.height);
+            ctx.lineTo(hx + i * spikeW + spikeW / 2, h.y);
+            ctx.lineTo(hx + (i + 1) * spikeW, h.y + h.height);
+            ctx.closePath();
+            ctx.fill();
+          }
+        } else if (h.type === 'movingSaw') {
+          const cx = hx + h.width / 2;
+          const cy = h.y + h.height / 2;
+          const radius = h.width / 2;
+          ctx.fillStyle = '#9aa3b2';
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#d7dde8';
+          ctx.lineWidth = 2;
+          for (let i = 0; i < 8; i++) {
+            const angle = i * (Math.PI / 4) + h.phase;
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(angle) * radius * 0.6, cy + Math.sin(angle) * radius * 0.6);
+            ctx.lineTo(cx + Math.cos(angle) * (radius + 8), cy + Math.sin(angle) * (radius + 8));
+            ctx.stroke();
+          }
+        } else if (h.type === 'laser') {
+          ctx.fillStyle = '#2b2b2b';
+          ctx.fillRect(hx - 3, h.y, 16, 8);
+          if (h.active) {
+            ctx.fillStyle = 'rgba(255, 40, 40, 0.7)';
+            ctx.fillRect(hx, h.y + 8, h.width, h.height - 8);
+            ctx.strokeStyle = '#ff8c8c';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(hx + h.width / 2, h.y + 8);
+            ctx.lineTo(hx + h.width / 2, h.y + h.height);
+            ctx.stroke();
+          }
         }
       });
 
