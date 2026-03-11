@@ -74,16 +74,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-## 👨‍💻 Author
-
-Copyright (c) 2026 nRn World
-
-📧 [bynrnworld@gmail.com](mailto:bynrnworld@gmail.com)
+👨‍💻 **Author**  
+Created 2026 by © nRn World
+📧 bynrnworld@gmail.com
 
 ## 🙏 Support
 
-If you like this project, consider to:
+If you like this project, consider:
 
-*   ⭐ Star the project on GitHub
-*   ☕ [Buy me a coffee](https://buymeacoffee.com/nrnworld)
-*   📢 Share with your friends
+* ⭐ Star the project on GitHub  
+* ☕ [Buy me a coffee](https://buymeacoffee.com/nrnworld)  
+* 📢 Share with your friends  
+* ☕ Buying me a coffee  
+* 📢 Sharing with your friends
