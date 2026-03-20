@@ -308,7 +308,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch((err) => console.error(err));
+      document.documentElement.requestFullscreen().catch(() => {});
     } else document.exitFullscreen?.();
   };
 
@@ -813,7 +813,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
             <span className="material-symbols-outlined text-sm">emoji_events</span>
             Bästa
           </div>
-          <p className="text-white text-2xl md:text-3xl font-black">{Math.max(score, ...JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]').map((s: any) => s.score), 0).toLocaleString()}</p>
+          <p className="text-white text-2xl md:text-3xl font-black">{(() => { try { const scores = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]'); return Math.max(score, ...scores.map((s: { score: number }) => s.score), 0).toLocaleString(); } catch { return score.toLocaleString(); } })()}</p>
         </div>
         <div className="glass-card rounded-2xl p-5 text-center border border-white/10">
           <div className="flex items-center justify-center gap-1 text-white/40 text-xs font-bold uppercase tracking-widest mb-2">
@@ -935,7 +935,7 @@ const useBackgroundMusic = (level: number, isMuted: boolean = false) => {
       audio.volume = 0; // Start with volume 0 for fade-in
 
       // Play and fade in
-      audio.play().catch(e => console.log('Audio play failed:', e));
+      audio.play().catch(() => {});
 
       // Fade in over 3 seconds
       let currentVolume = 0;
@@ -1127,8 +1127,21 @@ const getThemeConfig = (theme: string) => {
   return THEME_CONFIGS.default;
 };
 
-const generateBackgroundElements = (level: number, levelLength: number, theme: string) => {
-  const elements: any[] = [];
+interface BackgroundElement {
+  kind: 'building' | 'animal';
+  subtype: string;
+  x: number;
+  scale: number;
+  color?: string;
+  parallax: number;
+  phase?: number;
+  waves?: boolean;
+  isSkyAnimal?: boolean;
+  skyY?: number;
+}
+
+const generateBackgroundElements = (level: number, levelLength: number, theme: string): BackgroundElement[] => {
+  const elements: BackgroundElement[] = [];
   const config = getThemeConfig(theme);
   const spacing = 600;
   const count = Math.floor(levelLength / spacing);
@@ -3893,7 +3906,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (buyUpgrade(type, cost)) {
       setMessage('Uppgradering köpt!');
     } else {
-      setMessage('Not enough coins!');
+      setMessage('Inte tillräckligt med mynt!');
     }
     setTimeout(() => setMessage(''), 2000);
   };
