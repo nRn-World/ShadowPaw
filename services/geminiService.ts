@@ -9,7 +9,7 @@ try {
     ai = new GoogleGenAI({ apiKey });
   }
 } catch (e) {
-  console.warn("Gemini AI initialization failed, using fallback mode");
+  // Gemini AI initialization failed, using fallback mode
 }
 
 export const getGameTip = async (): Promise<string> => {
@@ -25,8 +25,7 @@ export const getGameTip = async (): Promise<string> => {
       },
     });
     return response.text.trim() || "Använd neon-hoppet för att nå högre!";
-  } catch (error) {
-    console.error("Gemini Error:", error);
+  } catch {
     return "Håll utkik efter vakthundarna!";
   }
 };

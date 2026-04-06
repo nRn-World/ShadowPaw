@@ -558,9 +558,16 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
     ];
 
     const savedScoresData = localStorage.getItem('shadow_paw_scores');
-    const savedScores = savedScoresData ? JSON.parse(savedScoresData) : [];
+    let savedScores: { name: string; score: number; date: string }[] = [];
+    if (savedScoresData) {
+      try {
+        savedScores = JSON.parse(savedScoresData);
+      } catch {
+        savedScores = [];
+      }
+    }
 
-    const userScores: ScoreEntry[] = savedScores.map((s: any) => ({
+    const userScores: ScoreEntry[] = savedScores.map((s) => ({
       rank: 0,
       name: s.name,
       score: s.score,
@@ -1140,6 +1147,9 @@ interface BackgroundElement {
   skyY?: number;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GameState = any;
+
 const generateBackgroundElements = (level: number, levelLength: number, theme: string): BackgroundElement[] => {
   const elements: BackgroundElement[] = [];
   const config = getThemeConfig(theme);
@@ -1289,7 +1299,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           duration: 260,
         },
       flashTimer: 0,
-      bolts: [] as any[], // Current active lightning bolts
+      lightningBolts: [],
+      bolts: [], // Current active lightning bolts
       weatherParticles: [] as any[],
       player: {
         x: 100, y: 150, width: 50, height: 70,
@@ -1304,19 +1315,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         facing: 1 // 1 for right, -1 for left
       },
       jerry: { x: levelLength - 150, y: 350, width: 40, height: 50, rescued: false },
-      platforms: [] as any[],
-      holes: [] as any[],
-      fishes: [] as any[],
-      enemies: [] as any[],
-      bullets: [] as any[],
-      particles: [] as any[],
-      floatingTexts: [] as any[],
-      hazards: [] as any[],
-      boss: null as any,
+      platforms: [],
+      holes: [],
+      fishes: [],
+      enemies: [],
+      bullets: [],
+      particles: [],
+      floatingTexts: [],
+      hazards: [],
+      boss: null,
       keys: {} as Record<number, boolean>,
       showFishWarning: false,
       totalCollectedInLevel: 0,
-      backgroundElements: [] as any[], // Trees, buildings, etc.
+      backgroundElements: [],
       lastStatUpdate: 0
     };
 
@@ -1616,7 +1627,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
   };
 
-  const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
+  const registerCombo = (game: GameState, baseScore: number, x: number, y: number) => {
     game.combo = (game.combo || 0) + 1;
     game.comboTimer = 150;
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
