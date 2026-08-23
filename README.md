@@ -85,4 +85,6 @@ If you like this project, consider:
 
 * ⭐ Star the project on GitHub  
 * ☕ **Support development**: [Buy me a coffee 💜](https://ko-fi.com/nrnworld)  
-* 📢 Share with your friends  
+* 📢 Share with your friends
+
+Created by ❤️ © nRn World
