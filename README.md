@@ -84,5 +84,5 @@ Created 2026 by © nRn World
 If you like this project, consider:
 
 * ⭐ Star the project on GitHub  
-* ☕ [Support on Ko-fi](https://ko-fi.com/nrnworld)  
+* ☕ **Support development**: [Buy me a coffee 💜](https://ko-fi.com/nrnworld)  
 * 📢 Share with your friends  
