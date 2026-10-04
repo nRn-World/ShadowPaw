@@ -67,6 +67,10 @@ export interface PlayerProgress {
     reduceMotion: boolean;
     debugOverlay: boolean;
     haptics: boolean;
+    /** Master switch: when true nothing is audible, whatever the volumes are. */
+    muted: boolean;
+    musicVolume: number;
+    sfxVolume: number;
   };
   stats: {
     totalEnemiesDefeated: number;

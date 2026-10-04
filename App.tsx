@@ -1,9 +1,10 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverView, ShopView, QuestsView, PlayingView } from './components/Views';
 import { AppView } from './types';
-import { ProgressProvider } from './context/ProgressContext';
+import { ProgressProvider, useProgress } from './context/ProgressContext';
+import { AudioEngine } from './services/AudioEngine';
 
 const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppView.LEADERBOARD, AppView.SHOP, AppView.QUESTS, AppView.GAME_OVER];
 
@@ -12,21 +13,32 @@ const App: React.FC = () => {
   const [lastScore, setLastScore] = useState(0);
   const [lastFishesCollected, setLastFishesCollected] = useState(0);
   const menuMusicRef = useRef<HTMLAudioElement | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const { progress } = useProgress();
+  const { muted, musicVolume } = progress.settings;
+
+  const getMusicVolume = () => (muted ? 0 : Math.min(1, (musicVolume / 100) * 0.5));
+
+  // One global audio state: every SFX in the game honours mute + the SFX slider.
+  useEffect(() => {
+    AudioEngine.setVolume(progress.settings.sfxVolume / 100);
+    AudioEngine.setMuted(muted);
+  }, [muted, progress.settings.sfxVolume]);
 
   useEffect(() => {
     const shouldPlayMusic = MENU_VIEWS.includes(currentView);
-    
+
     if (shouldPlayMusic && !menuMusicRef.current) {
       const audio = new Audio('Sounds/Effects/meny.mp3');
+      audio.dataset.menuMusic = 'true';
       audio.loop = true;
       audio.volume = 0;
       audio.play().catch(() => {});
+      const maxVolume = getMusicVolume();
       let vol = 0;
       const fadeIn = setInterval(() => {
-        vol = Math.min(0.4, vol + 0.02);
-        audio.volume = isMuted ? 0 : vol;
-        if (vol >= 0.4) clearInterval(fadeIn);
+        vol = Math.min(maxVolume, vol + 0.02);
+        audio.volume = vol;
+        if (vol >= maxVolume) clearInterval(fadeIn);
       }, 80);
       menuMusicRef.current = audio;
     } else if (!shouldPlayMusic && menuMusicRef.current) {
@@ -39,9 +51,16 @@ const App: React.FC = () => {
       }, 50);
       menuMusicRef.current = null;
     } else if (menuMusicRef.current) {
-      menuMusicRef.current.volume = isMuted ? 0 : 0.4;
+      // Mute / slider changes ramp the live element so it never clicks.
+      const a = menuMusicRef.current;
+      const target = getMusicVolume();
+      const step = (target - a.volume) / 8;
+      const ramp = setInterval(() => {
+        a.volume = Math.abs(target - a.volume) < Math.abs(step) ? target : a.volume + step;
+        if (a.volume === target) clearInterval(ramp);
+      }, 25);
     }
-  }, [currentView, isMuted]);
+  }, [currentView, muted, musicVolume]);
 
   useEffect(() => {
     const isPlaying = currentView === AppView.PLAYING;
@@ -53,15 +72,17 @@ const App: React.FC = () => {
     };
   }, [currentView]);
 
-  const handleNavigate = (view: AppView) => {
+  // Memoised so a progress update (coins from every fish) does not hand the
+  // views a new callback identity on every render.
+  const handleNavigate = useCallback((view: AppView) => {
     setCurrentView(view);
-  };
+  }, []);
 
-  const handleGameEnd = (score: number, fishesCollected: number) => {
+  const handleGameEnd = useCallback((score: number, fishesCollected: number) => {
     setLastScore(score);
     setLastFishesCollected(fishesCollected);
     setCurrentView(AppView.GAME_OVER);
-  };
+  }, []);
 
   const renderView = () => {
     switch (currentView) {
@@ -88,40 +109,20 @@ const App: React.FC = () => {
 
   return (
     <div className="relative min-h-screen w-full flex flex-col bg-background-dark overflow-x-hidden">
-      {/* Dynamic Background Image Overlay */}
-      <div className="fixed inset-0 z-0 overflow-hidden">
-        {/* Natural Night Sky Base */}
-        <div className="absolute inset-0 bg-[#020817] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-[#020817] to-black"></div>
-        
-        {/* Neon City Haze & Stars */}
-        <div className="absolute inset-0 opacity-40 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]"></div>
-
-        <img 
-          alt="Night Cityscape" 
-          className="w-full h-full object-cover opacity-30 pointer-events-none mix-blend-screen scale-110 animate-pulse-slow"
-          src="https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?q=80&w=2000&auto=format&fit=crop"
-        />
-
-        {/* Cinematic Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#020817]/80 via-transparent to-background-dark"></div>
-        <div className="absolute inset-0 bg-gradient-to-r from-background-dark/40 via-transparent to-background-dark/40"></div>
+      {/* Night city skyline. The photo is self-hosted (public/city-bg.jpg) so the
+          menus never wait on a remote host, and the CSS backdrop grades it to the
+          game's neon palette on top. */}
+      <div className="app-backdrop" aria-hidden="true">
+        <img src="/city-bg.jpg" alt="" className="app-city-photo" />
+        <div className="app-backdrop-stars" />
+        <div className="app-vignette" />
       </div>
 
       <Header currentView={currentView} onNavigate={handleNavigate} />
 
-      <main className="relative z-10 flex-1 flex flex-col items-center px-4">
+      <main className="relative z-10 flex-1 flex flex-col items-center px-4 pb-16">
         {renderView()}
       </main>
-
-      <style>{`
-        @keyframes pulse-slow {
-          0%, 100% { opacity: 0.25; transform: scale(1.05); }
-          50% { opacity: 0.35; transform: scale(1.1); }
-        }
-        .animate-pulse-slow {
-          animation: pulse-slow 20s infinite ease-in-out;
-        }
-      `}</style>
     </div>
   );
 };

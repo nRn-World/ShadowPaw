@@ -64,6 +64,9 @@ const defaultProgress: PlayerProgress = {
     reduceMotion: false,
     debugOverlay: false,
     haptics: true,
+    muted: false,
+    musicVolume: 75,
+    sfxVolume: 50,
   },
   stats: {
     totalEnemiesDefeated: 0,
@@ -86,6 +89,8 @@ interface ProgressContextType {
   resetDailyQuests: () => void;
   claimQuestReward: (questId: string) => void;
   updateSettings: (updates: Partial<PlayerProgress['settings']>) => void;
+  setMuted: (muted: boolean) => void;
+  toggleMuted: () => void;
   updateStats: (updates: Partial<PlayerProgress['stats']>) => void;
   unlockAchievement: (achievementId: string) => void;
   unlockSkin: (skinId: string) => void;
@@ -104,6 +109,29 @@ interface ProgressContextType {
 
 const ProgressContext = createContext<ProgressContextType | undefined>(undefined);
 
+/** Older builds stored the two volume sliders outside the save file. Adopt those
+    values once so a returning player keeps the levels they already picked. */
+const migrateLegacyAudio = (settings: PlayerProgress['settings']): PlayerProgress['settings'] => {
+  if (typeof window === 'undefined') return settings;
+  try {
+    const legacyMusic = localStorage.getItem('shadow_paw_music');
+    const legacySfx = localStorage.getItem('shadow_paw_sfx');
+    return {
+      ...settings,
+      musicVolume: legacyMusic !== null && settings.musicVolume === defaultProgress.settings.musicVolume
+        ? clampVolume(Number(legacyMusic))
+        : settings.musicVolume,
+      sfxVolume: legacySfx !== null && settings.sfxVolume === defaultProgress.settings.sfxVolume
+        ? clampVolume(Number(legacySfx))
+        : settings.sfxVolume,
+    };
+  } catch {
+    return settings;
+  }
+};
+
+const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 50);
+
 export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [progress, setProgress] = useState<PlayerProgress>(() => {
     if (typeof window !== 'undefined') {
@@ -115,7 +143,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
             ...defaultProgress,
             ...parsed,
             upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-            settings: { ...defaultProgress.settings, ...(parsed.settings || {}) },
+            settings: migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }),
             stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
             dailyQuests: parsed.dailyQuests || defaultProgress.dailyQuests,
             weeklyQuests: parsed.weeklyQuests || defaultProgress.weeklyQuests,
@@ -246,6 +274,14 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
     setProgress((p) => ({ ...p, settings: { ...p.settings, ...updates } }));
   };
 
+  const setMuted = (muted: boolean) => {
+    setProgress((p) => (p.settings.muted === muted ? p : { ...p, settings: { ...p.settings, muted } }));
+  };
+
+  const toggleMuted = () => {
+    setProgress((p) => ({ ...p, settings: { ...p.settings, muted: !p.settings.muted } }));
+  };
+
   const updateStats = (updates: Partial<PlayerProgress['stats']>) => {
     setProgress((p) => ({ ...p, stats: { ...p.stats, ...updates } }));
   };
@@ -334,7 +370,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
         ...defaultProgress,
         ...parsed,
         upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-        settings: { ...defaultProgress.settings, ...(parsed.settings || {}) },
+        settings: migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }),
         stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
         dailySeed: parsed.dailySeed || defaultProgress.dailySeed,
         weeklySeed: parsed.weeklySeed || defaultProgress.weeklySeed,
@@ -357,6 +393,8 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       resetDailyQuests,
       claimQuestReward,
       updateSettings,
+      setMuted,
+      toggleMuted,
       updateStats,
       unlockAchievement,
       unlockSkin,

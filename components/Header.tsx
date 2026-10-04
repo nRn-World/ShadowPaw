@@ -8,82 +8,104 @@ interface HeaderProps {
   onNavigate: (view: AppView) => void;
 }
 
+const NAV_ITEMS: { view: AppView; icon: string; label: string }[] = [
+  { view: AppView.START, icon: 'home', label: 'Hem' },
+  { view: AppView.SHOP, icon: 'store', label: 'Butik' },
+  { view: AppView.QUESTS, icon: 'task_alt', label: 'Uppdrag' },
+  { view: AppView.LEADERBOARD, icon: 'emoji_events', label: 'Topplista' },
+];
+
 const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
   const isActive = (view: AppView) => currentView === view;
-  const { progress } = useProgress();
+  const { progress, toggleMuted } = useProgress();
+  const muted = progress.settings.muted;
 
   return (
-    <header className="relative z-50 w-full border-b border-white/5 bg-[#020817]/80 backdrop-blur-xl">
-      <div className="max-w-6xl mx-auto px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
-          {/* Logo */}
-          <button 
+    <header className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-[#04060f]/70 backdrop-blur-2xl">
+      {/* Hairline highlight along the top edge. */}
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <div className="flex h-16 items-center justify-between gap-3">
+          {/* Brand */}
+          <button
             onClick={() => onNavigate(AppView.START)}
-            className="flex items-center gap-3 group shrink-0"
+            className="group flex shrink-0 items-center gap-2.5"
+            aria-label="Till startsidan"
           >
-            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <span className="material-symbols-outlined text-primary text-lg">pets</span>
-            </div>
-            <div className="hidden sm:block text-left">
-              <h1 className="text-white font-black text-xs uppercase tracking-wider">Created 2026 by © nRn World</h1>
-            </div>
+            <span className="relative flex size-9 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 transition-all duration-200 group-hover:border-primary/50 group-hover:bg-primary/20">
+              <span
+                className="absolute inset-0 rounded-xl opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                style={{ boxShadow: '0 0 18px rgba(43,238,121,0.55)' }}
+              />
+              <span className="material-symbols-outlined relative text-primary text-lg">pets</span>
+            </span>
+            <span className="hidden text-left leading-none sm:block">
+              <span className="block font-display text-sm font-black tracking-[0.18em] text-white">SHADOW PAW</span>
+              <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-[0.22em] text-white/35">
+                NRN World
+              </span>
+            </span>
           </button>
 
-          {/* Coins Display - Mobile/Tablet */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20 shrink-0 sm:hidden">
-            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-            <span className="text-yellow-500 font-black text-sm">{progress.coins}</span>
+          {/* Coins on small screens */}
+          <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-2.5 py-1.5 sm:hidden">
+            <span className="material-symbols-outlined text-sm text-yellow-500">monetization_on</span>
+            <span className="tabular text-sm font-black text-yellow-400">{progress.coins}</span>
           </div>
 
           {/* Navigation */}
-          <nav className="hidden md:flex items-center gap-1">
-            <NavButton 
-              active={isActive(AppView.START)} 
-              onClick={() => onNavigate(AppView.START)}
-              icon="home"
-              label="Home"
-            />
-            <NavButton 
-              active={isActive(AppView.SHOP)} 
-              onClick={() => onNavigate(AppView.SHOP)}
-              icon="store"
-              label="Shop"
-            />
-            <NavButton 
-              active={isActive(AppView.QUESTS)} 
-              onClick={() => onNavigate(AppView.QUESTS)}
-              icon="task_alt"
-              label="Quests"
-            />
-            <NavButton 
-              active={isActive(AppView.LEADERBOARD)} 
-              onClick={() => onNavigate(AppView.LEADERBOARD)}
-              icon="emoji_events"
-              label="Leaderboard"
-            />
+          <nav className="hidden items-center gap-1 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-1 md:flex">
+            {NAV_ITEMS.map((item) => (
+              <NavButton
+                key={item.view}
+                active={isActive(item.view)}
+                onClick={() => onNavigate(item.view)}
+                icon={item.icon}
+                label={item.label}
+              />
+            ))}
           </nav>
 
-          {/* Right Side */}
-          <div className="flex items-center gap-3">
-            {/* Coins - Desktop */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-              <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-              <span className="text-yellow-500 font-black text-sm">{progress.coins}</span>
+          {/* Right side */}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* One button mutes/unmutes music and every sound effect at once. */}
+            <button
+              onClick={toggleMuted}
+              aria-pressed={muted}
+              aria-label={muted ? 'Slå på ljudet' : 'Stäng av ljudet'}
+              title={muted ? 'Slå på ljudet' : 'Stäng av ljudet'}
+              className={`relative flex size-9 items-center justify-center rounded-xl border transition-all duration-200 ${
+                muted
+                  ? 'border-primary-red/40 bg-primary-red/10 text-primary-red hover:bg-primary-red/20'
+                  : 'border-primary/25 bg-primary/10 text-primary hover:bg-primary/20'
+              }`}
+            >
+              {muted && (
+                <span
+                  className="absolute inset-0 rounded-xl"
+                  style={{ boxShadow: '0 0 16px rgba(255,77,109,0.45)' }}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="material-symbols-outlined relative text-lg">
+                {muted ? 'volume_off' : 'volume_up'}
+              </span>
+            </button>
+            <div className="hidden items-center gap-1.5 rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-2.5 py-1.5 sm:flex">
+              <span className="material-symbols-outlined text-sm text-yellow-500">monetization_on</span>
+              <span className="tabular text-sm font-black text-yellow-400">{progress.coins}</span>
             </div>
 
-            {/* Level Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20">
-              <span className="material-symbols-outlined text-primary text-xs">military_tech</span>
-              <span className="text-primary font-bold text-xs">{progress.level}</span>
+            <div className="hidden items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-2.5 py-1.5 sm:flex">
+              <span className="material-symbols-outlined text-xs text-primary">military_tech</span>
+              <span className="tabular text-xs font-black text-primary">{progress.level}</span>
             </div>
 
             {currentView !== AppView.START && (
-              <button
-                onClick={() => onNavigate(AppView.PLAYING)}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary text-[#112218] font-black text-sm uppercase tracking-wider hover:bg-primary/90 transition-all shrink-0 shadow-[0_0_15px_rgba(43,238,121,0.5)] border-2 border-primary/50"
-              >
+              <button onClick={() => onNavigate(AppView.PLAYING)} className="btn-primary px-4 py-2 text-[13px] sm:px-5">
                 <span className="material-symbols-outlined text-base">play_arrow</span>
-                <span className="hidden sm:inline">Play</span>
+                <span className="hidden sm:inline">Spela</span>
               </button>
             )}
           </div>
@@ -103,14 +125,20 @@ interface NavButtonProps {
 const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-      active 
-        ? 'bg-white/10 text-white' 
-        : 'text-white/60 hover:text-white hover:bg-white/5'
+    aria-current={active ? 'page' : undefined}
+    className={`relative flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition-all duration-200 ${
+      active ? 'text-white' : 'text-white/50 hover:bg-white/[0.06] hover:text-white/85'
     }`}
   >
-    <span className={`material-symbols-outlined text-lg ${active ? 'text-primary' : ''}`}>{icon}</span>
-    <span className="hidden lg:inline">{label}</span>
+    {active && (
+      <span className="absolute inset-0 rounded-xl border border-white/10 bg-white/[0.08]" aria-hidden="true" />
+    )}
+    <span
+      className={`material-symbols-outlined relative text-lg transition-colors duration-200 ${active ? 'text-primary' : ''}`}
+    >
+      {icon}
+    </span>
+    <span className="relative hidden lg:inline">{label}</span>
   </button>
 );
 
