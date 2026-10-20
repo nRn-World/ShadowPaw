@@ -1781,7 +1781,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       lives: existingLives,
       // Boss stages get enough extra shots for missed shots and a few regular
       // enemies, without turning their required fight into an ammo soft-lock.
-      ammo: progress.upgrades.maxAmmo + (progress.level >= 10 ? 2 : 0) + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0),
+      ammo: progress.upgrades.maxAmmo + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0),
       levelLength: levelLength,
       weather: weather,
       intensity: intensity,
@@ -1876,7 +1876,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     // Passive perks from skill tree milestones.
     if (progress.level >= 5) game.player.speed += 0.6;
     if (progress.level >= 10) game.ammo += 2;
-    if (progress.level >= 15) game.player.invincibleTimer = 20;
+    if (progress.level >= 15) { game.player.invincible = true; game.player.invincibleTimer = 120; }
 
     // Generate background elements
     game.backgroundElements = generateBackgroundElements(theme);
@@ -6278,7 +6278,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
           <div className={`rounded-lg p-3 border ${progress.level >= 5 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 5: Smidiga tassar (+fart)</div>
           <div className={`rounded-lg p-3 border ${progress.level >= 10 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 10: Ammoeffektiv</div>
-          <div className={`rounded-lg p-3 border ${progress.level >= 15 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 15: Vaksintinkt</div>
+          <div className={`rounded-lg p-3 border ${progress.level >= 15 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 15: Vaksintinkt (2 s startskydd)</div>
         </div>
       </div>
 
