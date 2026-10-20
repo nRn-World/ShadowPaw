@@ -3349,9 +3349,15 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (pl.x < pk.x + pk.width && pl.x + pl.width > pk.x && pl.y < pk.y + pk.height && pl.y + pl.height > pk.y) {
             pk.collected = true;
             if (pk.type === 'heart') {
-              game.lives = Math.min(5, game.lives + 1);
-              setLives(game.lives);
-              pushToast(game, '+1 LIV', '#ff5c7a');
+              if (game.lives >= 5) {
+                game.score += 500;
+                grantXp(game, 15);
+                pushToast(game, 'FULL HÄLSA +500', '#ff5c7a');
+              } else {
+                game.lives = Math.min(5, game.lives + 1);
+                setLives(game.lives);
+                pushToast(game, '+1 LIV', '#ff5c7a');
+              }
             } else {
               pl.invincible = true;
               pl.invincibleTimer = 300;
@@ -3387,8 +3393,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           // Check collision with player - collect coin
           if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x &&
             game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {            f.collected = true;
+            const scoreBeforeFish = game.score;
             registerCombo(game, 50, f.x, f.y);
-            if (game.rule === 'GOLDRUSH') game.score += 50;
+            if (game.rule === 'GOLDRUSH') game.score += game.score - scoreBeforeFish;
             grantXp(game, 10);
             awardCoins(game, 1);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
