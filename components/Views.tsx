@@ -2292,7 +2292,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   // still fires the moment the cat touches ground. Coyote time covers the
   // opposite case: walking off a ledge right before pressing still jumps.
   const requestJump = () => {
-    if (!gameRef.current) return;
+    if (!gameRef.current || isPausedRef.current) return;
     gameRef.current.player.jumpBuffer = 8;
     gameRef.current.player.jumpHeld = true;
   };
@@ -2336,7 +2336,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   const triggerDash = () => {
     const game = gameRef.current;
-    if (!game || !game.running) return;
+    if (!game || !game.running || isPausedRef.current) return;
     const p = game.player;
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
@@ -2481,14 +2481,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const setKeyState = (code: number, active: boolean) => {
     if (!gameRef.current) return;
     const game = gameRef.current;
-    game.keys[code] = active;
 
     // Paus med Escape (27) eller P (80)
     if (active && [27, 80].includes(code)) {
+      game.keys[code] = active;
       togglePause();
       return;
     }
-    if (isPausedRef.current) return;
+    // Under paus ignoreras nedtryckningar, men uppsläpp rensar alltid tangenten
+    if (isPausedRef.current) {
+      if (!active) game.keys[code] = false;
+      return;
+    }
+    game.keys[code] = active;
 
     if ([32, 38, 87].includes(code)) {
       if (active) requestJump();
@@ -2504,7 +2509,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   const fireBullet = (targetX: number | null = null, targetY: number | null = null) => {
-    if (!gameRef.current || !gameRef.current.running) return;
+    if (!gameRef.current || !gameRef.current.running || isPausedRef.current) return;
     const game = gameRef.current;
     if (game.ammo <= 0) return;
     const playerCenterX = game.player.x + game.player.width / 2;
@@ -2579,7 +2584,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('blur', autoPause);
 
-    const handleKeyDown = (e: KeyboardEvent) => setKeyState(e.keyCode, true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Håll-nere ska inte toggla paus eller tömma ammo
+      if (e.repeat && [27, 80, 70, 74, 90, 17].includes(e.keyCode)) return;
+      setKeyState(e.keyCode, true);
+    };
     const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
     const handleMouseDown = (e: MouseEvent) => {
       e.preventDefault();
@@ -6098,7 +6107,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
-        <div className="flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto">
+        <div className={`flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto transition-opacity ${isPaused ? 'opacity-40' : ''}`}>
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
