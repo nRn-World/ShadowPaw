@@ -1,40 +1,33 @@
-# 03 - Bygglogg (Agent 3), omgång 2
+# 03 - Bygglogg (Agent 3, Byggare), omgång 3
 
-Branch `agents/build-20261020-r2`, 2026-10-20. Alla sex godkända punkter byggda, en commit per punkt. `npm run build` OK efter varje punkt. Ingen manuell spelverifiering gjord (endast bygge); inga nätverksanslutna git-kommandon kördes.
+Branch: `agents/build-20261020-r3`. Alla ändringar i `components/Views.tsx`. Ingen manuell spelkontroll gjord (endast bygge); `npx tsc --noEmit` ger samma 3 fel före och efter.
 
-## B-007 - Pausen stoppar all input
-- Ändring: `requestJump`, `triggerDash`, `fireBullet` returnerar under paus. `setKeyState` ignorerar nedtryckningar under paus men uppsläpp rensar tangenten. `e.repeat` ignoreras för Esc/P och skott-tangenter. Touchkontrollerna tonas ner (opacity-40) under paus.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: touchknapparna är bara visuellt nedtonade, själva blockeringen sker i logiken.
+## B-013: HUD-knappar fångar inte Mellanslag
+- Ändring: paus-, mute- och fullskärmsknapparna i HUD anropar `e.currentTarget.blur()` vid klick och har `tabIndex={-1}`. Pausdialogen och tangenthanteringen orörda.
+- Build: OK.
+- Begränsning: ej provkört i webbläsare.
 
-## B-008 - Pausknapp, pausstate per bana, Avsluta körning
-- Ändring: pausknapp (44x44) i HUD, dold på banresultat. `setIsPaused(false)` i byggeffekten; Esc/P ignoreras när `!game.running`. Ny `quitRun` sparar körningssammanfattning och anropar `onEnd(..., { quit: true })`; knappen i pausen heter "Avsluta körning". `App` lagrar `lastQuit`, `GameOverView` får `quit` (deaths 0, rubrik "Körning avslutad").
-- Filer: components/Views.tsx, App.tsx
-- Build: OK
-- Begränsningar: vid frivilligt avslut mitt i bana används `game.score` (inte senaste banans totalScore) som poäng.
+## B-014: Hjärta vid full hälsa, Guldrush x2
+- Ändring: hjärta vid 5 liv ger +500 poäng, 15 XP och toast "FULL HÄLSA +500" (inga mynt); "+1 LIV" bara när liv ökar. Guldrush dubblar hela fiskvinsten (poäng före/efter `registerCombo`).
+- Build: OK.
+- Begränsning: balans (hög combo ger mer under Guldrush) ej speltestad.
 
-## B-009 - Bästa nivå och rekord
-- Ändring: `level` tillagt i `shadow_paw_last_run`. Ny nyckel `shadow_paw_best` ({level, score, runLevel}), skrivs i GameOvers engångsblock. Game Over visar "Nådde nivå X" och "Ny bästa nivå!" med delta. Startskärmen visar "Bästa nivå · Bästa poäng" om värden finns. Defensiv parse.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: dödsorsak (valfri del) hoppades över.
+## B-015: Sköldindikator
+- Ändring: `player.shieldTimer` (300 frames vid sköldpickup), cyan ring (ingen blink de första 3,5 s, blink sista 1,5 s), HUD-chip med sekunder (`stats.shield`), Speed Run-utgång förkortar inte längre aktiv osårbarhet (`Math.max`).
+- Build: OK.
+- Begränsning: ej speltestad visuellt.
 
-## B-012 - Kontoförmåner nivå 10 och 15
-- Ändring: dubbel ammo-bonus borttagen (nu +2, inte +4). Nivå 15 ger 2 s startskydd (`invincible = true`, timer 120); butikstexten kompletterad.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: avsiktlig nerf av ammo för kontonivå 10+ (flaggad för ägaren).
+## B-016: Uppgradering per runnivå
+- Ändring: `RUN_PERKS` (LONG_COMBO, FAST_DASH, AMMO_START, MAGNET, SHIELD_START), `runStatsRef.perks`, `game.perks`. Tre slumpade kort på banresultatet; "Nästa nivå" disabled tills alla val gjorda (val = runLevel - 1 - valda). Valda visas på banresultat och i pausdialog. Toast "UPPGRADERING VÄNTAR" vid runnivå-upp. Inga localStorage-ändringar.
+- Build: OK.
+- Begränsningar: LONG_COMBO gör att combo-mätaren (delar på 150) ligger full de första 60 framesen. Kort visas utan autofokus. Om färre än tre uppgraderingar återstår visas färre kort.
 
-## B-010 - Pickups (hjärta, sköld)
-- Ändring: `game.pickups` genereras efter all övrig generering med enbart `seededRandom` (hjärta på nivå delbar med 3, sköld på nivå >= 4, ej bossnivåer), på icke-markplattformar >= 80 bred. Plockning: +1 liv (max 5, `setLives`), eller 5 s sköld; toast, ljud, haptik, partiklar, skak bara om `!reduceMotion`. Ritas som pulserande glödande former. Ej räknade som fisk.
-- Extra: `perfectLevel` ändrat från `===` till `>=` mot startliv, så att ett upplockat hjärta inte räknas som förlust.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: förlora ett liv och ta ett hjärta samma bana räknas fortfarande som perfekt. Nåbarhet verifierad bara genom konstruktion (plattformstoppar), inte i spel.
+## B-017: Dödsorsak på Game Over
+- Ändring: `lastDeathCauseRef` sätts i `trackDeathCause`, `deathCause` läggs till i `shadow_paw_last_run`; `GameOverView` visar ikon och svenskt tips (`DEATH_TIPS`) när körningen inte avslutats manuellt och orsak finns.
+- Build: OK.
+- Begränsning: ej provkört per dödsorsak.
 
-## B-011 - Banregler (Guldrush, Månsvävning)
-- Ändring: `game.rule` väljs deterministiskt från nivå 3 (ej bossnivåer) via `seededRandom(level * 29.3)`: ca 45 % NONE, 28 % GOLDRUSH (+50 extra per fisk, fiender +15 % fart), 27 % MOON (gravitation x0,82, ej Speed Run eller LOW_GRAVITY-event; annars NONE). Toast vid start och tagg i HUD; `rule` i stats.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: tagg visas bredvid väderchipet (debug-raden med EVENT oförändrad). Omslagna MOON-rullningar blir NONE, så andelen NONE är något högre än 45 %.
+## B-018: runSeed för regel och pickups
+- Ändring: `mulberry32`, `runSeedRef` per körning; banregelrull och pickupplacering använder den i stället för `seededRandom`. Övrig generering och `Math.random()`-sekvens orörda.
+- Build: OK.
+- Begränsning: en bana kan nu få en regel den inte fick förut; ej speltestad.
