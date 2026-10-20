@@ -1692,7 +1692,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     setRestartKey(k => k + 1);
   };
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', rule: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', rule: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, shield: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
   // Computed synchronously so the level is not rebuilt after mount.
   const isTouchDevice = useState<boolean>(() => {
     try {
@@ -1851,7 +1851,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         trail: [] as any[],
         runCycle: 0,
         lastGroundedY: 0,
-        color: skin.color, invincible: false, invincibleTimer: 0,
+        color: skin.color, invincible: false, invincibleTimer: 0, shieldTimer: 0,
         accent: skin.accent,
         isBlinking: false, blinkTimer: 0,
         facing: 1 // 1 for right, -1 for left
@@ -2919,7 +2919,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           // Hand the level budget back so the fish hunt stays achievable.
           game.levelTimer = game.levelTimerBudget || 30;
           game.player.invincible = true;
-          game.player.invincibleTimer = 90;
+          game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, 90);
           game.screenShake = 10;
           pushToast(game, 'TIDEN UTE! -1 LIV', '#ff8888');
           AudioEngine.playLifeLost();
@@ -3305,6 +3305,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         }
       }
 
+      if (game.player.shieldTimer > 0) game.player.shieldTimer--;
       if (game.player.invincibleTimer > 0) game.player.invincibleTimer--;
       else game.player.invincible = false;
 
@@ -3360,7 +3361,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               }
             } else {
               pl.invincible = true;
-              pl.invincibleTimer = 300;
+              pl.invincibleTimer = Math.max(pl.invincibleTimer || 0, 300);
+              pl.shieldTimer = 300;
               pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
             }
             AudioEngine.playLevelUp();
@@ -5720,7 +5722,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       });
 
       ctx.save();
-      if (game.player.invincible) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
+      const shieldLeft = game.player.shieldTimer || 0;
+      if (game.player.invincible && shieldLeft <= 90) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
+      if (shieldLeft > 0) {
+        ctx.save();
+        ctx.globalAlpha = shieldLeft > 90 ? 0.85 : 0.35 + 0.5 * Math.abs(Math.sin(Date.now() / 80));
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(px + pw / 2, py + ph / 2, Math.max(pw, ph) * 0.8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Kattens svans - Ritas bakom kroppen för att se ut som en riktig svans
       const isMovingRight = game.player.facing === 1;
@@ -5957,6 +5970,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           multiplier: game.multiplier || 1,
           streak: game.streak || 0,
           dashReady: game.player.dashCooldown <= 0,
+          shield: Math.ceil((game.player.shieldTimer || 0) / 60),
           noHit: !!game.noHit,
           nearMisses: game.nearMisses || 0,
           toasts: game.toasts || [],
@@ -6135,6 +6149,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     <span className={`text-[10px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
                       {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
                     </span>
+                  </div>
+                )}
+                {stats.shield > 0 && (
+                  <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-sky-300/40 px-2.5 py-1.5">
+                    <span className="material-symbols-outlined text-sky-300 text-base">shield</span>
+                    <span className="text-sm font-black text-sky-300">{stats.shield}s</span>
                   </div>
                 )}
                 {stats.levelType === 'Speed Run' && (
