@@ -3309,8 +3309,43 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         // Only move enemy if platform exists
         const p = game.platforms[e.platform];
         if (p) {
-          e.x += e.velocityX;
-          if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+          if (e.baseVx === undefined) { e.baseVx = e.velocityX; e.baseY = e.y; }
+          const lvlNo = game.level || 1;
+          const clampToPlat = () => { e.x = Math.max(p.x, Math.min(p.x + p.width - e.width, e.x)); };
+          if (e.type === 1 && lvlNo >= 4) {
+            // Rat: telegraphed lunge toward the cat (windup -> lunge -> cooldown).
+            if (e.lungeCd > 0) e.lungeCd--;
+            const pl = game.player;
+            if (e.windup > 0) {
+              e.windup--;
+              if (e.windup === 0) { e.lunge = 14; e.lungeDir = (pl.x + pl.width / 2) >= (e.x + e.width / 2) ? 1 : -1; }
+            } else if (e.lunge > 0) {
+              const spd = Math.min(5.5, Math.max(4, Math.abs(e.baseVx) * 2.2));
+              e.x += e.lungeDir * spd;
+              clampToPlat();
+              e.lunge--;
+              if (e.lunge === 0) { e.lungeCd = 150; e.velocityX = e.lungeDir * Math.abs(e.baseVx); }
+            } else {
+              const cdx = (pl.x + pl.width / 2) - (e.x + e.width / 2);
+              const cdy = Math.abs((pl.y + pl.height / 2) - (e.y + e.height / 2));
+              if (!(e.lungeCd > 0) && cdy < 50 && Math.abs(cdx) >= 60 && Math.abs(cdx) <= 200 && !pl.invincible && !(pl.dashing > 0)) {
+                e.windup = 24;
+              } else {
+                e.x += e.velocityX;
+                if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+              }
+            }
+          } else {
+            e.x += e.velocityX;
+            if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+            if (e.type === 2 && lvlNo >= 3) {
+              // Bat/bird: small rhythmic hop, max 16 px so stomp and shots keep working.
+              if (e.hopT === undefined) e.hopT = Math.floor(Math.abs(e.x) / 7) % 90;
+              e.hopT++;
+              const ph = e.hopT % 90;
+              e.y = ph < 24 ? e.baseY - 16 * Math.sin(Math.PI * ph / 24) : e.baseY;
+            }
+          }
         }
 
         // Skuggdash: under dashen går katten genom fiender utan att skadas.
@@ -5083,6 +5118,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.beginPath();
         ctx.ellipse(ex + ew / 2, ey + eh + 2, ew * 0.45, 5, 0, 0, Math.PI * 2);
         ctx.fill();
+
+        if (e.windup > 0) {
+          const blink = progress.settings.reduceMotion || Math.floor(e.windup / 3) % 2 === 0;
+          ctx.save();
+          ctx.fillStyle = blink ? 'rgba(255, 40, 40, 0.35)' : 'rgba(255, 40, 40, 0.15)';
+          ctx.strokeStyle = '#ff2828';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(ex + ew / 2, ey + eh / 2, ew * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#ff2828';
+          ctx.font = 'bold 20px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('!', ex + ew / 2, ey - 8);
+          ctx.restore();
+        }
 
         if (e.type === 0) { // Dog enemy - Bulldog with spiked collar and jowls
           const dogFacing = e.velocityX >= 0 ? 1 : -1;
