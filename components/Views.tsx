@@ -228,8 +228,20 @@ const InjuredCatVisual: React.FC = () => (
 );
 
 /** START MENU **/
+/** Läser rekordet från den separata nyckeln shadow_paw_best (aldrig kraschande). */
+const readBestRecord = (): { level: number; score: number; runLevel: number } => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('shadow_paw_best') || '{}') || {};
+    const n = (v: any) => (typeof v === 'number' && isFinite(v) && v > 0 ? Math.floor(v) : 0);
+    return { level: n(raw.level), score: n(raw.score), runLevel: n(raw.runLevel) };
+  } catch {
+    return { level: 0, score: 0, runLevel: 0 };
+  }
+};
+
 export const StartMenuView: React.FC<{ onNavigate: (v: AppView) => void }> = ({ onNavigate }) => {
   const [tip, setTip] = useState<string>("");
+  const [bestRecord] = useState(readBestRecord);
   const { progress } = useProgress();
 
   const gameTips = [
@@ -267,6 +279,11 @@ export const StartMenuView: React.FC<{ onNavigate: (v: AppView) => void }> = ({ 
         <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-white/55 md:text-base">
           Snabba dig genom neonstaden. Rädda Jerry. Bygg din streak.
         </p>
+        {(bestRecord.level > 0 || bestRecord.score > 0) && (
+          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-primary/80">
+            Bästa nivå {bestRecord.level || 1} · Bästa poäng {bestRecord.score.toLocaleString()}
+          </p>
+        )}
 
         {/* Hero stats */}
         <div className="mt-6 grid grid-cols-3 gap-2.5">
@@ -839,6 +856,10 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     }
   });
   const isNewRecord = score > bestBefore;
+  // Bästa nivå före denna körning (separat nyckel, rör inte PlayerProgress).
+  const [bestRecordBefore] = useState(readBestRecord);
+  const reachedLevel = Math.max(1, Math.floor(Number(lastRun.level) || 1));
+  const isNewBestLevel = reachedLevel > bestRecordBefore.level;
   const didFinishRef = useRef(false);
 
   // R / Enter / Space restarts instantly, except while typing a name.
@@ -865,6 +886,14 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     // Guard against StrictMode's double effect run (would double XP and stats).
     if (didFinishRef.current) return;
     didFinishRef.current = true;
+    try {
+      const prev = readBestRecord();
+      localStorage.setItem('shadow_paw_best', JSON.stringify({
+        level: Math.max(prev.level, reachedLevel),
+        score: Math.max(prev.score, Math.floor(score) || 0),
+        runLevel: Math.max(prev.runLevel, Math.floor(Number(lastRun.runLevel) || 1)),
+      }));
+    } catch { /* ignore */ }
     addXP(Math.floor(score / 10));
     applyRunResults({
       fishesCollected,
@@ -983,6 +1012,12 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
           </h1>
           <p className="mt-4 text-white text-base md:text-lg max-w-lg mx-auto">
             {taunt}
+          </p>
+          <p className="mt-3 text-sm font-black uppercase tracking-widest text-primary">
+            Nådde nivå {reachedLevel}
+            {isNewBestLevel && bestRecordBefore.level > 0
+              ? ` · Ny bästa nivå! (Bästa: ${bestRecordBefore.level}, +${reachedLevel - bestRecordBefore.level})`
+              : isNewBestLevel ? ' · Ny bästa nivå!' : bestRecordBefore.level > 0 ? ` · Bästa: ${bestRecordBefore.level}` : ''}
           </p>
         </div>
       </div>
@@ -2446,6 +2481,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       nearMisses: runStatsRef.current.nearMisses + (game.nearMisses || 0),
       noHit: !!game.noHit,
       runLevel: game.runLevel || 1,
+      level: game.level || 1,
       coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
     }));
   };
