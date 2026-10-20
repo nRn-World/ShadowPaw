@@ -237,6 +237,7 @@ const RUN_PERKS: RunPerk[] = [
   { id: 'SHIELD_START', icon: 'shield', title: 'Startsköld', desc: '5 sekunders sköld i början av varje bana.' },
   { id: 'LONG_COMBO_2', icon: 'timer', title: 'Lång combo II', desc: 'Combofönstret blir ännu längre (270 bildrutor).', requires: 'LONG_COMBO' },
   { id: 'GREEDY', icon: 'savings', title: 'Girig katt', desc: '+50 % poäng på fisk och fiender, men combofönstret är 25 % kortare.' },
+  { id: 'SHADOW_HUNTER', icon: 'visibility', title: 'Skuggjägare', desc: 'Skuggpassage ger dubbel poäng och +1 skott.' },
   { id: 'SWIFT_PAW', icon: 'directions_run', title: 'Snabba tassar', desc: '+8 % springfart.' },
   { id: 'AMMO_START_2', icon: 'target', title: 'Fler skott II', desc: '+3 skott till i början av varje bana.', requires: 'AMMO_START' },
   { id: 'SHIELD_START_2', icon: 'shield', title: 'Startsköld II', desc: '+3 sekunders startsköld.', requires: 'SHIELD_START' },
@@ -1931,6 +1932,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       particles: [],
       floatingTexts: [],
       hazards: [],
+      dashGhosts: [] as any[],
+      shadowRings: [] as any[],
+      dashId: 0,
       boss: null,
       keys: {} as Record<number, boolean>,
       showFishWarning: false,
@@ -2496,6 +2500,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const p = game.player;
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
+    game.dashId = (game.dashId || 0) + 1;
     p.dashCooldown = game.perks?.includes('FAST_DASH') ? 30 : 45;
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
@@ -2515,6 +2520,27 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
     if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(18);
     AudioEngine.playDash();
+  };
+
+  /** Skuggpassage: belöning när dashen går genom en fiende eller laser som annars skadat. */
+  const shadowPass = (game: any, x: number, y: number) => {
+    const hunter = !!game.perks?.includes('SHADOW_HUNTER');
+    const pts = hunter ? 200 : 100;
+    registerCombo(game, pts, x, y);
+    grantXp(game, 10);
+    if (hunter) game.ammo += 1;
+    game.floatingTexts.push({ x, y: y - 8, text: `SKUGGA! +${pts}`, life: 45, color: '#67e8f9' });
+    game.shadowRings.push({ x, y, life: 18, maxLife: 18 });
+    const n = progress.settings.reduceMotion ? 5 : 12;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      game.particles.push({
+        x, y, vx: Math.cos(a) * (2 + Math.random() * 2), vy: Math.sin(a) * (2 + Math.random() * 2),
+        life: 24, color: i % 2 ? '#67e8f9' : '#a78bfa', size: Math.random() * 3 + 2
+      });
+    }
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
+    AudioEngine.playShadowPass();
   };
 
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
@@ -2847,6 +2873,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         p.dashing--;
         p.velocityX = p.dashDir * p.speed * 3.2;
         p.trail.push({ x: p.x + p.width / 2, y: p.y + p.height / 2, life: 14, maxLife: 14 });
+        // Skuggspår: de senaste ca 6 positionerna som genomskinliga silhuetter.
+        game.dashGhosts.push({ x: p.x, y: p.y, w: p.width, h: p.height, life: 16, maxLife: 16 });
+        if (game.dashGhosts.length > 6) game.dashGhosts.shift();
       } else {
         const left = game.keys[37] || game.keys[65];
         const right = game.keys[39] || game.keys[68];
@@ -2870,6 +2899,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       if (p.dashCooldown > 0) p.dashCooldown--;
       p.trail = p.trail.filter((t: any) => --t.life > 0);
+      if (game.dashGhosts.length > 0) game.dashGhosts = game.dashGhosts.filter((g: any) => --g.life > 0);
+      if (game.shadowRings.length > 0) game.shadowRings = game.shadowRings.filter((r: any) => --r.life > 0);
 
       if (game.miniEvent.active && game.miniEvent.type === 'WIND') {
         p.velocityX += Math.sin(Date.now() / 250) * 0.2;
@@ -3185,6 +3216,17 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
         }
 
+        // Skuggdash: under dashen går katten genom fiender utan att skadas.
+        if (game.player.dashing > 0) {
+          if (!game.player.invincible && e.shadowDashId !== game.dashId) {
+            const sx = game.player.x + game.player.width > e.x + 5 && game.player.x < e.x + e.width - 5;
+            const sy = game.player.y + game.player.height > e.y + 5 && game.player.y < e.y + e.height - 5;
+            if (sx && sy) {
+              e.shadowDashId = game.dashId;
+              shadowPass(game, e.x + e.width / 2, e.y + e.height / 2);
+            }
+          }
+        } else
         // ONLY check collision if player is NOT invincible AND there's actual overlap
         if (!game.player.invincible) {
           // More strict collision check - must have CLEAR overlap
@@ -3393,6 +3435,14 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (h.type === 'laser' && !h.active) continue;
           const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
           const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
+          if (overlapX && overlapY && h.type === 'laser' && game.player.dashing > 0) {
+            // Skuggdash genom aktiv laser: ingen skada, en belöning per dash.
+            if (h.shadowDashId !== game.dashId) {
+              h.shadowDashId = game.dashId;
+              shadowPass(game, h.x + h.width / 2, game.player.y + game.player.height / 2);
+            }
+            continue;
+          }
           if (overlapX && overlapY) {
             game.lives--;
             game.player.invincible = true;
@@ -5829,6 +5879,28 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const ph = game.player.height * bodyScaleY;
       const px = game.player.x - game.scrollX - (pw - game.player.width) / 2;
       const py = game.player.y + (game.player.height - ph);
+
+      // Skuggspår: silhuetter av de senaste dash-positionerna och pulsringar vid skuggpassage.
+      game.dashGhosts.forEach((g: any, gi: number) => {
+        ctx.save();
+        ctx.globalAlpha = (g.life / g.maxLife) * 0.4;
+        ctx.fillStyle = gi % 2 ? '#a78bfa' : '#67e8f9';
+        ctx.beginPath();
+        ctx.ellipse(g.x - game.scrollX + g.w / 2, g.y + g.h / 2, g.w * 0.46, g.h * 0.46, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+      game.shadowRings.forEach((r: any) => {
+        const k = 1 - r.life / r.maxLife;
+        ctx.save();
+        ctx.globalAlpha = (1 - k) * 0.8;
+        ctx.strokeStyle = '#67e8f9';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(r.x - game.scrollX, r.y, 10 + k * 45, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
 
       // Dash afterimages
       game.player.trail.forEach((t: any) => {
