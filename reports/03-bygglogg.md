@@ -1,40 +1,36 @@
-# 03 - Bygglogg (Agent 3), omgång 2
+# 03 - Bygglogg (Agent 3), omgång 4
 
-Branch `agents/build-20261020-r2`, 2026-10-20. Alla sex godkända punkter byggda, en commit per punkt. `npm run build` OK efter varje punkt. Ingen manuell spelverifiering gjord (endast bygge); inga nätverksanslutna git-kommandon kördes.
+Branch: `agents/build-20261020-r4`. Byggordning: B-021, B-020, B-019, B-022, B-023, B-024. Alla byggda; `npm run build` OK efter varje punkt. Ingen push gjord. Inga nya beroenden, inget befintligt sparformat ändrat (enda nya lagring: `shadow_paw_hint_rotate` i sessionStorage).
 
-## B-007 - Pausen stoppar all input
-- Ändring: `requestJump`, `triggerDash`, `fireBullet` returnerar under paus. `setKeyState` ignorerar nedtryckningar under paus men uppsläpp rensar tangenten. `e.repeat` ignoreras för Esc/P och skott-tangenter. Touchkontrollerna tonas ner (opacity-40) under paus.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: touchknapparna är bara visuellt nedtonade, själva blockeringen sker i logiken.
+## B-021 Starta om bana betalar inte ut mynt två gånger
+- Ändring: ny `coinFloorRef`; `awardCoins` betalar bara ut mynt över tidigare utbetalt antal för samma bana. Förklarande text i pausdialogen.
+- Filer: `components/Views.tsx`. Build: OK.
+- Begränsning: banresultatets mynt (`coinsThisLevel`) räknar försökets mynt, inte enbart utbetalda.
 
-## B-008 - Pausknapp, pausstate per bana, Avsluta körning
-- Ändring: pausknapp (44x44) i HUD, dold på banresultat. `setIsPaused(false)` i byggeffekten; Esc/P ignoreras när `!game.running`. Ny `quitRun` sparar körningssammanfattning och anropar `onEnd(..., { quit: true })`; knappen i pausen heter "Avsluta körning". `App` lagrar `lastQuit`, `GameOverView` får `quit` (deaths 0, rubrik "Körning avslutad").
-- Filer: components/Views.tsx, App.tsx
-- Build: OK
-- Begränsningar: vid frivilligt avslut mitt i bana används `game.score` (inte senaste banans totalScore) som poäng.
+## B-020 Fler uppgraderingar, bonuskort, Startsköld
+- Ändring: RUN_PERKS 5 till 12 poster (LONG_COMBO_2, GREEDY, SWIFT_PAW, AMMO_START_2, SHIELD_START_2 + SHADOW_HUNTER som lades till i B-019-steget) med `requires`-filter. Startsköld 5 s (gäller även bossbanor, `Math.max` mot befintlig timer); Startsköld II +3 s. Bonuskort (BONUS_AMMO/POINTS/LIFE) när poolen är slut; sparas som `ID#n` i `runStatsRef.perks` och tillämpas en gång i `setupLevel` (återtillämpas vid omstart av banan, inte på senare banor).
+- Filer: `components/Views.tsx`. Build: OK.
+- Begränsning: balans ej speltestad. Bonuspoäng/liv vid omstart räknas om från banstart (avsiktligt).
 
-## B-009 - Bästa nivå och rekord
-- Ändring: `level` tillagt i `shadow_paw_last_run`. Ny nyckel `shadow_paw_best` ({level, score, runLevel}), skrivs i GameOvers engångsblock. Game Over visar "Nådde nivå X" och "Ny bästa nivå!" med delta. Startskärmen visar "Bästa nivå · Bästa poäng" om värden finns. Defensiv parse.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: dödsorsak (valfri del) hoppades över.
+## B-019 Skuggdash
+- Ändring: under dash (`p.dashing > 0`) skadar fiender och aktiva lasrar inte; första passagen per dash ger +100 poäng via `registerCombo`, 10 XP, "SKUGGA!"-text, pulsring, partiklar, ljud och haptik. Efterbilder (`game.dashGhosts`, 6 st). Nytt `AudioEngine.playShadowPass()`. Perk SHADOW_HUNTER (dubbel poäng, +1 skott). Hål, bossprojektiler och bosskontakt påverkas inte.
+- Filer: `components/Views.tsx`, `services/AudioEngine.ts`. Build: OK.
+- Begränsning: stomp av fiende under pågående dash ger skuggpassage i stället för stomp. Balans ej speltestad.
 
-## B-012 - Kontoförmåner nivå 10 och 15
-- Ändring: dubbel ammo-bonus borttagen (nu +2, inte +4). Nivå 15 ger 2 s startskydd (`invincible = true`, timer 120); butikstexten kompletterad.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: avsiktlig nerf av ammo för kontonivå 10+ (flaggad för ägaren).
+## B-022 Fiskmagnet, combo-mätare, ljud
+- Ändring: MAGNET drar fisk inom 120 px (lerp 0,12, glimtpartiklar, hänsyn till reduceMotion); `game.comboWindow` ger korrekt `comboFrac`; musik dämpas till 30 % vid paus/banresultat (`dimmed`-parameter); nya `playHeart`, `playShield`, `playPerkPick`; HUD-chip med upp till 6 uppgraderingsikoner (title/aria-label).
+- Filer: `components/Views.tsx`, `services/AudioEngine.ts`. Build: OK.
+- Begränsning: perk-chip visar inte bonuskort; ej manuellt provat i webbläsare.
 
-## B-010 - Pickups (hjärta, sköld)
-- Ändring: `game.pickups` genereras efter all övrig generering med enbart `seededRandom` (hjärta på nivå delbar med 3, sköld på nivå >= 4, ej bossnivåer), på icke-markplattformar >= 80 bred. Plockning: +1 liv (max 5, `setLives`), eller 5 s sköld; toast, ljud, haptik, partiklar, skak bara om `!reduceMotion`. Ritas som pulserande glödande former. Ej räknade som fisk.
-- Extra: `perfectLevel` ändrat från `===` till `>=` mot startliv, så att ett upplockat hjärta inte räknas som förlust.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: förlora ett liv och ta ett hjärta samma bana räknas fortfarande som perfekt. Nåbarhet verifierad bara genom konstruktion (plattformstoppar), inte i spel.
+## B-023 Tillgänglighet
+- Ändring: `tabIndex={-1}` borttaget från paus-/mute-/helskärmsknapp; Mellanslag stoppas på dessa (keydown/keyup) och ignoreras som hopp när målet är en knapp; aria-label/title på helskärm och alla touchknappar; `role="dialog" aria-modal` på banresultat och paus; fokus flyttas till första kortet/"Nästa nivå" resp. "Fortsätt"; kort har aria-label; dold `aria-live`-rad (sköld/uppgraderingsval).
+- Filer: `components/Views.tsx`. Build: OK.
+- Känt fel som rättades i B-024: ett mellanslag försvann i klasserna för hopp-, dash- och skjutknappen (`bg-.../20backdrop-blur-md`); rättat i B-024-committen.
+- Begränsning: Mellanslag-beteende kan skilja i Firefox (se plan); ingen fokusfälla i dialogerna.
 
-## B-011 - Banregler (Guldrush, Månsvävning)
-- Ändring: `game.rule` väljs deterministiskt från nivå 3 (ej bossnivåer) via `seededRandom(level * 29.3)`: ca 45 % NONE, 28 % GOLDRUSH (+50 extra per fisk, fiender +15 % fart), 27 % MOON (gravitation x0,82, ej Speed Run eller LOW_GRAVITY-event; annars NONE). Toast vid start och tagg i HUD; `rule` i stats.
-- Filer: components/Views.tsx
-- Build: OK
-- Begränsningar: tagg visas bredvid väderchipet (debug-raden med EVENT oförändrad). Omslagna MOON-rullningar blir NONE, så andelen NONE är något högre än 45 %.
+## B-024 Mobil: safe-area och text
+- Ändring: `env(safe-area-inset-*)` på rotcontainer och touchrad (rotscale orörd); `text-[9px]/[10px]` till `text-[11px]` i PlayingView; avvisbar porträttbanner (44 px stängknapp, sessionStorage `shadow_paw_hint_rotate`, bara touch + porträtt); uppgiftskort `grid-cols-3` med mindre text (11 px).
+- Filer: `components/Views.tsx`. Build: OK.
+- Begränsning: ej testat i DevTools; små texter i andra vyer (meny, butik) orörda; kortens text kan bli trång på mycket smala skärmar.
+
+Bygget visar endast befintliga TS-fel (`game.rule`, `import.meta.env`) utanför punkternas ändringar.

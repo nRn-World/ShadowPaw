@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppView, ScoreEntry } from '../types';
 import { getJerryTaunt } from '../services/geminiService';
 import { useProgress } from '../context/ProgressContext';
@@ -226,6 +226,42 @@ const InjuredCatVisual: React.FC = () => (
     `}</style>
   </div>
 );
+
+/** Körningsuppgraderingar (väljs på banresultatet, nollställs vid ny körning). */
+type RunPerk = { id: string; icon: string; title: string; desc: string; requires?: string };
+const RUN_PERKS: RunPerk[] = [
+  { id: 'LONG_COMBO', icon: 'timer', title: 'Lång combo', desc: 'Combofönstret är 40 % längre.' },
+  { id: 'FAST_DASH', icon: 'bolt', title: 'Snabb dash', desc: 'Dashen laddas om snabbare.' },
+  { id: 'AMMO_START', icon: 'target', title: 'Extra skott', desc: '+3 skott i början av varje bana.' },
+  { id: 'MAGNET', icon: 'attractions', title: 'Fiskmagnet', desc: 'Du fångar fisk på längre avstånd.' },
+  { id: 'SHIELD_START', icon: 'shield', title: 'Startsköld', desc: '5 sekunders sköld i början av varje bana.' },
+  { id: 'LONG_COMBO_2', icon: 'timer', title: 'Lång combo II', desc: 'Combofönstret blir ännu längre (270 bildrutor).', requires: 'LONG_COMBO' },
+  { id: 'GREEDY', icon: 'savings', title: 'Girig katt', desc: '+50 % poäng på fisk och fiender, men combofönstret är 25 % kortare.' },
+  { id: 'SHADOW_HUNTER', icon: 'visibility', title: 'Skuggjägare', desc: 'Skuggpassage ger dubbel poäng och +1 skott.' },
+  { id: 'SWIFT_PAW', icon: 'directions_run', title: 'Snabba tassar', desc: '+8 % springfart.' },
+  { id: 'AMMO_START_2', icon: 'target', title: 'Fler skott II', desc: '+3 skott till i början av varje bana.', requires: 'AMMO_START' },
+  { id: 'SHIELD_START_2', icon: 'shield', title: 'Startsköld II', desc: '+3 sekunders startsköld.', requires: 'SHIELD_START' },
+];
+
+/** Bonuskort som erbjuds när alla vanliga uppgraderingar är valda. Engångseffekt nästa bana. */
+const BONUS_PERKS: RunPerk[] = [
+  { id: 'BONUS_AMMO', icon: 'target', title: 'Skottpaket', desc: '+5 skott nästa bana.' },
+  { id: 'BONUS_POINTS', icon: 'stars', title: 'Poängbonus', desc: '+1000 poäng.' },
+  { id: 'BONUS_LIFE', icon: 'favorite', title: 'Extra liv', desc: '+1 liv (max 5).' },
+];
+const perkTitle = (id: string) => {
+  const base = id.split('#')[0];
+  return RUN_PERKS.find(pk => pk.id === base)?.title || BONUS_PERKS.find(pk => pk.id === base)?.title || base;
+};
+
+/** Tips på Game Over per dödsorsak. */
+const DEATH_TIPS: Record<string, { icon: string; text: string }> = {
+  enemy: { icon: 'pets', text: 'Hoppa på fiender uppifrån eller skjut dem.' },
+  hazard: { icon: 'warning', text: 'Vänta in lasern och hoppa över.' },
+  hole: { icon: 'arrow_downward', text: 'Använd dubbelhopp och dash över hål.' },
+  timer: { icon: 'timer', text: 'Samla fisk i en jämn takt, tiden tar slut.' },
+  boss: { icon: 'shield', text: 'Rör dig och undvik projektilerna, skjut när bossen stannar.' },
+};
 
 /** START MENU **/
 /** Läser rekordet från den separata nyckeln shadow_paw_best (aldrig kraschande). */
@@ -1019,6 +1055,12 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
               ? ` · Ny bästa nivå! (Bästa: ${bestRecordBefore.level}, +${reachedLevel - bestRecordBefore.level})`
               : isNewBestLevel ? ' · Ny bästa nivå!' : bestRecordBefore.level > 0 ? ` · Bästa: ${bestRecordBefore.level}` : ''}
           </p>
+          {!quit && DEATH_TIPS[lastRun.deathCause as string] && (
+            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-white/80">
+              <span className="material-symbols-outlined text-base text-yellow-300" aria-hidden="true">{DEATH_TIPS[lastRun.deathCause as string].icon}</span>
+              {DEATH_TIPS[lastRun.deathCause as string].text}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1105,11 +1147,11 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
 };
 
 // AUDIO MANAGER FOR BACKGROUND MUSIC
-const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75) => {
+const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75, dimmed: boolean = false) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const targetVolume = isMuted ? 0 : Math.min(1, (musicVolume / 100) * 0.5);
+  const targetVolume = isMuted ? 0 : Math.min(1, (musicVolume / 100) * 0.5) * (dimmed ? 0.3 : 1);
 
   // Mute + slider changes ramp the live track so nothing clicks.
   useEffect(() => {
@@ -1297,6 +1339,18 @@ const BOSS_ATTACK_PROFILES: Record<string, { cooldown: number; speed: number; ra
 const seededRandom = (seed: number) => {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
   return x - Math.floor(x);
+};
+
+/** Liten seedbar PRNG (mulberry32), returnerar ett tal i [0, 1). */
+const mulberry32 = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 };
 
 const getWeatherForLevel = (level: number) => {
@@ -1640,6 +1694,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [lives, setLives] = useState(5);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
+  const lastDeathCauseRef = useRef<string | null>(null);
+  // En seed per körning: omstart av bana ger samma regel och pickups.
+  const runSeedRef = useRef<number>(Math.floor(Math.random() * 2 ** 31));
+  const [chosenPerks, setChosenPerks] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
   isPausedRef.current = isPaused;
@@ -1667,6 +1725,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     enemiesDefeated: 0, levelsCompleted: 0, bestCombo: 0, bossDefeated: false,
     bestStreak: 0, nearMisses: 0, coins: 0, fish: 0,
     xp: 0, runLevel: 1, xpIntoLevel: 0, xpNeeded: 120,
+    perks: [] as string[],
+    bonusCommitted: 0, // perks-poster före detta index har sin engångseffekt redan använd i en avklarad bana
+    bonusSeen: 0, // antal perks-poster när den pågående banan startade
   });
   const commitLevelToRun = (game: any) => {
     const r = runStatsRef.current;
@@ -1682,9 +1743,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     r.runLevel = game.runLevel || 1;
     r.xpIntoLevel = game.xpIntoLevel || 0;
     r.xpNeeded = game.xpNeeded || 120;
+    r.bonusCommitted = r.bonusSeen;
   };
   /** Fish collected over the whole run (finished levels + the current one). */
   const runFishTotal = (game?: any) => runStatsRef.current.fish + ((game ?? gameRef.current)?.totalCollectedInLevel ?? 0);
+
+  // HUD-knappar nås med Tab. Mellanslag är hoppknappen och ska varken hoppa
+  // eller aktivera en fokuserad HUD-knapp; Enter fungerar som vanligt.
+  const hudSpaceGuard = {
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); } },
+    onKeyUp: (e: React.KeyboardEvent) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); } },
+  };
+
+  // Hur många mynt som redan betalats ut för banan under tidigare försök.
+  const coinFloorRef = useRef<{ level: number; paid: number }>({ level: 0, paid: 0 });
 
   const restartCurrentLevel = () => {
     setIsPaused(false);
@@ -1692,7 +1764,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     setRestartKey(k => k + 1);
   };
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', rule: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', rule: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, shield: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
   // Computed synchronously so the level is not rebuilt after mount.
   const isTouchDevice = useState<boolean>(() => {
     try {
@@ -1701,6 +1773,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       return false;
     }
   })[0];
+  // Avvisbart tips om porträttläge på touchenheter (kom ihåg avvisning under sessionen).
+  const [showRotateHint, setShowRotateHint] = useState<boolean>(() => {
+    try { return sessionStorage.getItem('shadow_paw_hint_rotate') !== '1'; } catch { return true; }
+  });
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => {
+    try { return window.matchMedia?.('(orientation: portrait)').matches ?? false; } catch { return false; }
+  });
+  useEffect(() => {
+    if (!isTouchDevice || !window.matchMedia) return;
+    const mq = window.matchMedia('(orientation: portrait)');
+    const onChange = () => setIsPortrait(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, [isTouchDevice]);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
   const [combo, setCombo] = useState(0);
@@ -1712,7 +1798,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const gameContainerRef = useRef<HTMLDivElement>(null);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
-  useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume);
+  useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume, isPaused || showLevelComplete);
 
   // Handle fullscreen and ESC key
   useEffect(() => {
@@ -1817,6 +1903,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       runLevel: runStatsRef.current.runLevel,
       xpIntoLevel: runStatsRef.current.xpIntoLevel,
       xpNeeded: runStatsRef.current.xpNeeded,
+      perks: [...runStatsRef.current.perks],
       streak: 0,
       bestStreak: 0,
       multiplier: 1,
@@ -1851,7 +1938,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         trail: [] as any[],
         runCycle: 0,
         lastGroundedY: 0,
-        color: skin.color, invincible: false, invincibleTimer: 0,
+        color: skin.color, invincible: false, invincibleTimer: 0, shieldTimer: 0,
         accent: skin.accent,
         isBlinking: false, blinkTimer: 0,
         facing: 1 // 1 for right, -1 for left
@@ -1866,6 +1953,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       particles: [],
       floatingTexts: [],
       hazards: [],
+      dashGhosts: [] as any[],
+      shadowRings: [] as any[],
+      dashId: 0,
+      comboWindow: 150,
       boss: null,
       keys: {} as Record<number, boolean>,
       showFishWarning: false,
@@ -1878,6 +1969,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (progress.level >= 5) game.player.speed += 0.6;
     if (progress.level >= 10) game.ammo += 2;
     if (progress.level >= 15) { game.player.invincible = true; game.player.invincibleTimer = 120; }
+    if (game.perks.includes('AMMO_START')) game.ammo += 3;
+    if (game.perks.includes('AMMO_START_2')) game.ammo += 3;
+    if (game.perks.includes('SWIFT_PAW')) game.player.speed *= 1.08;
+    if (game.perks.includes('SHIELD_START')) {
+      const shieldFrames = 300 + (game.perks.includes('SHIELD_START_2') ? 180 : 0);
+      game.player.invincible = true;
+      game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, shieldFrames);
+      game.player.shieldTimer = Math.max(game.player.shieldTimer || 0, shieldFrames);
+    }
+    // Bonuskort (engångs): tillämpas på nästa bana efter valet, och på nytt vid omstart av banan.
+    game.perks.slice(runStatsRef.current.bonusCommitted).forEach((pid: string) => {
+      const base = pid.split('#')[0];
+      if (base === 'BONUS_AMMO') game.ammo += 5;
+      else if (base === 'BONUS_POINTS') game.score += 1000;
+      else if (base === 'BONUS_LIFE') game.lives = Math.min(5, game.lives + 1);
+    });
+    runStatsRef.current.bonusSeen = game.perks.length;
 
     // Generate background elements
     game.backgroundElements = generateBackgroundElements(theme);
@@ -2258,10 +2366,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const candidates = game.platforms.filter((pl: any) =>
         !pl.isGround && !pl.bossArena && pl.width >= 80 && pl.x > 500 && pl.x + pl.width < levelLength - 500);
       const usedPlatforms = new Set<any>();
+      const pickupRng = mulberry32(runSeedRef.current ^ Math.imul(level, 2654435761) ^ 0x51ED27);
       pickupTypes.forEach((type, n) => {
         if (candidates.length === 0) return;
         for (let attempt = 0; attempt < 6; attempt++) {
-          const plat = candidates[Math.floor(seededRandom(level * 31.7 + n * 7.3 + attempt * 3.1) * candidates.length)];
+          const plat = candidates[Math.floor(pickupRng() * candidates.length)];
           if (usedPlatforms.has(plat)) continue;
           usedPlatforms.add(plat);
           const px = plat.x + plat.width / 2 - 12;
@@ -2346,7 +2455,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     // Banregel (B-011): deterministisk per bana, rör inte Math.random()-sekvensen.
     (game as any).rule = 'NONE';
     if (level >= 3 && level % 5 !== 0) {
-      const roll = seededRandom(level * 29.3);
+      const roll = mulberry32(runSeedRef.current ^ Math.imul(level, 2654435761))();
       if (roll >= 0.73 && levelMode !== 'Speed Run' && game.miniEvent.type !== 'LOW_GRAVITY') {
         (game as any).rule = 'MOON';
         game.gravity *= 0.82;
@@ -2413,7 +2522,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const p = game.player;
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
-    p.dashCooldown = 45;
+    game.dashId = (game.dashId || 0) + 1;
+    p.dashCooldown = game.perks?.includes('FAST_DASH') ? 30 : 45;
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -2434,9 +2544,35 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     AudioEngine.playDash();
   };
 
+  /** Skuggpassage: belöning när dashen går genom en fiende eller laser som annars skadat. */
+  const shadowPass = (game: any, x: number, y: number) => {
+    const hunter = !!game.perks?.includes('SHADOW_HUNTER');
+    const pts = hunter ? 200 : 100;
+    registerCombo(game, pts, x, y);
+    grantXp(game, 10);
+    if (hunter) game.ammo += 1;
+    game.floatingTexts.push({ x, y: y - 8, text: `SKUGGA! +${pts}`, life: 45, color: '#67e8f9' });
+    game.shadowRings.push({ x, y, life: 18, maxLife: 18 });
+    const n = progress.settings.reduceMotion ? 5 : 12;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      game.particles.push({
+        x, y, vx: Math.cos(a) * (2 + Math.random() * 2), vy: Math.sin(a) * (2 + Math.random() * 2),
+        life: 24, color: i % 2 ? '#67e8f9' : '#a78bfa', size: Math.random() * 3 + 2
+      });
+    }
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
+    AudioEngine.playShadowPass();
+  };
+
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
     game.combo = (game.combo || 0) + 1;
-    game.comboTimer = 150;
+    let comboFrames = game.perks?.includes('LONG_COMBO_2') ? 270 : game.perks?.includes('LONG_COMBO') ? 210 : 150;
+    const greedy = !!game.perks?.includes('GREEDY');
+    if (greedy) comboFrames = Math.round(comboFrames * 0.75);
+    game.comboTimer = comboFrames;
+    game.comboWindow = comboFrames;
+    if (greedy) baseScore = Math.round(baseScore * 1.5);
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
 
     // Streak feeds the visible multiplier, so fast play is worth much more.
@@ -2479,6 +2615,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       game.ammo += 2;
       game.score += 500;
       pushToast(game, `NIVÅ ${game.runLevel}! +2 SKOTT`, '#2bee79');
+      pushToast(game, 'UPPGRADERING VÄNTAR', '#fbbf24');
       game.slowMo = 18;
     }
   };
@@ -2491,8 +2628,16 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   /** Coin payout helper that keeps the counter in sync with the HUD. */
   const awardCoins = (game: any, amount: number) => {
-    game.coinsThisLevel = (game.coinsThisLevel || 0) + amount;
-    addCoins(amount);
+    const before = game.coinsThisLevel || 0;
+    const after = before + amount;
+    game.coinsThisLevel = after;
+    // Efter "Starta om bana" betalas bara mynt över tidigare utbetalt antal ut.
+    const lvl = game.level || 1;
+    if (coinFloorRef.current.level !== lvl) coinFloorRef.current = { level: lvl, paid: 0 };
+    const floor = coinFloorRef.current;
+    const pay = Math.max(0, after - Math.max(floor.paid, before));
+    floor.paid = Math.max(floor.paid, after);
+    if (pay > 0) addCoins(pay);
   };
 
   // Frivilligt avslut från paus/banresultat: spara körningens statistik (vid
@@ -2521,10 +2666,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       runLevel: game.runLevel || 1,
       level: game.level || 1,
       coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
+      deathCause: lastDeathCauseRef.current,
     }));
   };
 
   const trackDeathCause = (cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
+    lastDeathCauseRef.current = cause;
     try {
       const key = 'shadow_paw_telemetry';
       const prev = JSON.parse(localStorage.getItem(key) || '{}');
@@ -2545,7 +2692,47 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
   };
 
+  const perksOwed = levelSummary ? Math.max(0, (levelSummary.runLevel || 1) - 1 - chosenPerks.length) : 0;
+  const perkOffer = useMemo(() => {
+    let left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id) && (!pk.requires || chosenPerks.includes(pk.requires)));
+    // Poolen slut: erbjud bonuskort så att uppgraderingskön aldrig fastnar.
+    if (left.length === 0) left = [...BONUS_PERKS];
+    for (let i = left.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [left[i], left[j]] = [left[j], left[i]];
+    }
+    return left.slice(0, 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levelSummary, chosenPerks]);
+  const perkPending = perksOwed > 0 && perkOffer.length > 0;
+
+  // Fokus till dialogerna så att tangentbords- och skärmläsaranvändare hamnar rätt.
+  const pauseDialogRef = useRef<HTMLDivElement | null>(null);
+  const levelDialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (isPaused && !showLevelComplete) {
+      pauseDialogRef.current?.querySelector<HTMLElement>('[data-continue]')?.focus();
+    }
+  }, [isPaused, showLevelComplete]);
+  useEffect(() => {
+    if (!showLevelComplete) return;
+    const root = levelDialogRef.current;
+    if (!root) return;
+    (root.querySelector<HTMLElement>('[data-perk-card]') ?? root.querySelector<HTMLElement>('[data-next-level]'))?.focus();
+  }, [showLevelComplete, perkPending, chosenPerks]);
+  const srStatus = `${stats.shield > 0 ? 'Sköld aktiv. ' : ''}${perkPending ? 'Välj en uppgradering.' : ''}`;
+
+  const choosePerk = (cardId: string) => {
+    const isBonus = cardId.startsWith('BONUS_');
+    if (!isBonus && runStatsRef.current.perks.includes(cardId)) return;
+    const id = isBonus ? `${cardId}#${runStatsRef.current.perks.length}` : cardId;
+    AudioEngine.playPerkPick();
+    runStatsRef.current.perks = [...runStatsRef.current.perks, id];
+    setChosenPerks(runStatsRef.current.perks);
+  };
+
   const startNextLevel = () => {
+    if (perkPending) return;
     if (gameRef.current) commitLevelToRun(gameRef.current);
     setShowLevelComplete(false);
     setLevelSummary(null);
@@ -2678,6 +2865,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const handleKeyDown = (e: KeyboardEvent) => {
       // Håll-nere ska inte toggla paus eller tömma ammo
       if (e.repeat && [27, 80, 70, 74, 90, 17].includes(e.keyCode)) return;
+      // Mellanslag på en fokuserad knapp (HUD/dialog) är inte ett hopp.
+      if (e.keyCode === 32 && (e.target as HTMLElement | null)?.closest?.('button')) return;
       setKeyState(e.keyCode, true);
     };
     const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
@@ -2727,6 +2916,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         p.dashing--;
         p.velocityX = p.dashDir * p.speed * 3.2;
         p.trail.push({ x: p.x + p.width / 2, y: p.y + p.height / 2, life: 14, maxLife: 14 });
+        // Skuggspår: de senaste ca 6 positionerna som genomskinliga silhuetter.
+        game.dashGhosts.push({ x: p.x, y: p.y, w: p.width, h: p.height, life: 16, maxLife: 16 });
+        if (game.dashGhosts.length > 6) game.dashGhosts.shift();
       } else {
         const left = game.keys[37] || game.keys[65];
         const right = game.keys[39] || game.keys[68];
@@ -2750,6 +2942,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       if (p.dashCooldown > 0) p.dashCooldown--;
       p.trail = p.trail.filter((t: any) => --t.life > 0);
+      if (game.dashGhosts.length > 0) game.dashGhosts = game.dashGhosts.filter((g: any) => --g.life > 0);
+      if (game.shadowRings.length > 0) game.shadowRings = game.shadowRings.filter((r: any) => --r.life > 0);
 
       if (game.miniEvent.active && game.miniEvent.type === 'WIND') {
         p.velocityX += Math.sin(Date.now() / 250) * 0.2;
@@ -2919,7 +3113,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           // Hand the level budget back so the fish hunt stays achievable.
           game.levelTimer = game.levelTimerBudget || 30;
           game.player.invincible = true;
-          game.player.invincibleTimer = 90;
+          game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, 90);
           game.screenShake = 10;
           pushToast(game, 'TIDEN UTE! -1 LIV', '#ff8888');
           AudioEngine.playLifeLost();
@@ -3065,6 +3259,17 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
         }
 
+        // Skuggdash: under dashen går katten genom fiender utan att skadas.
+        if (game.player.dashing > 0) {
+          if (!game.player.invincible && e.shadowDashId !== game.dashId) {
+            const sx = game.player.x + game.player.width > e.x + 5 && game.player.x < e.x + e.width - 5;
+            const sy = game.player.y + game.player.height > e.y + 5 && game.player.y < e.y + e.height - 5;
+            if (sx && sy) {
+              e.shadowDashId = game.dashId;
+              shadowPass(game, e.x + e.width / 2, e.y + e.height / 2);
+            }
+          }
+        } else
         // ONLY check collision if player is NOT invincible AND there's actual overlap
         if (!game.player.invincible) {
           // More strict collision check - must have CLEAR overlap
@@ -3273,6 +3478,14 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (h.type === 'laser' && !h.active) continue;
           const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
           const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
+          if (overlapX && overlapY && h.type === 'laser' && game.player.dashing > 0) {
+            // Skuggdash genom aktiv laser: ingen skada, en belöning per dash.
+            if (h.shadowDashId !== game.dashId) {
+              h.shadowDashId = game.dashId;
+              shadowPass(game, h.x + h.width / 2, game.player.y + game.player.height / 2);
+            }
+            continue;
+          }
           if (overlapX && overlapY) {
             game.lives--;
             game.player.invincible = true;
@@ -3305,6 +3518,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         }
       }
 
+      if (game.player.shieldTimer > 0) game.player.shieldTimer--;
       if (game.player.invincibleTimer > 0) game.player.invincibleTimer--;
       else game.player.invincible = false;
 
@@ -3349,15 +3563,22 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (pl.x < pk.x + pk.width && pl.x + pl.width > pk.x && pl.y < pk.y + pk.height && pl.y + pl.height > pk.y) {
             pk.collected = true;
             if (pk.type === 'heart') {
-              game.lives = Math.min(5, game.lives + 1);
-              setLives(game.lives);
-              pushToast(game, '+1 LIV', '#ff5c7a');
+              if (game.lives >= 5) {
+                game.score += 500;
+                grantXp(game, 15);
+                pushToast(game, 'FULL HÄLSA +500', '#ff5c7a');
+              } else {
+                game.lives = Math.min(5, game.lives + 1);
+                setLives(game.lives);
+                pushToast(game, '+1 LIV', '#ff5c7a');
+              }
             } else {
               pl.invincible = true;
-              pl.invincibleTimer = 300;
+              pl.invincibleTimer = Math.max(pl.invincibleTimer || 0, 300);
+              pl.shieldTimer = 300;
               pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
             }
-            AudioEngine.playLevelUp();
+            if (pk.type === 'heart') AudioEngine.playHeart(); else AudioEngine.playShield();
             if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(15);
             for (let i = 0; i < 14; i++) {
               game.particles.push({
@@ -3385,10 +3606,30 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           }
 
           // Check collision with player - collect coin
-          if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x &&
-            game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {            f.collected = true;
+          const hasMagnet = !!game.perks?.includes('MAGNET');
+          const magnetPad = hasMagnet ? 36 : 0;
+          if (hasMagnet) {
+            // Fisk inom 120 px glider mot katten.
+            const mdx = (game.player.x + game.player.width / 2) - (f.x + f.width / 2);
+            const mdy = (game.player.y + game.player.height / 2) - (f.y + f.height / 2);
+            if (mdx * mdx + mdy * mdy < 120 * 120) {
+              f.x += mdx * 0.12;
+              f.baseY += mdy * 0.12;
+              if (!progress.settings.reduceMotion && Math.random() < 0.25) {
+                game.particles.push({
+                  x: f.x + f.width / 2, y: f.y + f.height / 2,
+                  vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5,
+                  life: 14, color: '#c4b5fd', size: Math.random() * 2 + 1
+                });
+              }
+            }
+          }
+          if (game.player.x < f.x + f.width + magnetPad && game.player.x + game.player.width > f.x - magnetPad &&
+            game.player.y < f.y + f.height + magnetPad && game.player.y + game.player.height > f.y - magnetPad) {
+            f.collected = true;
+            const scoreBeforeFish = game.score;
             registerCombo(game, 50, f.x, f.y);
-            if (game.rule === 'GOLDRUSH') game.score += 50;
+            if (game.rule === 'GOLDRUSH') game.score += game.score - scoreBeforeFish;
             grantXp(game, 10);
             awardCoins(game, 1);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
@@ -5700,6 +5941,28 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const px = game.player.x - game.scrollX - (pw - game.player.width) / 2;
       const py = game.player.y + (game.player.height - ph);
 
+      // Skuggspår: silhuetter av de senaste dash-positionerna och pulsringar vid skuggpassage.
+      game.dashGhosts.forEach((g: any, gi: number) => {
+        ctx.save();
+        ctx.globalAlpha = (g.life / g.maxLife) * 0.4;
+        ctx.fillStyle = gi % 2 ? '#a78bfa' : '#67e8f9';
+        ctx.beginPath();
+        ctx.ellipse(g.x - game.scrollX + g.w / 2, g.y + g.h / 2, g.w * 0.46, g.h * 0.46, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+      game.shadowRings.forEach((r: any) => {
+        const k = 1 - r.life / r.maxLife;
+        ctx.save();
+        ctx.globalAlpha = (1 - k) * 0.8;
+        ctx.strokeStyle = '#67e8f9';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(r.x - game.scrollX, r.y, 10 + k * 45, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+
       // Dash afterimages
       game.player.trail.forEach((t: any) => {
         const alpha = (t.life / t.maxLife) * 0.35;
@@ -5713,7 +5976,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       });
 
       ctx.save();
-      if (game.player.invincible) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
+      const shieldLeft = game.player.shieldTimer || 0;
+      if (game.player.invincible && shieldLeft <= 90) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
+      if (shieldLeft > 0) {
+        ctx.save();
+        ctx.globalAlpha = shieldLeft > 90 ? 0.85 : 0.35 + 0.5 * Math.abs(Math.sin(Date.now() / 80));
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(px + pw / 2, py + ph / 2, Math.max(pw, ph) * 0.8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Kattens svans - Ritas bakom kroppen för att se ut som en riktig svans
       const isMovingRight = game.player.facing === 1;
@@ -5939,7 +6213,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           intensity: game.intensity,
           timeOfDay: game.timeOfDay,
           combo: game.combo || 0,
-          comboFrac: Math.min(1, (game.comboTimer || 0) / 150),
+          comboFrac: Math.min(1, (game.comboTimer || 0) / (game.comboWindow || 150)),
           levelType: game.levelType,
           timer: game.levelTimer || 0,
           miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
@@ -5950,6 +6224,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           multiplier: game.multiplier || 1,
           streak: game.streak || 0,
           dashReady: game.player.dashCooldown <= 0,
+          shield: Math.ceil((game.player.shieldTimer || 0) / 60),
           noHit: !!game.noHit,
           nearMisses: game.nearMisses || 0,
           toasts: game.toasts || [],
@@ -6006,7 +6281,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   return (
     <div
       className={`flex w-full flex-col items-center justify-center gap-3 overflow-hidden px-2 py-2 animate-fade-in-up md:gap-5 md:py-4 ${isFullscreen ? 'fixed inset-0 z-[100] bg-background-dark' : 'min-h-[calc(100dvh-4rem)]'}`}
-      style={{ fontSize: `${progress.settings.textScale}em`, transform: `scale(${progress.settings.uiScale})`, transformOrigin: 'top center' }}
+      style={{
+        fontSize: `${progress.settings.textScale}em`, transform: `scale(${progress.settings.uiScale})`, transformOrigin: 'top center',
+        paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
+        paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+        paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+      }}
     >
       {/* GAME AREA */}
       <div
@@ -6046,7 +6326,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {/* Center: level progress + XP bar */}
             <div className="flex-1 max-w-md flex flex-col items-center gap-1.5">
               <div className="w-full rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-3 py-1.5">
-                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1">
+                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1">
                   <span className="text-primary">NIVÅ {currentLevel}</span>
                   <span className="text-white/70">{stats.progress}%</span>
                 </div>
@@ -6056,7 +6336,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     style={{ width: `${stats.progress}%`, boxShadow: '0 0 10px rgba(43,238,121,0.7)' }}
                   />
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[9px] font-black uppercase tracking-wider">
+                <div className="mt-1 flex items-center justify-between text-[11px] font-black uppercase tracking-wider">
                   <span className="text-white/50">Runnivå {stats.runLevel}</span>
                   <span className="text-white/50">{stats.xp}/{stats.xpNeeded} XP</span>
                 </div>
@@ -6068,7 +6348,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 </div>
               </div>
               {currentLevel % 5 === 0 && (
-                <div className="flex items-center gap-1.5 rounded-full border border-orange-400/35 bg-black/70 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-orange-200 shadow-[0_0_18px_rgba(255,140,60,0.18)]">
+                <div className="flex items-center gap-1.5 rounded-full border border-orange-400/35 bg-black/70 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-orange-200 shadow-[0_0_18px_rgba(255,140,60,0.18)]">
                   <span aria-hidden="true">⚔</span>
                   <span>Bossarena · boss {Math.floor(currentLevel / 5)}</span>
                 </div>
@@ -6121,13 +6401,32 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     {stats.weather === 'SOLIGT' ? (stats.timeOfDay === 'DAY' ? 'sunny' : 'nightlight') : (stats.weather === 'REGNIGT' ? 'rainy' : (stats.weather === 'SNÖIGT' ? 'ac_unit' : (stats.weather === 'DIMMIGT' ? 'foggy' : 'thunderstorm')))}
                   </span>
                   {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
-                  {stats.nearMisses > 0 && <span className="text-[10px] font-black text-white/70">{stats.nearMisses}</span>}
+                  {stats.nearMisses > 0 && <span className="text-[11px] font-black text-white/70">{stats.nearMisses}</span>}
                 </div>
                 {stats.rule !== 'NONE' && (
                   <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.rule === 'GOLDRUSH' ? 'border-yellow-400/40' : 'border-indigo-300/40'}`}>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
+                    <span className={`text-[11px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
                       {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
                     </span>
+                  </div>
+                )}
+                {stats.shield > 0 && (
+                  <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-sky-300/40 px-2.5 py-1.5">
+                    <span className="material-symbols-outlined text-sky-300 text-base">shield</span>
+                    <span className="text-sm font-black text-sky-300">{stats.shield}s</span>
+                  </div>
+                )}
+                {chosenPerks.some(id => RUN_PERKS.some(pk => pk.id === id)) && (
+                  <div className="flex items-center gap-0.5 rounded-xl bg-black/55 backdrop-blur-md border border-yellow-300/30 px-1.5 py-1">
+                    {chosenPerks.map(id => RUN_PERKS.find(pk => pk.id === id)).filter((pk): pk is RunPerk => !!pk).slice(0, 6).map(pk => (
+                      <span
+                        key={pk.id}
+                        role="img"
+                        title={`${pk.title}: ${pk.desc}`}
+                        aria-label={`${pk.title}: ${pk.desc}`}
+                        className="material-symbols-outlined flex h-6 w-6 items-center justify-center text-base text-yellow-300"
+                      >{pk.icon}</span>
+                    ))}
                   </div>
                 )}
                 {stats.levelType === 'Speed Run' && (
@@ -6138,7 +6437,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 )}
                 {!showLevelComplete && (
                   <button
-                    onClick={togglePause}
+                    onClick={(e) => { e.currentTarget.blur(); togglePause(); }}
+                    {...hudSpaceGuard}
                     aria-label="Pausa"
                     title="Pausa"
                     className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
@@ -6147,7 +6447,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   </button>
                 )}
                 <button
-                  onClick={toggleMuted}
+                  onClick={(e) => { e.currentTarget.blur(); toggleMuted(); }}
+                  {...hudSpaceGuard}
                   aria-pressed={isMuted}
                   aria-label={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
                   title={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
@@ -6160,7 +6461,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   </span>
                 </button>
                 <button
-                  onClick={toggleFullscreen}
+                  onClick={(e) => { e.currentTarget.blur(); toggleFullscreen(); }}
+                  {...hudSpaceGuard}
+                  aria-label={isFullscreen ? 'Lämna helskärm' : 'Helskärm'}
+                  title={isFullscreen ? 'Lämna helskärm' : 'Helskärm'}
                   className="flex items-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
                 >
                   <span className="material-symbols-outlined text-base text-white/70">
@@ -6173,7 +6477,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         </div>
 
         {progress.settings.debugOverlay && (
-          <div className="absolute top-8 left-0 right-0 z-20 text-[10px] text-white/70 bg-black/40 px-3 py-1 pointer-events-none">
+          <div className="absolute top-8 left-0 right-0 z-20 text-[11px] text-white/70 bg-black/40 px-3 py-1 pointer-events-none">
             MODE {stats.levelType} | EVENT {stats.miniEvent} | COMBO x{combo} | WEATHER {stats.weather} | THEME {seasonTheme}
           </div>
         )}
@@ -6185,7 +6489,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               className="rounded-xl bg-black/80 backdrop-blur-md border border-red-500/40 px-3 py-2 text-center"
               style={{ boxShadow: '0 0 24px rgba(255,50,30,0.4)' }}
             >
-              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
+              <p className={`text-[11px] font-black uppercase tracking-widest mb-1 ${
                 stats.bossPhase >= 2 ? 'text-pink-400' : stats.bossPhase === 1 ? 'text-red-400' : 'text-orange-400'
               }`}>
                 ⚔️ {stats.bossName || 'BOSS'} – FAS {(stats.bossPhase || 0) + 1}
@@ -6206,13 +6510,14 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   }}
                 />
               </div>
-              <p className="text-[9px] text-white/50 font-bold mt-0.5 tabular-nums">
+              <p className="text-[11px] text-white/50 font-bold mt-0.5 tabular-nums">
                 {stats.bossHp} / {stats.bossMaxHp}
               </p>
             </div>
           </div>
         )}
 
+        <div className="sr-only" aria-live="polite" role="status">{srStatus}</div>
         <canvas
           ref={canvasRef}
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217] touch-none select-none"
@@ -6220,19 +6525,25 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         />
 
         {isPaused && !showLevelComplete && (
-          <div role="dialog" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
+          <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
             <span className="material-symbols-outlined text-5xl text-primary" aria-hidden="true">pause_circle</span>
             <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
+            {chosenPerks.length > 0 && (
+              <p className="max-w-xs text-center text-xs text-white/70 md:max-w-sm">
+                Uppgraderingar: {chosenPerks.map(perkTitle).join(', ')}
+              </p>
+            )}
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
-              <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
+              <button data-continue onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
+              <p className="text-center text-xs text-white/60">Poäng, liv och XP på banan återställs. Redan utbetalda mynt betalas inte igen.</p>
               <button onClick={quitRun} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Avsluta körning</button>
             </div>
           </div>
         )}
 
         {showLevelComplete && (
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
+          <div ref={levelDialogRef} role="dialog" aria-modal="true" aria-label="Nivå klar" className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
             <span className="material-symbols-outlined text-4xl md:text-7xl text-primary mb-1 md:mb-3" style={{ filter: 'drop-shadow(0 0 20px rgba(43,238,121,0.6))' }}>stars</span>
             {/* Inter, not Outfit: Outfit draws the ring of "Å" so small it reads as "Ä".
                 tracking-normal + leading-tight need the space between the words. */}
@@ -6241,23 +6552,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {levelSummary && (
               <div className="w-full max-w-md grid grid-cols-2 gap-2 mb-4 md:mb-6">
                 <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-3 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Poäng</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Poäng</p>
                   <p className="text-3xl md:text-4xl font-black text-primary tabular-nums">{levelSummary.score.toLocaleString()}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Mynt</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Mynt</p>
                   <p className="text-lg font-black text-yellow-400 tabular-nums">+{levelSummary.coins}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Runnivå</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Runnivå</p>
                   <p className="text-lg font-black text-cyan-300 tabular-nums">{levelSummary.runLevel}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Bästa streak</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Bästa streak</p>
                   <p className="text-lg font-black text-primary tabular-nums">{levelSummary.streak}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Nästan-träffar</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Nästan-träffar</p>
                   <p className="text-lg font-black text-[#7ef7c2] tabular-nums">{levelSummary.nearMisses}</p>
                 </div>
                 <div className={`col-span-2 flex items-center justify-center gap-2 rounded-xl p-2.5 border ${levelSummary.noHit ? 'bg-primary/10 border-primary/40' : 'bg-white/5 border-white/10'}`}>
@@ -6269,8 +6580,36 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               </div>
             )}
 
+            {perkPending && (
+              <div className="w-full max-w-md mb-4" role="group" aria-label="Välj en uppgradering">
+                <p className="mb-2 text-center text-xs font-black uppercase tracking-widest text-yellow-300">
+                  Välj uppgradering{perksOwed > 1 ? ` (${perksOwed} val kvar)` : ''}
+                </p>
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                  {perkOffer.map(pk => (
+                    <button
+                      key={pk.id}
+                      data-perk-card
+                      aria-label={`${pk.title}: ${pk.desc}`}
+                      onClick={() => choosePerk(pk.id)}
+                      className="flex min-h-[48px] flex-col items-center gap-1 rounded-2xl border border-yellow-300/40 bg-white/5 p-1.5 sm:p-3 text-center transition-transform hover:scale-105 hover:bg-white/10 active:scale-[0.98]"
+                    >
+                      <span className="material-symbols-outlined text-xl sm:text-2xl text-yellow-300" aria-hidden="true">{pk.icon}</span>
+                      <span className="text-[11px] sm:text-sm font-black leading-tight text-white">{pk.title}</span>
+                      <span className="text-[11px] sm:text-xs leading-tight text-white/70">{pk.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {chosenPerks.length > 0 && (
+              <p className="mb-3 text-center text-xs text-white/70">
+                Uppgraderingar: {chosenPerks.map(perkTitle).join(', ')}
+              </p>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-2 md:gap-3 w-full max-w-xs md:max-w-md">
-              <button onClick={startNextLevel} className="bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
+              <button data-next-level onClick={startNextLevel} disabled={perkPending} className="disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
                 {currentLevel % 5 === 4
                   ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
                   : `NÄSTA NIVÅ (${currentLevel + 1})`}
@@ -6283,16 +6622,38 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
-        <div className={`flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto transition-opacity ${isPaused ? 'opacity-40' : ''}`}>
+        <>
+        {showRotateHint && isPortrait && (
+          <div className="flex w-full max-w-4xl items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/70 px-3 py-1 text-xs text-white/90" role="note">
+            <span>Vrid telefonen för större spelruta</span>
+            <button
+              onClick={() => { setShowRotateHint(false); try { sessionStorage.setItem('shadow_paw_hint_rotate', '1'); } catch { /* ignore */ } }}
+              aria-label="Stäng tipset"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-white/80 hover:bg-white/10"
+            >
+              <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+            </button>
+          </div>
+        )}
+        <div
+          className={`flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto transition-opacity ${isPaused ? 'opacity-40' : ''}`}
+          style={{
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+          }}
+        >
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
+              aria-label="Vänster" title="Vänster"
               className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               {...holdProps(() => setKeyState(65, true), () => setKeyState(65, false))}
             >
               <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_back</span>
             </button>
             <button
+              aria-label="Höger" title="Höger"
               className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               {...holdProps(() => setKeyState(68, true), () => setKeyState(68, false))}
             >
@@ -6304,32 +6665,36 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           <div className="flex items-center gap-3">
             {/* Hopp-knapp */}
             <button
+              aria-label="Hoppa" title="Hoppa"
               className="size-16 md:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
               {...holdProps(() => requestJump(), () => releaseJump())}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">arrow_upward</span>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">HOPPA</span>
+              <span className="text-[11px] font-black uppercase tracking-widest opacity-90">HOPPA</span>
             </button>
 
             {/* Dash-knapp */}
             <button
+              aria-label="Dash" title="Dash"
               className="size-14 md:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
               {...holdProps(() => triggerDash(), () => {})}
             >
               <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
-              <span className="text-[9px] font-black uppercase tracking-widest opacity-90">DASH</span>
+              <span className="text-[11px] font-black uppercase tracking-widest opacity-90">DASH</span>
             </button>
 
             {/* Shoot-knapp */}
             <button
+              aria-label="Skjut" title="Skjut"
               className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
               {...holdProps(() => fireBullet(), () => {})}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
+              <span className="text-[11px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
             </button>
           </div>
         </div>
+        </>
       )}
     </div>
   );

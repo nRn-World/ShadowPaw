@@ -82,6 +82,31 @@ export class AudioEngine {
         this.tone({ type: 'square', from: 1500 + shift, to: 2100 + shift, duration: 0.09, gain: 0.07, delay: 0.05 });
     }
 
+    /** Hjärta: varm stigande tvåton. */
+    public static playHeart() {
+        this.tone({ type: 'sine', from: 392, to: 440, duration: 0.14, gain: 0.2 });
+        this.tone({ type: 'sine', from: 587, to: 659, duration: 0.2, gain: 0.2, delay: 0.12 });
+    }
+
+    /** Sköld: uppåtgående svep. */
+    public static playShield() {
+        this.tone({ type: 'triangle', from: 300, to: 1200, duration: 0.3, gain: 0.16 });
+        this.tone({ type: 'sine', from: 600, to: 1800, duration: 0.25, gain: 0.08, delay: 0.05 });
+    }
+
+    /** Val av uppgradering: klick plus glitter. */
+    public static playPerkPick() {
+        this.tone({ type: 'square', from: 500, to: 380, duration: 0.05, gain: 0.1 });
+        this.tone({ type: 'sine', from: 1800, to: 2400, duration: 0.12, gain: 0.08, delay: 0.05 });
+        this.tone({ type: 'sine', from: 2400, to: 3000, duration: 0.14, gain: 0.06, delay: 0.1 });
+    }
+
+    /** Skuggpassage: lågt "sug" plus en hög klingande ton. */
+    public static playShadowPass() {
+        this.tone({ type: 'sine', from: 320, to: 90, duration: 0.2, gain: 0.16 });
+        this.tone({ type: 'triangle', from: 1500, to: 2200, duration: 0.18, gain: 0.09, delay: 0.03 });
+    }
+
     /** Soft "whoosh" for grazing a hazard without dying. */
     public static playNearMiss() {
         this.tone({ type: 'sine', from: 1400, to: 700, duration: 0.14, gain: 0.08 });
