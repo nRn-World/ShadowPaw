@@ -1623,6 +1623,34 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [restartKey, setRestartKey] = useState(0);
   const levelStartRef = useRef<{ level: number; score: number; lives: number } | null>(null);
 
+  // Run-wide statistics that survive a level change. A new run mounts a fresh
+  // PlayingView, so this only resets for a new run. setupLevel seeds the
+  // game.*InRun counters from here; commitLevelToRun() copies a finished level
+  // back in when the next level starts. Decision: XP and run level also carry
+  // over between levels, since they are the run's progression.
+  const runStatsRef = useRef({
+    enemiesDefeated: 0, levelsCompleted: 0, bestCombo: 0, bossDefeated: false,
+    bestStreak: 0, nearMisses: 0, coins: 0, fish: 0,
+    xp: 0, runLevel: 1, xpIntoLevel: 0, xpNeeded: 120,
+  });
+  const commitLevelToRun = (game: any) => {
+    const r = runStatsRef.current;
+    r.enemiesDefeated = game.enemiesDefeatedInRun || 0;
+    r.levelsCompleted = game.levelsCompletedInRun || 0;
+    r.bestCombo = game.bestComboInRun || 0;
+    r.bossDefeated = !!game.bossDefeatedInRun;
+    r.bestStreak = Math.max(r.bestStreak, game.bestStreak || 0);
+    r.nearMisses += game.nearMisses || 0;
+    r.coins += game.coinsThisLevel || 0;
+    r.fish += game.totalCollectedInLevel || 0;
+    r.xp = game.xp || 0;
+    r.runLevel = game.runLevel || 1;
+    r.xpIntoLevel = game.xpIntoLevel || 0;
+    r.xpNeeded = game.xpNeeded || 120;
+  };
+  /** Fish collected over the whole run (finished levels + the current one). */
+  const runFishTotal = (game?: any) => runStatsRef.current.fish + ((game ?? gameRef.current)?.totalCollectedInLevel ?? 0);
+
   const restartCurrentLevel = () => {
     setIsPaused(false);
     isPausedRef.current = false;
@@ -1731,10 +1759,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       levelTimerBudget: levelMode === 'Speed Run' ? speedRunTimer : 0,
       combo: 0,
       comboTimer: 0,
-      bestComboInRun: 0,
-      enemiesDefeatedInRun: 0,
-      levelsCompletedInRun: 0,
-      bossDefeatedInRun: false,
+      bestComboInRun: runStatsRef.current.bestCombo,
+      enemiesDefeatedInRun: runStatsRef.current.enemiesDefeated,
+      levelsCompletedInRun: runStatsRef.current.levelsCompleted,
+      bossDefeatedInRun: runStatsRef.current.bossDefeated,
       deathsInRun: 0,
       screenShake: 0,
       hitStop: 0,
@@ -1750,10 +1778,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       bolts: [], // Current active lightning bolts
       weatherParticles: [] as any[],
       // --- Run progression (feeds the reward loop) ---
-      xp: 0,
-      runLevel: 1,
-      xpIntoLevel: 0,
-      xpNeeded: 120,
+      xp: runStatsRef.current.xp,
+      runLevel: runStatsRef.current.runLevel,
+      xpIntoLevel: runStatsRef.current.xpIntoLevel,
+      xpNeeded: runStatsRef.current.xpNeeded,
       streak: 0,
       bestStreak: 0,
       multiplier: 1,
@@ -2401,11 +2429,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       bestCombo: game.bestComboInRun || 0,
       bossDefeated: game.bossDefeatedInRun || false,
       perfectLevel,
-      bestStreak: game.bestStreak || 0,
-      nearMisses: game.nearMisses || 0,
+      bestStreak: Math.max(runStatsRef.current.bestStreak, game.bestStreak || 0),
+      nearMisses: runStatsRef.current.nearMisses + (game.nearMisses || 0),
       noHit: !!game.noHit,
       runLevel: game.runLevel || 1,
-      coins: game.coinsThisLevel || 0,
+      coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
     }));
   };
 
@@ -2431,6 +2459,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   const startNextLevel = () => {
+    if (gameRef.current) commitLevelToRun(gameRef.current);
     setShowLevelComplete(false);
     setLevelSummary(null);
     setCurrentLevel(prev => prev + 1);
@@ -2781,7 +2810,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.running = false;
             trackDeathCause('timer');
             persistRunSummary(game, false);
-            onEndRef.current(game.score, game.totalCollectedInLevel);
+            onEndRef.current(game.score, runFishTotal(game));
             return;
           }
           // Running out of time costs a life like any other mistake. Ending the
@@ -2997,7 +3026,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 game.running = false;
                 trackDeathCause('enemy');
                 persistRunSummary(game, false);
-                onEndRef.current(game.score, game.totalCollectedInLevel);
+                onEndRef.current(game.score, runFishTotal(game));
               }
             }
           }
@@ -3103,7 +3132,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 game.running = false;
                 trackDeathCause('boss');
                 persistRunSummary(game, false);
-                onEndRef.current(game.score, game.totalCollectedInLevel);
+                onEndRef.current(game.score, runFishTotal(game));
               }
             }
           }
@@ -3132,7 +3161,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               game.running = false;
               trackDeathCause('boss');
               persistRunSummary(game, false);
-              onEndRef.current(game.score, game.totalCollectedInLevel);
+              onEndRef.current(game.score, runFishTotal(game));
             }
           }
         }
@@ -3169,7 +3198,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               game.running = false;
               trackDeathCause('hazard');
               persistRunSummary(game, false);
-              onEndRef.current(game.score, game.totalCollectedInLevel);
+              onEndRef.current(game.score, runFishTotal(game));
             }
             break;
           }
@@ -3192,7 +3221,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           game.running = false;
           trackDeathCause('hole');
           persistRunSummary(game, false);
-          onEndRef.current(game.score, game.totalCollectedInLevel);
+          onEndRef.current(game.score, runFishTotal(game));
         }
       }
 
@@ -5361,7 +5390,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       if (overlapsGoal) {
         if (allFishesCollected && bossCleared) {
           game.running = false;
-          const perfectLevel = game.lives === lives;
+          const perfectLevel = game.lives === (levelStartRef.current?.lives ?? lives);
           const perfectBonus = perfectLevel ? 500 : 0;
           const noHitBonus = game.noHit ? 750 : 0;
           const nearMissBonus = (game.nearMisses || 0) * 25;
@@ -5373,6 +5402,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           grantXp(game, 150);
           persistRunSummary(game, perfectLevel);
           setTotalScore(game.score);
+          setLives(game.lives); // sync now, not on the 250 ms throttle (A1-024)
           AudioEngine.playLevelUp();
           setLevelSummary({
             score: game.score,
@@ -6011,7 +6041,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
               <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
-              <button onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Huvudmeny</button>
+              <button onClick={() => onEnd(totalScore, runFishTotal())} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Huvudmeny</button>
             </div>
           </div>
         )}
@@ -6060,7 +6090,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
                   : `NÄSTA NIVÅ (${currentLevel + 1})`}
               </button>
-              <button onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
+              <button onClick={() => onEnd(totalScore, runFishTotal())} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
             </div>
           </div>
         )}
