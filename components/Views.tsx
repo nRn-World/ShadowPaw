@@ -1860,6 +1860,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       platforms: [],
       holes: [],
       fishes: [],
+      pickups: [] as any[],
       enemies: [],
       bullets: [],
       particles: [],
@@ -2246,6 +2247,28 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         });
         placedFish++;
       }
+    }
+
+    // Pickups (B-010): placed AFTER all random generation, with seededRandom only,
+    // so the Math.random() sequence of existing generation is untouched.
+    if (level % 5 !== 0 && levelMode !== 'Boss Battle') {
+      const pickupTypes: string[] = [];
+      if (level % 3 === 0) pickupTypes.push('heart');
+      if (level >= 4) pickupTypes.push('shield');
+      const candidates = game.platforms.filter((pl: any) =>
+        !pl.isGround && !pl.bossArena && pl.width >= 80 && pl.x > 500 && pl.x + pl.width < levelLength - 500);
+      const usedPlatforms = new Set<any>();
+      pickupTypes.forEach((type, n) => {
+        if (candidates.length === 0) return;
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const plat = candidates[Math.floor(seededRandom(level * 31.7 + n * 7.3 + attempt * 3.1) * candidates.length)];
+          if (usedPlatforms.has(plat)) continue;
+          usedPlatforms.add(plat);
+          const px = plat.x + plat.width / 2 - 12;
+          game.pickups.push({ type, x: px, y: plat.y - 36, baseY: plat.y - 36, width: 24, height: 24, collected: false, phase: n * 1.7 });
+          break;
+        }
+      });
     }
 
     // Add fun hazards to keep levels unique and less repetitive.
@@ -3300,6 +3323,38 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         game.scrollX += scrollDiff * 0.07;
       }
       game.scrollX = Math.max(0, Math.min(game.scrollX, maxScroll));
+
+      // Pickups: heart (+1 life, max 5) and shield (5 s invincibility)
+      if (game.pickups) {
+        game.pickups.forEach((pk: any) => {
+          if (pk.collected) return;
+          pk.phase += 0.06;
+          pk.y = pk.baseY + Math.sin(pk.phase) * 4;
+          const pl = game.player;
+          if (pl.x < pk.x + pk.width && pl.x + pl.width > pk.x && pl.y < pk.y + pk.height && pl.y + pl.height > pk.y) {
+            pk.collected = true;
+            if (pk.type === 'heart') {
+              game.lives = Math.min(5, game.lives + 1);
+              setLives(game.lives);
+              pushToast(game, '+1 LIV', '#ff5c7a');
+            } else {
+              pl.invincible = true;
+              pl.invincibleTimer = 300;
+              pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
+            }
+            AudioEngine.playLevelUp();
+            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(15);
+            for (let i = 0; i < 14; i++) {
+              game.particles.push({
+                x: pk.x + 12, y: pk.y + 12,
+                vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4 - 1,
+                life: 26, color: pk.type === 'heart' ? '#ff5c7a' : '#7dd3fc', size: Math.random() * 3 + 1.5
+              });
+            }
+            if (!progress.settings.reduceMotion) game.screenShake = Math.max(game.screenShake || 0, 3);
+          }
+        });
+      }
 
       // Update coin positions and check collection
       game.fishes.forEach((f: any) => {
@@ -5382,6 +5437,40 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.fillText(`${boss.hp}/${boss.maxHp}`, hpBarX + hpBarW/2, hpBarY + 10);
       }
 
+      // Draw pickups (heart / shield) with a pulsing glow
+      if (game.pickups) {
+        game.pickups.forEach((pk: any) => {
+          if (pk.collected) return;
+          const pxs = pk.x - game.scrollX;
+          if (pxs < -50 || pxs > canvas.width + 50) return;
+          const cx = pxs + pk.width / 2;
+          const cy = pk.y + pk.height / 2;
+          const pulse = 1 + Math.sin(pk.phase * 1.5) * 0.08;
+          const color = pk.type === 'heart' ? '#ff5c7a' : '#7dd3fc';
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(pulse, pulse);
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 16;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          if (pk.type === 'heart') {
+            ctx.moveTo(0, 9);
+            ctx.bezierCurveTo(-16, -2, -8, -14, 0, -6);
+            ctx.bezierCurveTo(8, -14, 16, -2, 0, 9);
+          } else {
+            ctx.moveTo(0, -11);
+            ctx.lineTo(10, -7);
+            ctx.lineTo(8, 4);
+            ctx.quadraticCurveTo(0, 12, -8, 4);
+            ctx.lineTo(-10, -7);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        });
+      }
+
       // Draw Fishes (Yellow/Gold Fish) - Now drawn after background and platforms
       game.fishes.forEach((f: any) => {
         if (f.collected) return;
@@ -5452,7 +5541,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       if (overlapsGoal) {
         if (allFishesCollected && bossCleared) {
           game.running = false;
-          const perfectLevel = game.lives === (levelStartRef.current?.lives ?? lives);
+          const perfectLevel = game.lives >= (levelStartRef.current?.lives ?? lives);
           const perfectBonus = perfectLevel ? 500 : 0;
           const noHitBonus = game.noHit ? 750 : 0;
           const nearMissBonus = (game.nearMisses || 0) * 25;
