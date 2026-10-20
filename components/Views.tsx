@@ -2700,9 +2700,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const perkOffer = useMemo(() => {
     let left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id) && (!pk.requires || chosenPerks.includes(pk.requires)));
     // Poolen slut: erbjud bonuskort så att uppgraderingskön aldrig fastnar.
-    if (left.length === 0) left = [...BONUS_PERKS];
+    if (left.length === 0) left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (gameRef.current?.lives ?? 0) < 5);
+    // Seedad blandning: samma bana/körning/antal valda kort ger samma erbjudande (ingen gratis reroll).
+    const rng = mulberry32(runSeedRef.current ^ Math.imul((levelSummary?.runLevel || 1) + 1, 2654435761) ^ Math.imul(chosenPerks.length + 1, 40503));
     for (let i = left.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rng() * (i + 1));
       [left[i], left[j]] = [left[j], left[i]];
     }
     return left.slice(0, 3);
