@@ -1589,7 +1589,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     setRestartKey(k => k + 1);
   };
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -2311,6 +2311,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       AudioEngine.playCombo(game.multiplier);
       pushToast(game, `MULTIPLIKATOR x${game.multiplier}`, '#ffd166');
     }
+    // Tier feedback at combo 5 / 10 / 20 (rewards skill, no score change).
+    if ([5, 10, 20].includes(game.combo)) {
+      AudioEngine.playCombo(game.combo);
+      pushToast(game, `COMBO x${game.combo}!`, game.combo >= 20 ? '#ff4d9d' : game.combo >= 10 ? '#ffd166' : '#7ef7c2');
+      if (!progress.settings.reduceMotion) game.screenShake = Math.max(game.screenShake || 0, 4);
+      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(14);
+    }
     game.score += baseScore + comboBonus + multiplierBonus;
   };
 
@@ -2650,10 +2657,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       game.bullets = game.bullets.filter((b: any) => b.life > 0);
       game.bullets.forEach((b: any) => {
         b.x += b.vx; b.y += b.vy; b.life--;
-        game.enemies.forEach((e: any) => {
+        for (const e of game.enemies) {
           if (e.x < b.x + b.radius && e.x + e.width > b.x - b.radius && e.y < b.y + b.radius && e.y + e.height > b.y - b.radius) {
+            // Save the centre before moving the enemy off-screen, otherwise the
+            // particles and score text spawn at x = -1000.
+            const cx = e.x + e.width / 2, cy = e.y + e.height / 2;
             e.x = -1000; b.life = 0;
-            registerCombo(game, 200, e.x, e.y);
+            registerCombo(game, 200, cx, cy);
             grantXp(game, 25);
             awardCoins(game, 2);
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
@@ -2662,15 +2672,16 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             // Explosion particles
             for (let i = 0; i < 15; i++) {
               game.particles.push({
-                x: e.x + e.width / 2, y: e.y + e.height / 2,
+                x: cx, y: cy,
                 vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
                 life: 30, color: '#ff2222', size: Math.random() * 4 + 2
               });
             }
             // Floating score text
-            game.floatingTexts.push({ x: e.x, y: e.y, text: '+200', life: 40, color: '#ff2222' });
+            game.floatingTexts.push({ x: cx, y: cy, text: '+200', life: 40, color: '#ff2222' });
+            break; // one bullet kills at most one enemy
           }
-        });
+        }
 
         if (game.boss && game.boss.hp > 0) {
           const boss = game.boss;
@@ -5721,6 +5732,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           intensity: game.intensity,
           timeOfDay: game.timeOfDay,
           combo: game.combo || 0,
+          comboFrac: Math.min(1, (game.comboTimer || 0) / 150),
           levelType: game.levelType,
           timer: game.levelTimer || 0,
           miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
@@ -5859,6 +5871,24 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   <span>Bossarena · boss {Math.floor(currentLevel / 5)}</span>
                 </div>
               )}
+              {stats.combo >= 2 && (() => {
+                const tierColor = stats.combo >= 20 ? '#ff4d9d' : stats.combo >= 10 ? '#ffd166' : stats.combo >= 5 ? '#00e1ff' : '#7ef7c2';
+                return (
+                  <div
+                    className="w-32 rounded-xl border bg-black/70 px-3 py-1.5"
+                    style={{ borderColor: tierColor, boxShadow: `0 0 14px ${tierColor}55` }}
+                    aria-live="off"
+                  >
+                    <div className="text-xs font-black uppercase tracking-wider" style={{ color: tierColor }}>COMBO x{stats.combo}</div>
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.round(stats.comboFrac * 100)}%`, backgroundColor: tierColor, transition: 'width 280ms linear' }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
               {stats.multiplier > 1 && (
                 <div
                   className="rounded-full bg-black/55 backdrop-blur-md border border-yellow-400/40 px-3 py-1 text-xs font-black text-yellow-300 animate-pulse"
