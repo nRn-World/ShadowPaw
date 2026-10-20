@@ -12,6 +12,10 @@ export class AudioEngine {
         duration: number;
         gain?: number;
         delay?: number;
+        /** Andel slumpad tonhöjdsvariation (t.ex. 0.05). */
+        jitter?: number;
+        /** Färdig tonhöjdsfaktor; används före jitter när flera toner ska dela variation. */
+        pitch?: number;
     }) {
         this.init();
         if (!this.ctx || !this.masterGain) return;
@@ -19,8 +23,9 @@ export class AudioEngine {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = opts.type || 'sine';
-        osc.frequency.setValueAtTime(Math.max(20, opts.from), t0);
-        osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.to), t0 + opts.duration);
+        const k = (opts.pitch ?? 1) * (opts.jitter ? 1 + (Math.random() * 2 - 1) * opts.jitter : 1);
+        osc.frequency.setValueAtTime(Math.max(20, opts.from * k), t0);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.to * k), t0 + opts.duration);
         gain.gain.setValueAtTime(opts.gain ?? 0.2, t0);
         gain.gain.exponentialRampToValueAtTime(0.01, t0 + opts.duration);
         osc.connect(gain);
@@ -61,7 +66,7 @@ export class AudioEngine {
     }
 
     public static playJump() {
-        this.tone({ type: 'sine', from: 300, to: 640, duration: 0.16, gain: 0.28 });
+        this.tone({ type: 'sine', from: 300, to: 640, duration: 0.16, gain: 0.28, jitter: 0.05 });
     }
 
     /** Short airy burst when a dash starts. */
@@ -78,8 +83,9 @@ export class AudioEngine {
     /** Bright two-note blip for coins and pickups. */
     public static playCoin(streak = 0) {
         const shift = Math.min(streak, 12) * 18;
-        this.tone({ type: 'square', from: 1100 + shift, to: 1500 + shift, duration: 0.06, gain: 0.09 });
-        this.tone({ type: 'square', from: 1500 + shift, to: 2100 + shift, duration: 0.09, gain: 0.07, delay: 0.05 });
+        const pitch = 1 + (Math.random() * 2 - 1) * 0.05;
+        this.tone({ type: 'square', from: 1100 + shift, to: 1500 + shift, duration: 0.06, gain: 0.09, pitch });
+        this.tone({ type: 'square', from: 1500 + shift, to: 2100 + shift, duration: 0.09, gain: 0.07, delay: 0.05, pitch });
     }
 
     /** Hjärta: varm stigande tvåton. */
@@ -109,7 +115,7 @@ export class AudioEngine {
 
     /** Soft "whoosh" for grazing a hazard without dying. */
     public static playNearMiss() {
-        this.tone({ type: 'sine', from: 1400, to: 700, duration: 0.14, gain: 0.08 });
+        this.tone({ type: 'sine', from: 1400, to: 700, duration: 0.14, gain: 0.08, jitter: 0.05 });
     }
 
     /** Triumphant chord when a level is cleared. */
@@ -125,7 +131,13 @@ export class AudioEngine {
     }
 
     public static playShoot() {
-        this.tone({ type: 'square', from: 800, to: 200, duration: 0.1, gain: 0.2 });
+        this.tone({ type: 'square', from: 800, to: 200, duration: 0.1, gain: 0.2, jitter: 0.05 });
+    }
+
+    /** Landningsdunk; strength 0-1 styr volymen. */
+    public static playLand(strength = 0.5) {
+        const st = Math.min(1, Math.max(0, strength));
+        this.tone({ type: 'sine', from: 180, to: 70, duration: 0.09, gain: 0.05 + 0.1 * st, jitter: 0.04 });
     }
 
     public static playCollect() {

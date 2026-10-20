@@ -675,6 +675,10 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <span className="text-white/60">Dash – snabb burst i riktningen du tittar</span>
             </div>
             <div className="flex items-center gap-2">
+              <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Skugga</span>
+              <span className="text-white/60">Dash genom fiender och lasrar ger poäng en gång per hinder, ej under sköld</span>
+            </div>
+            <div className="flex items-center gap-2">
               <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Klick</span>
               <span className="text-white/60">Skjuta (kostar ammunition)</span>
             </div>
@@ -2464,6 +2468,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         (game as any).rule = 'GOLDRUSH';
         game.enemies.forEach((e: any) => { e.velocityX *= 1.15; });
         pushToast(game, 'GULDRUSH: x2 fiskpoäng, snabbare fiender', '#ffd166');
+      } else if (roll >= 0.30 && roll < 0.45) {
+        (game as any).rule = 'SHADOWFLOW';
+        pushToast(game, 'SKUGGFLÖDE: dashen laddas snabbt', '#67e8f9');
       }
     }
 
@@ -2523,7 +2530,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
     game.dashId = (game.dashId || 0) + 1;
-    p.dashCooldown = game.perks?.includes('FAST_DASH') ? 30 : 45;
+    p.dashCooldown = Math.min(game.rule === 'SHADOWFLOW' ? 22 : 45, game.perks?.includes('FAST_DASH') ? 30 : 45);
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -2696,9 +2703,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const perkOffer = useMemo(() => {
     let left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id) && (!pk.requires || chosenPerks.includes(pk.requires)));
     // Poolen slut: erbjud bonuskort så att uppgraderingskön aldrig fastnar.
-    if (left.length === 0) left = [...BONUS_PERKS];
+    if (left.length === 0) left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (gameRef.current?.lives ?? 0) < 5);
+    // Seedad blandning: samma bana/körning/antal valda kort ger samma erbjudande (ingen gratis reroll).
+    const rng = mulberry32(runSeedRef.current ^ Math.imul((levelSummary?.runLevel || 1) + 1, 2654435761) ^ Math.imul(chosenPerks.length + 1, 40503));
     for (let i = left.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rng() * (i + 1));
       [left[i], left[j]] = [left[j], left[i]];
     }
     return left.slice(0, 3);
@@ -2720,6 +2729,32 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (!root) return;
     (root.querySelector<HTMLElement>('[data-perk-card]') ?? root.querySelector<HTMLElement>('[data-next-level]'))?.focus();
   }, [showLevelComplete, perkPending, chosenPerks]);
+  // Fokusfälla: Tab/Shift+Tab loopar inom dialogen.
+  const trapTab = (e: React.KeyboardEvent<HTMLElement>, root: HTMLElement | null) => {
+    if (e.key !== 'Tab' || !root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && (active === first || !root.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+  // Återställ fokus till det som hade fokus innan dialogen öppnades.
+  const dialogOpen = (isPaused && !showLevelComplete) || showLevelComplete;
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const prev = document.activeElement as HTMLElement | null;
+    return () => {
+      if (prev && prev !== document.body && document.contains(prev)) prev.focus();
+      else document.body.focus?.();
+    };
+  }, [dialogOpen]);
   const srStatus = `${stats.shield > 0 ? 'Sköld aktiv. ' : ''}${perkPending ? 'Välj en uppgradering.' : ''}`;
 
   const choosePerk = (cardId: string) => {
@@ -2781,6 +2816,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (active && [70, 74, 90, 17].includes(code)) {
       fireBullet();
     }
+  };
+
+  // Auto-sikte för touchknappen: närmaste fiende framför katten (bossar ingår inte).
+  const autoAim = (game: any): { x: number; y: number } | null => {
+    const cx = game.player.x + game.player.width / 2;
+    const cy = game.player.y + game.player.height / 2;
+    let best: any = null;
+    let bestDist = Infinity;
+    game.enemies.forEach((e: any) => {
+      if (e.x <= -500) return;
+      const ex = e.x + e.width / 2;
+      const ey = e.y + e.height / 2;
+      const ahead = (ex - cx) * game.player.facing;
+      if (ahead <= 0 || ahead > 450 || Math.abs(ey - cy) > 140) return;
+      if (ahead < bestDist) { bestDist = ahead; best = e; }
+    });
+    return best ? { x: best.x + best.width / 2 - game.scrollX, y: best.y + best.height / 2 } : null;
   };
 
   const fireBullet = (targetX: number | null = null, targetY: number | null = null) => {
@@ -3217,6 +3269,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               // Landing squash + dust so the moment reads clearly.
               game.player.squash = 1 + Math.min(0.5, impactSpeed * 0.04);
               game.player.stretch = 0.78;
+              if (impactSpeed > 4) AudioEngine.playLand(Math.min(1, impactSpeed / 14));
               for (let i = 0; i < 8; i++) {
                 game.particles.push({
                   x: game.player.x + game.player.width / 2 + (Math.random() - 0.5) * 30,
@@ -3261,11 +3314,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
         // Skuggdash: under dashen går katten genom fiender utan att skadas.
         if (game.player.dashing > 0) {
-          if (!game.player.invincible && e.shadowDashId !== game.dashId) {
+          if (!game.player.invincible && !e.shadowPassed) {
             const sx = game.player.x + game.player.width > e.x + 5 && game.player.x < e.x + e.width - 5;
             const sy = game.player.y + game.player.height > e.y + 5 && game.player.y < e.y + e.height - 5;
             if (sx && sy) {
-              e.shadowDashId = game.dashId;
+              e.shadowPassed = true;
               shadowPass(game, e.x + e.width / 2, e.y + e.height / 2);
             }
           }
@@ -3479,9 +3532,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
           const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
           if (overlapX && overlapY && h.type === 'laser' && game.player.dashing > 0) {
-            // Skuggdash genom aktiv laser: ingen skada, en belöning per dash.
-            if (h.shadowDashId !== game.dashId) {
-              h.shadowDashId = game.dashId;
+            // Skuggdash genom aktiv laser: ingen skada, en belöning per laser och bana.
+            if (!h.shadowPassed) {
+              h.shadowPassed = true;
               shadowPass(game, h.x + h.width / 2, game.player.y + game.player.height / 2);
             }
             continue;
@@ -6403,13 +6456,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
                   {stats.nearMisses > 0 && <span className="text-[11px] font-black text-white/70">{stats.nearMisses}</span>}
                 </div>
-                {stats.rule !== 'NONE' && (
-                  <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.rule === 'GOLDRUSH' ? 'border-yellow-400/40' : 'border-indigo-300/40'}`}>
-                    <span className={`text-[11px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
-                      {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
-                    </span>
-                  </div>
-                )}
+                {stats.rule !== 'NONE' && (() => {
+                  const ruleStyle = stats.rule === 'GOLDRUSH'
+                    ? { label: 'Guldrush x2', border: 'border-yellow-400/40', text: 'text-yellow-300' }
+                    : stats.rule === 'SHADOWFLOW'
+                      ? { label: 'Skuggflöde', border: 'border-cyan-300/40', text: 'text-cyan-200' }
+                      : { label: 'Månsvävning', border: 'border-indigo-300/40', text: 'text-indigo-200' };
+                  return (
+                    <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${ruleStyle.border}`}>
+                      <span className={`text-[11px] font-black uppercase tracking-widest ${ruleStyle.text}`}>
+                        {ruleStyle.label}
+                      </span>
+                    </div>
+                  );
+                })()}
                 {stats.shield > 0 && (
                   <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-sky-300/40 px-2.5 py-1.5">
                     <span className="material-symbols-outlined text-sky-300 text-base">shield</span>
@@ -6525,7 +6585,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         />
 
         {isPaused && !showLevelComplete && (
-          <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
+          <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-label="Pausad" onKeyDown={e => trapTab(e, pauseDialogRef.current)} className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
             <span className="material-symbols-outlined text-5xl text-primary" aria-hidden="true">pause_circle</span>
             <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
             {chosenPerks.length > 0 && (
@@ -6543,7 +6603,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         )}
 
         {showLevelComplete && (
-          <div ref={levelDialogRef} role="dialog" aria-modal="true" aria-label="Nivå klar" className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
+          <div ref={levelDialogRef} role="dialog" aria-modal="true" aria-label="Nivå klar" onKeyDown={e => trapTab(e, levelDialogRef.current)} className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
             <span className="material-symbols-outlined text-4xl md:text-7xl text-primary mb-1 md:mb-3" style={{ filter: 'drop-shadow(0 0 20px rgba(43,238,121,0.6))' }}>stars</span>
             {/* Inter, not Outfit: Outfit draws the ring of "Å" so small it reads as "Ä".
                 tracking-normal + leading-tight need the space between the words. */}
@@ -6687,7 +6747,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <button
               aria-label="Skjut" title="Skjut"
               className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
-              {...holdProps(() => fireBullet(), () => {})}
+              {...holdProps(() => { const t = gameRef.current ? autoAim(gameRef.current) : null; fireBullet(t ? t.x : null, t ? t.y : null); }, () => {})}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
               <span className="text-[11px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
