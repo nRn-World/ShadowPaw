@@ -1147,11 +1147,11 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
 };
 
 // AUDIO MANAGER FOR BACKGROUND MUSIC
-const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75) => {
+const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75, dimmed: boolean = false) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const targetVolume = isMuted ? 0 : Math.min(1, (musicVolume / 100) * 0.5);
+  const targetVolume = isMuted ? 0 : Math.min(1, (musicVolume / 100) * 0.5) * (dimmed ? 0.3 : 1);
 
   // Mute + slider changes ramp the live track so nothing clicks.
   useEffect(() => {
@@ -1777,7 +1777,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const gameContainerRef = useRef<HTMLDivElement>(null);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
-  useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume);
+  useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume, isPaused || showLevelComplete);
 
   // Handle fullscreen and ESC key
   useEffect(() => {
@@ -1935,6 +1935,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       dashGhosts: [] as any[],
       shadowRings: [] as any[],
       dashId: 0,
+      comboWindow: 150,
       boss: null,
       keys: {} as Record<number, boolean>,
       showFishWarning: false,
@@ -2549,6 +2550,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const greedy = !!game.perks?.includes('GREEDY');
     if (greedy) comboFrames = Math.round(comboFrames * 0.75);
     game.comboTimer = comboFrames;
+    game.comboWindow = comboFrames;
     if (greedy) baseScore = Math.round(baseScore * 1.5);
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
 
@@ -2686,6 +2688,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const isBonus = cardId.startsWith('BONUS_');
     if (!isBonus && runStatsRef.current.perks.includes(cardId)) return;
     const id = isBonus ? `${cardId}#${runStatsRef.current.perks.length}` : cardId;
+    AudioEngine.playPerkPick();
     runStatsRef.current.perks = [...runStatsRef.current.perks, id];
     setChosenPerks(runStatsRef.current.perks);
   };
@@ -3535,7 +3538,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               pl.shieldTimer = 300;
               pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
             }
-            AudioEngine.playLevelUp();
+            if (pk.type === 'heart') AudioEngine.playHeart(); else AudioEngine.playShield();
             if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(15);
             for (let i = 0; i < 14; i++) {
               game.particles.push({
@@ -3563,9 +3566,27 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           }
 
           // Check collision with player - collect coin
-          const magnetPad = game.perks?.includes('MAGNET') ? 36 : 0;
+          const hasMagnet = !!game.perks?.includes('MAGNET');
+          const magnetPad = hasMagnet ? 36 : 0;
+          if (hasMagnet) {
+            // Fisk inom 120 px glider mot katten.
+            const mdx = (game.player.x + game.player.width / 2) - (f.x + f.width / 2);
+            const mdy = (game.player.y + game.player.height / 2) - (f.y + f.height / 2);
+            if (mdx * mdx + mdy * mdy < 120 * 120) {
+              f.x += mdx * 0.12;
+              f.baseY += mdy * 0.12;
+              if (!progress.settings.reduceMotion && Math.random() < 0.25) {
+                game.particles.push({
+                  x: f.x + f.width / 2, y: f.y + f.height / 2,
+                  vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5,
+                  life: 14, color: '#c4b5fd', size: Math.random() * 2 + 1
+                });
+              }
+            }
+          }
           if (game.player.x < f.x + f.width + magnetPad && game.player.x + game.player.width > f.x - magnetPad &&
-            game.player.y < f.y + f.height + magnetPad && game.player.y + game.player.height > f.y - magnetPad) {            f.collected = true;
+            game.player.y < f.y + f.height + magnetPad && game.player.y + game.player.height > f.y - magnetPad) {
+            f.collected = true;
             const scoreBeforeFish = game.score;
             registerCombo(game, 50, f.x, f.y);
             if (game.rule === 'GOLDRUSH') game.score += game.score - scoreBeforeFish;
@@ -6152,7 +6173,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           intensity: game.intensity,
           timeOfDay: game.timeOfDay,
           combo: game.combo || 0,
-          comboFrac: Math.min(1, (game.comboTimer || 0) / 150),
+          comboFrac: Math.min(1, (game.comboTimer || 0) / (game.comboWindow || 150)),
           levelType: game.levelType,
           timer: game.levelTimer || 0,
           miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
@@ -6348,6 +6369,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-sky-300/40 px-2.5 py-1.5">
                     <span className="material-symbols-outlined text-sky-300 text-base">shield</span>
                     <span className="text-sm font-black text-sky-300">{stats.shield}s</span>
+                  </div>
+                )}
+                {chosenPerks.some(id => RUN_PERKS.some(pk => pk.id === id)) && (
+                  <div className="flex items-center gap-0.5 rounded-xl bg-black/55 backdrop-blur-md border border-yellow-300/30 px-1.5 py-1">
+                    {chosenPerks.map(id => RUN_PERKS.find(pk => pk.id === id)).filter((pk): pk is RunPerk => !!pk).slice(0, 6).map(pk => (
+                      <span
+                        key={pk.id}
+                        role="img"
+                        title={`${pk.title}: ${pk.desc}`}
+                        aria-label={`${pk.title}: ${pk.desc}`}
+                        className="material-symbols-outlined flex h-6 w-6 items-center justify-center text-base text-yellow-300"
+                      >{pk.icon}</span>
+                    ))}
                   </div>
                 )}
                 {stats.levelType === 'Speed Run' && (
