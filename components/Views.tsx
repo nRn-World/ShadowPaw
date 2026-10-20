@@ -675,6 +675,10 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <span className="text-white/60">Dash – snabb burst i riktningen du tittar</span>
             </div>
             <div className="flex items-center gap-2">
+              <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Skugga</span>
+              <span className="text-white/60">Dash genom fiender och lasrar ger poäng en gång per hinder, ej under sköld</span>
+            </div>
+            <div className="flex items-center gap-2">
               <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Klick</span>
               <span className="text-white/60">Skjuta (kostar ammunition)</span>
             </div>
@@ -3261,11 +3265,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
         // Skuggdash: under dashen går katten genom fiender utan att skadas.
         if (game.player.dashing > 0) {
-          if (!game.player.invincible && e.shadowDashId !== game.dashId) {
+          if (!game.player.invincible && !e.shadowPassed) {
             const sx = game.player.x + game.player.width > e.x + 5 && game.player.x < e.x + e.width - 5;
             const sy = game.player.y + game.player.height > e.y + 5 && game.player.y < e.y + e.height - 5;
             if (sx && sy) {
-              e.shadowDashId = game.dashId;
+              e.shadowPassed = true;
               shadowPass(game, e.x + e.width / 2, e.y + e.height / 2);
             }
           }
@@ -3479,9 +3483,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
           const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
           if (overlapX && overlapY && h.type === 'laser' && game.player.dashing > 0) {
-            // Skuggdash genom aktiv laser: ingen skada, en belöning per dash.
-            if (h.shadowDashId !== game.dashId) {
-              h.shadowDashId = game.dashId;
+            // Skuggdash genom aktiv laser: ingen skada, en belöning per laser och bana.
+            if (!h.shadowPassed) {
+              h.shadowPassed = true;
               shadowPass(game, h.x + h.width / 2, game.player.y + game.player.height / 2);
             }
             continue;
