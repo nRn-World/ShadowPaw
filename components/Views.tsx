@@ -3249,6 +3249,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               // Landing squash + dust so the moment reads clearly.
               game.player.squash = 1 + Math.min(0.5, impactSpeed * 0.04);
               game.player.stretch = 0.78;
+              if (impactSpeed > 4) AudioEngine.playLand(Math.min(1, impactSpeed / 14));
               for (let i = 0; i < 8; i++) {
                 game.particles.push({
                   x: game.player.x + game.player.width / 2 + (Math.random() - 0.5) * 30,
