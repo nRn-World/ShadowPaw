@@ -1,144 +1,109 @@
-# 02 - Idégranskning och byggplan (Agent 2, Idégranskare)
+# 02 - Idéer och byggplan (Agent 2, Idégranskare), omgång 2
 
-Datum: 2026-10-20. Underlag: reports/VISION.md, reports/01-analys.md samt stickprov i koden (components/Views.tsx, App.tsx, services/AudioEngine.ts, context/ProgressContext.tsx). Inget bygge eller körning gjordes; radnummer avser Views.tsx om inget annat anges och kan glida något när tidigare punkter byggts, så Agent 3 bör söka på funktionsnamnen.
+Datum: 2026-10-20. Branch `agents/build-20261020`. Underlag: reports/01-analys.md (omgång 2), reports/VISION.md. Radnummer avser nuvarande components/Views.tsx (6451 rader) om inget annat anges. Ingen kod ändrad, inget byggt eller körts.
 
-## 1. Bedömning av Agent 1:s rapport
+## Bedömning av Agent 1:s rapport
 
-Verifierat mot koden och stämmer:
-- **A1-003 (paus):** `isPausedRef` sätts (1569-1576) men läses aldrig i `simulate` (2549) eller `loop` (5737). Ingen overlay. `restartCurrentLevel` (1580) är oanvänd och `setCurrentLevel(prev => prev)` skulle ändå inte köra om effekten. Stämmer.
-- **A1-004 (Fart):** spelarfarten är `4.6 + level*0.08` (1729) och `progress.upgrades.speed` (default 5, ProgressContext 53) läses inte i spelet, bara i butiken (6183). Stämmer.
-- **A1-002 (statistik):** `setupLevel` (1642) skapar nytt `game` med `enemiesDefeatedInRun: 0`, `levelsCompletedInRun: 0`, `bestComboInRun: 0` (1690-1692) osv. `persistRunSummary` (2346) skriver bara det aktuella `game`. Stämmer.
-- **A1-005 (mute):** `AudioEngine.init()` rad 36 sätter `gain.value = this.sfxVolume` utan `muted`. Stämmer.
-- **A1-015 (rå å):** rad 637, 646, 650, 667, 671 har `å`-sekvenser i JSX-text. Stämmer.
-- **A1-011 (city-bg):** App.tsx:116 `<img src="/city-bg.jpg">` med Vite `base: './'`. Stämmer för Pages under undersökväg.
-- **A1-022 (skott-kill):** `e.x = -1000` (2643) sätts före `registerCombo(game, 200, e.x, e.y)`, partiklar och "+200"-text. Stämmer, och dessutom saknas `break`, så en kula kan träffa flera fiender.
-- **A1-006 (touch):** canvas-gester (2486-2536) och skärmknappar (6016+) finns samtidigt; ingen `touch-action` finns i Views.tsx eller index.css (grep gav 0 träffar). Stämmer.
+Verifierat mot koden (stämmer):
+- **A1-045 stämmer, och är något bredare.** `setKeyState` (2481-2503) sätter `game.keys[code] = active` (2484) före paus-kollen (2491). `requestJump` (2294) och `fireBullet` (2506, kontrollerar bara `running`) saknar paus-koll; `triggerDash` (2337) likaså. Tillägg: musklicket på canvas (`handleMouseDown`, 2584-2590) anropar också `fireBullet`; paus-overlayn täcker troligen canvas, men det är säkrast att lägga kollen i själva funktionerna.
+- **A1-046 stämmer.** `togglePause` (1612) anropas bara från Esc/P (2488) och overlay-knappen (6042). Ingen HUD-knapp.
+- **A1-047 stämmer.** Overlay (6044) och banresultat (6093) anropar `onEnd` direkt. `App.handleGameEnd` (App.tsx:81-85) går alltid till GAME_OVER och GameOverView skickar `deaths: 1` (≈rad 866). `persistRunSummary` (2425) körs inte vid frivilligt avslut.
+- **A1-048 stämmer.** `isPaused` nollställs bara i `restartCurrentLevel` (1653); effekten som bygger banan (2565-2570) rör den inte, och `setKeyState` kollar inte `game.running`.
+- **A1-020 stämmer.** `maxAmmo` får +2 både på 1749 och 1843. På 1844 sätts bara `invincibleTimer = 20`, men `invincible` blir `false` varje frame när timern är 0 och sätts aldrig till `true` (3208-3209), så förmånen gör ingenting. Notering: förmånen heter "Vaksintinkt" (6209) i UI.
+- **A1-050 stämmer.** `stats` (ProgressContext 71-78) saknar bästa nivå; ingen nivåinfo når GameOver. Bra nyhet för byggbarhet: `parsed.stats` slås ihop med defaults (ProgressContext 147, 374), så nya nycklar är ofarliga, men jag föreslår ändå en separat localStorage-nyckel för att inte röra `applyRunResults` (rad 345, bygger `stats` explicit) eller export/import-koden.
+- **A1-051 stämmer.** Inga pickups finns; spelaren har 5 liv hela körningen. `grantXp` (2399-2411) ger +2 skott och +500 poäng.
+- **A1-052 stämmer delvis.** `miniEvent` (1769-1774) finns redan från nivå 3 (WIND, LOW_GRAVITY, BLACKOUT), så "inga banunika regler" är något överdrivet; det som saknas är *synliga, stabila* banregler. `seededRandom(level * ...)` används redan, så deterministiska val per bana är beprövade i koden.
 
-Nyanseringar:
-- A1-001 är latent, inte aktiv: ingen nyckel sätts i CI. Rätt prioritet "Hög" för principen, men det är inte en spelkänslebugg. Utanför denna körning (kräver beslut om Gemini-funktionen).
-- A1-007/A1-008 (render per simulate-steg, tung ritning) är troligen korrekta men ej profilerade. Stor refaktor, därför inte i denna plan.
-- Jag fann att kombosystemet, screen shake (`game.screenShake`, `hitStop`, `zoomPunch`), haptik (`navigator.vibrate`), multiplikator och toasts redan finns. Det som saknas är att spelaren **ser** combo/multiplikatorn: `COMBO x{combo}` visas endast i debug-overlay (5908). Därför föreslås en synlig combo-mätare (B-005) i stället för ett helt nytt kombosystem.
-- Dagliga uppdrag finns redan (ProgressContext), men en daglig *bana* kräver seedad banagenerering (A1-035, `Math.random` används genomgående i `setupLevel`) och är för stor för en liten byggpunkt. Se fria idéer.
+Överdrivet eller att nyansera:
+- A1-045 "kattens fart fortsätter när man återupptar": stämmer bara om knappen släpps under pausen utan att `pointerup` når spelet. `autoPause` (2574) nollar tangenter, så vanlig paus via tangent är OK. Gör fixen oavsett.
+- A1-049 (key repeat) är liten men enkel; tas med i B-007.
+- A1-045b (farming av mynt vid omstart) är verklig men en designfråga; ingår inte i denna omgång (se fria idéer).
 
-## 2. Byggplan (6 punkter, rekommenderad ordning B-001 till B-006)
+## Byggplan
 
-Ordningen är vald för att minimera konflikter i Views.tsx: B-001 och B-002 rör PlayingView-logiken, B-003 är små spridda fixar, B-004 rör input/JSX nära slutet av PlayingView, B-005 rör simulate/HUD, B-006 rör GameOverView. Bygg en i taget och kör `npm run build` efter varje.
+Alla punkter är små, har ingen ändring av sparformat som kan förstöra gammal progress (endast nya nycklar), inga nya beroenden och ingen borttagning av banor/funktioner.
 
----
-
-### B-001: Paus som fungerar (overlay, auto-paus, omstart av bana)
-- **Bakgrund:** A1-003. Esc/P växlar bara en flagga; spelet går vidare. Direkt förstörande för spelkänslan, särskilt på mobil (inkommande samtal, flikbyte).
+### B-007 - Pausen stoppar all input (tangentbord, touch, mus)
+- **Bakgrund:** A1-045, A1-049.
 - **Ändring:**
-  1. I `loop` (Views.tsx ca 5737-5753): om `isPausedRef.current`, hoppa över `simulate()`, sätt `previousFrameTime = now` och nollställ `accumulatedTime` så inget "hoppar" vid återupptagning; fortsätt `requestAnimationFrame(loop)`. Pausa även musik/ljud inte nödvändigt.
-  2. Lägg en paus-overlay i JSX (nära "Level complete"-overlayn, ca 5966): knappar "Fortsätt", "Starta om bana", "Huvudmeny" (anropar `onEnd`/`onMenu` på samma sätt som befintlig "Avsluta", rad 6010). Använd befintliga knappklasser.
-  3. Auto-paus vid `document.visibilitychange` (hidden) och `window blur` genom att sätta `isPaused` till true (registrera i effekten vid 2462-2540 eller en egen liten `useEffect`; rensa i cleanup).
-  4. Ersätt döda `restartCurrentLevel` (1580) med en `restartKey`-state (`useState(0)`) som ingår i beroendelistan för spel-effekten (slutar ca 5770) så att banan byggs om; "Starta om bana" ökar den och sätter `isPaused` false. Behåll liv/poäng från banstart (använd samma `lives`/`totalScore` som effekten redan läser, eller återställ till värden vid banstart).
-  5. Esc-kollision: fullskärmslyssnaren (1615-1619) lämnas orörd; paus-toggle på Esc får gärna ske parallellt.
-- **Berörda filer:** components/Views.tsx (funktionerna `PlayingView`, `togglePause`/`restartCurrentLevel` 1568-1592, `loop` ca 5737-5753, JSX nära 5966-6015).
-- **Verifiering:** `npm run build` måste gå igenom. Manuellt: starta spel, tryck P, kontrollera att fiender/timer står still och overlay syns; P igen återupptar utan hopp; byt flik och kom tillbaka, spelet är pausat; "Starta om bana" bygger om banan.
-- **Risk:** Medel (rör spelloop och effektberoenden; fel beroendelista kan bygga om banan oavsiktligt). Håll `restartKey` som enda nytt beroende.
+  - Överst i `requestJump` (2294), `triggerDash` (2337) och `fireBullet` (2506): `if (isPausedRef.current) return;` (och `releaseJump` får gärna alltid köra).
+  - I `setKeyState` (2481-2503): flytta paus-kollen så att `active === true` ignoreras under paus men `active === false` alltid rensar `game.keys[code]` (undvik fastnade riktningar). Esc/P-hanteringen (27, 80) ligger kvar före kollen.
+  - I `handleKeyDown` (2582): ignorera `e.repeat` för Esc/P (och för skott-tangenterna, så att håll-nere inte tömmer ammo). Byte till `e.code` (A1-023) ingår inte.
+  - Inaktivera touchknapparna visuellt under paus (`disabled`/`opacity-40` på knapparna 6104-6145 när `isPaused`), samt släpp hållna riktningar i `autoPause` (2572-2580) vilket redan görs för tangenter.
+- **Berörda filer:** components/Views.tsx (funktionerna ovan; touchknapparna 6099-6148).
+- **Verifiering:** `npm run build`. Manuellt: pausa, tryck hopp/dash/skjut på tangent, mus och touch (devtools touch-emulering) och bekräfta att ammo inte minskar och att katten inte hoppar vid återupptagning; håll Esc och kontrollera att overlayn inte blinkar; håll höger-knapp, pausa, släpp, återuppta: katten står still.
+- **Risk:** Låg.
 - **Status:** GODKÄND
 
----
-
-### B-002: Körningsstatistik som överlever banbyte (och korrekt liv-synk vid banslut)
-- **Bakgrund:** A1-002 (hög), A1-024. Kills, nivåer klarade, bästa combo, bästa streak och nära-träffar nollställs för varje bana, så uppdrag, prestationer och skin-upplåsningar räknas fel.
+### B-008 - Pausknapp på touch, pausstate nollställs vid banbyte, "Avsluta körning" sparar statistik
+- **Bakgrund:** A1-046, A1-048, A1-047, delvis A1-060 (deaths).
 - **Ändring:**
-  1. Inför `runStatsRef = useRef({ enemiesDefeated: 0, levelsCompleted: 0, bestCombo: 0, bestStreak: 0, nearMisses: 0, noHit: true, bossDefeated: false, coins: 0, fish: 0 })` i `PlayingView`, nollställd endast vid montering (ny körning).
-  2. I `setupLevel` (ca 1686-1700): initiera `game.enemiesDefeatedInRun`, `levelsCompletedInRun`, `bestComboInRun`, `bossDefeatedInRun` osv. från `runStatsRef.current` i stället för 0, så att alla befintliga `game.*InRun`-ökningar (t.ex. 2647, 2930) fortsätter ackumulera. Alternativt spegla till ref i `persistRunSummary` (2346) och läs därifrån; välj den enklaste med minst rader ändrade.
-  3. Uppdatera `runStatsRef.current` vid banslut/död precis före `persistRunSummary` och vid byte till nästa bana, och låt `persistRunSummary` skriva ackumulerade värden (inkl. `levelsCompleted`, `coins` summerat över banor).
-  4. Besluta uttryckligen (kommentar i koden): XP/runnivå (`xp`, `runLevel`, `xpNeeded`) **består** mellan banor (rekommenderat, det är körningens progression). `lives`/`score` bärs redan via `existingLives`/`existingScore`.
-  5. A1-024: anropa `setLives(game.lives)` direkt vid banslut/död innan nästa bana byggs.
-  6. Skicka summerade fiskar via `onEnd(score, fish)` om det idag bara är sista banans (`totalCollectedInLevel`, 6010 och motsvarande anrop vid död); kontrollera båda anropsställena.
-- **Berörda filer:** components/Views.tsx (`setupLevel` 1642-1770, `persistRunSummary` 2346-2358, banslut-/dödshantering kring 5330-5360 och `onEnd`-anropen; sök `persistRunSummary(` och `onEndRef.current(`). GameOverView (812-875) behöver ingen ändring förutom att den nu får korrekta värden.
-- **Verifiering:** `npm run build`. Manuellt: klara två banor och dö på tredje; på Game Over ska "bästa combo"/fiender i Quests-/statistikvyn spegla summan över banor (jämför `shadow_paw_last_run` i localStorage före/efter). Kontrollera att runnivå inte nollställs mellan banor.
-- **Risk:** Medel-hög (central logik, många `any`-fält, lätt att dubbelräkna). Håll diffen liten: initiera från ref, uppdatera ref på ett enda ställe. Undvik att ändra `applyRunResults`-kontraktet.
+  - **Pausknapp:** ny knapp i HUD-raden (≈5950-5985, i blocket med `pointer-events-auto`), ikon `pause`, `aria-label="Pausa"`, träffyta minst 44x44 px, `onClick={togglePause}`. Dold när `showLevelComplete`. Visas på alla enheter (hjälper även mus).
+  - **isPaused-läckage:** i byggeffekten (2565-2570, där `levelStartRef` sätts) anropa `setIsPaused(false); isPausedRef.current = false;`. I `setKeyState`: `if (!game.running && [27,80].includes(code)) return;` så att Esc/P på banresultatet inte pausar.
+  - **Avsluta:** ny funktion `quitRun` i PlayingView: `persistRunSummary(game, false)` (om `gameRef.current` finns och `running` eller pausat; vid banresultat är det redan sparat på 5403) och därefter `onEnd(score, runFishTotal(), { quit: true })`. Knapparna 6044 och 6093 anropar `quitRun`, och 6044 döps om till "Avsluta körning" (6093 heter redan "Avsluta"). `App.handleGameEnd` (App.tsx:81-85) tar emot valfri `quit` och lagrar i ny state `lastQuit`; `GameOverView` (812) får valfri prop `quit?: boolean`: `deaths: quit ? 0 : 1` (≈866) och rubriken "Körning avslutad" i stället för "Uppdraget misslyckades". Poäng kan fortfarande sparas på topplistan.
+- **Berörda filer:** components/Views.tsx (HUD ≈5950-5985, byggeffekt ≈2565-2570, `setKeyState` 2481-2503, nya `quitRun` nära `persistRunSummary` 2425, knappar 6044/6093, GameOverView 812-905), App.tsx (81-85, 99-100).
+- **Verifiering:** `npm run build`. Manuellt: tryck pausknappen med touch-emulering; pausa och tryck "Avsluta körning" efter att ha dödat en fiende, kontrollera att Game Over visar rätt kills/fiskar och att `totalDeaths` inte ökar (ProgressContext stats i devtools Application, localStorage); tryck Esc på banresultatet och bekräfta att nästa bana startar utan paus.
+- **Risk:** Låg-medel (rör App.tsx-signatur, men `quit` är valfri så andra anrop påverkas inte).
 - **Status:** GODKÄND
 
----
-
-### B-003: Fyra små buggfixar (Fart-uppgradering, mute efter omladdning, å/ä/ö, city-bg-sökväg)
-- **Bakgrund:** A1-004, A1-005, A1-015, A1-011. Alla små, oberoende och låg risk; samlas i en punkt för att få in dem snabbt, men ska committas som separata, tydliga ändringar.
+### B-009 - Meta-progression light: bästa nivå och rekord på Game Over och startskärm
+- **Bakgrund:** A1-050, A1-064 (dödsorsak, valfri liten del).
 - **Ändring:**
-  1. **Fart (A1-004):** i `setupLevel` (rad 1729) lägg till `+ Math.max(0, progress.upgrades.speed - 5) * 0.4` på `player.speed` (varje köp ger +0,5 i `upgrades.speed`, alltså +0,2 fart). Lägg ett tak så att farten inte bryter banorna: `Math.min(…, 1.5)` på tillägget. Skriv i Shop-texten (ca 6175-6193, "Nuvarande: …") vad effekten är. Rör inte priset eller `buyUpgrade` (A1-019 är en separat idé).
-  2. **Mute (A1-005):** services/AudioEngine.ts `init()` rad 36: `this.masterGain.gain.value = this.muted ? 0 : this.sfxVolume;`. Lägg även `if (this.ctx.state === 'suspended') this.ctx.resume();` efter skapandet (A1-017, minsta möjliga).
-  3. **Rå å (A1-015):** ersätt `å`→å, `ö`→ö, `Å`→Å, `Ä`→Ä, `ä`→ä, `—`→— på raderna 637, 646, 650, 667, 671 i HowToPlayView (585-688). Kontrollera efteråt med `grep -n '\\u00' components/Views.tsx` att inga fler JSX-textträffar finns (träffar inne i JS-strängar med citattecken är OK).
-  4. **city-bg (A1-011):** App.tsx:116 `src={`${import.meta.env.BASE_URL}city-bg.jpg`}`. Kontrollera `vite-env.d.ts`/tsconfig-typer; om `import.meta.env` ger typfel, använd `new URL('city-bg.jpg', document.baseURI).href` i stället.
-- **Berörda filer:** components/Views.tsx (rad 1729, 637-671, 6175-6193), services/AudioEngine.ts (32-39), App.tsx (116).
-- **Verifiering:** `npm run build`. `npm run build && npm run preview` och kontrollera att `city-bg.jpg` laddas (Network-fliken). Manuellt: sätt mute i inställningar, ladda om, starta spel, inga SFX hörs. Köp Fart en gång och se att spelaren rör sig märkbart snabbare. "Så spelar du" visar å/ä/ö.
-- **Risk:** Låg. Enda risken är att Fart-balansen gör banorna för lätta; taket hanterar det.
+  - Lägg till `level: game.level` i objektet som `persistRunSummary` skriver (2425-2438). Nytt fält i `shadow_paw_last_run`; GameOver läser det med `lastRun.level || 1`.
+  - Ny localStorage-nyckel `shadow_paw_best` = `{ level, score, runLevel }`. Ingen ändring av `PlayerProgress`, `stats` eller `shadow_paw_scores`, så gamla sparningar och export/import berörs inte.
+  - GameOverView (812-1011): läs `shadow_paw_best` en gång i `useState`-initiator (som `bestBefore` på 832-841), visa "Nådde nivå X" och, om bättre, "Ny bästa nivå!" med delta ("Bästa: 11, +2"). Skriv det nya rekordet i det befintliga engångsblocket (`didFinishRef`-skyddat, ≈850-900) så StrictMode inte dubblar. Visa även "Dödsorsak" om en kort enradig etikett går att läsa ur `shadow_paw_telemetry` (valfritt, hoppa över om det blir stort).
+  - StartMenuView (231-): visa "Bästa nivå X · Bästa poäng Y" under titeln när sådana finns (inget visas för nya spelare). Försiktig parse med try/catch och typkontroll.
+- **Berörda filer:** components/Views.tsx (persistRunSummary 2425, GameOverView 812-1011, StartMenuView ≈231-330).
+- **Verifiering:** `npm run build`. Manuellt: spela till nivå 2-3 och dö, kontrollera Game Over och startskärm; ta bort `shadow_paw_best` i devtools och bekräfta att inget kraschar; spela med gammal localStorage (utan nyckeln) utan fel; gör samma i StrictMode (dev) och bekräfta att rekordet inte skrivs fel.
+- **Risk:** Låg.
 - **Status:** GODKÄND
 
----
-
-### B-004: Pålitlig touch-styrning (minsta fix: Pointer Events på knappar, touch-action, avbruten touch, multitouch)
-- **Bakgrund:** A1-006. Två motstridiga scheman, passiva `preventDefault` är verkningslösa, ingen `touchcancel` (fastnade rörelsetangenter), `touch-action` saknas (dubbeltrycks-zoom/scroll), `isTouchDevice` sätts efter mount. Mobil är en huvudmålgrupp enligt VISION.
-- **Ändring (avgränsad, ingen omskrivning av spelinput):**
-  1. Beräkna `isTouchDevice` synkront: `useState(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches)` och ta bort/behåll bara en fallback-effekt vid rad 1637-1640. Detta minskar onödig ombyggnad av banan.
-  2. Byt skärmknapparnas `onTouchStart/onTouchEnd` (ca 6016-6068) mot `onPointerDown` / `onPointerUp` / `onPointerCancel` / `onPointerLeave` med `e.currentTarget.setPointerCapture(e.pointerId)`, så multitouch fungerar (ett finger rör, ett annat hoppar/skjuter) och knappen släpps vid avbrott. Behåll samma `setKeyState(...)`-anrop.
-  3. Ta bort canvas-gesterna `handleTouchStart/Move/End` (2486-2536 och deras `addEventListener/removeEventListener`, ca 2536-2540 och 5755-5770) samt "Vänster: Jump / Höger: Shoota / Svep"-overlayn (5947-5958) för att undvika dubbla scheman. Behåll `handleMouseDown` (skjuta med mus).
-  4. Lägg `touch-action: none` (Tailwind `touch-none`) på canvas, kontrollknappsraden och spelcontainern, och `user-select: none` (finns delvis).
-  5. Kontrollera att dash, hopp, skott och vänster/höger alla har en skärmknapp efter ändringen; om Dash saknas, lägg till en knapp som anropar samma funktion som tangentbordets dash.
-- **Berörda filer:** components/Views.tsx (`PlayingView`: `isTouchDevice` 1594-1640, touch-handlers 2486-2540, cleanup ca 5755-5770, overlay 5947-5958, knappraden 6014-6070).
-- **Verifiering:** `npm run build`. Manuellt i webbläsarens mobil-emulering (Chrome DevTools, touch) och helst en riktig telefon: hålla höger-knapp och trycka hopp samtidigt; släppa utanför knappen släpper rörelsen; ingen sidscroll/zoom vid snabbt tryck. Datorn med mus/tangentbord ska vara oförändrad.
-- **Risk:** Medel (ändrar input på mobil som jag inte kunnat testa på riktig enhet; borttagning av canvas-gester är ett medvetet designbeslut: skärmknappar är tydligare). Om ägaren vill behålla gester kan steg 3 hoppas över men då återstår dubbelschemat.
-- **Status:** GODKÄND
-
----
-
-### B-005: Synlig combo-mätare och kraftfullare feedback vid träff (ny funktion)
-- **Bakgrund:** Kombosystemet (`registerCombo` 2292, `comboTimer`, multiplikator, `AudioEngine.playCombo`, screen shake, haptik) finns men spelaren ser det bara som flytande text; `COMBO x…` visas bara i debug-overlay (5908). Samtidigt förstörs feedbacken för skott-kills av A1-022 (partiklar och poängtext hamnar vid x = -1000). Tydlig combo-feedback är kärnan i "en runda till"-känslan och skapar mastery utan mörka mönster (belönar skicklighet, inga timers som straffar frånvaro).
+### B-010 - Banpickups: extraliv (hjärta) och sköld, med tydlig feedback
+- **Bakgrund:** A1-051 (Hög). Följer VISION: risk/belöning utan pay-to-win.
 - **Ändring:**
-  1. **Fix A1-022 (förutsättning):** i kula-mot-fiende-loopen (ca 2641-2660) spara `const cx = e.x + e.width/2, cy = e.y + e.height/2` före `e.x = -1000`, använd dem för `registerCombo`, partiklar och "+200"-text, och avsluta fiendeloopen för den kulan med `break`/`return` (byt `forEach` mot `for…of` om nödvändigt).
-  2. **HUD-mätare:** exponera `comboTimer` och `comboTimerMax` (150) i `setStats` (5704-5725; lägg `comboFrac: Math.min(1, (game.comboTimer||0)/150)`). Rendera en kompakt combo-pill i HUD (nära multiplikator/streak, ca 5800-5900) som visar `COMBO x{n}` med en smal förloppsstapel som tömmer sig mot noll och byter färg vid tiers (t.ex. 5, 10, 20). Visa endast när `combo >= 2`. Eftersom stats bara uppdateras var 250 ms, hämta komboms-fraktion med `game.comboTimer` direkt om det går, annars acceptera grov stegning (4 steg/s är OK) men låt CSS `transition` jämna ut.
-  3. **Tier-feedback:** vid combo 5, 10, 20 (i `registerCombo`): kort `pushToast`, `AudioEngine.playCombo`, liten extra `game.screenShake = Math.max(game.screenShake, 4)` samt `navigator.vibrate(14)` om `progress.settings.haptics`.
-  4. **Respektera `reduceMotion` (A1-026, endast det som berörs):** skala bort ny shake/zoom när `progress.settings.reduceMotion` är sant.
-  5. Inga ändringar av poängformler.
-- **Berörda filer:** components/Views.tsx (`registerCombo` 2292-2317, kula-loop 2641-2660, `setStats`-objektet och initial `useState` 1594, HUD-JSX ca 5790-5910). services/AudioEngine.ts behöver bara ändras om en ny ton önskas (valfritt, återanvänd `playCombo`).
-- **Verifiering:** `npm run build`. Manuellt: skjut en fiende, partiklar och "+200" visas vid fienden (inte utanför); kedja pickup/kills och se mätaren fyllas, tömmas och tiers triggas; sätt "Reducera motion" och se att extra shake uteblir.
-- **Risk:** Låg-medel (tillägg i HUD och några rader i `registerCombo`; prestandarisken är liten eftersom en pill ersätter inget tungt, men undvik `backdrop-blur` på pillen enligt A1-008).
+  - Ny `game.pickups: []` i `setupLevel` (nära `fishes: []`, 1827). Efter fiskplaceringen (≈2225) lägg 0-2 pickups per bana, på toppen av redan genererade, nåbara plattformar (samma metod som fisk, `platforms[idx].y - 36`, inte ground, inte över hål): hjärta på nivå som är delbar med 3 (inte bossbana), sköld på nivå ≥ 4 (en per bana). Placering med `seededRandom(level * 31.7 + n)` så att det inte flyttar `Math.random()`-sekvensen i befintlig generering (viktigt: lägg koden *efter* all befintlig generering).
+  - Plockning i simuleringen intill fiskkollisionen (≈3243-3262): hjärta `game.lives = Math.min(5, game.lives + 1)` (`setLives` synkas på 5794; kalla även `setLives(game.lives)` som på 5405), sköld `invincible = true; invincibleTimer = 300`. Toast via `pushToast` ("+1 LIV" / "SKÖLD 5 S"), `AudioEngine`-ljud som redan finns (återanvänd t.ex. level-up/collect-ljud, inget nytt ljud krävs), haptik (`navigator.vibrate`, redan använd i `fireBullet`), partiklar via befintlig partikelfunktion, och `screenShake` bara om `!reduceMotion`.
+  - Ritning bredvid fiskritningen (5324-): enkel pulserande hjärta/sköld med glöd (ctx-former, inga bilder, inga nya filer), culling som för fisk (`fxs < -50 || > width+50`).
+  - Hjärtat räknas inte som fisk (ingen ändring i `fishes`/`allFishesCollected` 5382-5387 och inte i `noHit`).
+- **Berörda filer:** components/Views.tsx (setupLevel ≈1714-1850 för fältet, generering ≈2225, simulation ≈3243, ritning ≈5324, HUD-livsvisning oförändrad).
+- **Verifiering:** `npm run build`. Manuellt: spela nivå 3 (hjärta) och 4+ (sköld); kontrollera att livsräknaren i HUD ökar direkt, att tak 5 respekteras, att pickups sitter på plattformar man kan nå, att banans fisktal (x/y) inte ändras, och att bossbanor (5, 10) inte får pickups. Ett skript-/devtools-test som listar `game.pickups` och plattformsnivåerna är bra. Kontrollera att `reduceMotion` tonar ner skak.
+- **Risk:** Medel (rör genereringsslutet och simuleringen, men additivt; hålls litet genom att bara använda plattformar som redan finns).
 - **Status:** GODKÄND
 
----
-
-### B-006: Snabb omstart och "nästan rekord"-motivation på Game Over (ny funktion)
-- **Bakgrund:** VISION nämner snabba omstarter och tydlig progression. Idag krävs musklick på "Spela igen" (1018), och skärmen visar "Nytt rekord!" alltid, även för icke-rekord (A1-021). En ärlig jämförelse mot spelarens eget bästa ger "en runda till"-känsla utan manipulation.
+### B-011 - Banregel per bana ("Guldrush" och "Månsvävning") utan ändring av banagenereringen
+- **Bakgrund:** A1-052 (Hög), A1-054 (liten del: tydlig indikator).
 - **Ändring:**
-  1. I GameOverView (817-1030): lägg en `keydown`-lyssnare (cleanup i `useEffect`) för `R`, `Enter` och `Space` som anropar `onRestart()`, men **inte** när fokus ligger i namnfältet (`document.activeElement` är en `INPUT`). Visa en liten hint på knappen: "Spela igen (R)".
-  2. Beräkna `bestBefore` = högsta `score` i `localStorage['shadow_paw_scores']` (med try/catch och `Array.isArray`-kontroll) **före** att spelarens egen post sparas (`handleSaveScore`, ca 877-882). Visa: om `score > bestBefore` en "Nytt rekord!"-rubrik (befintlig sektion, 975-1000), annars en rad "X poäng från ditt rekord" (neutral text, ingen skuldkänsla) och dölj eller tona ned sparformuläret för 0 poäng. Behåll formuläret för sparande oavsett.
-  3. Rensa `shadow_paw_last_run` efter att sammanfattningen konsumerats (efter `applyRunResults`-anropet 836-846), vilket också minskar dubbelräkningsrisken i dev (A1-021, delvis). Om `React.StrictMode` kör effekten två gånger i dev, skydda med en `useRef`-guard (`const didFinishRef = useRef(false)`) kring `addXP`/`applyRunResults`.
-  4. Inga timers, inga tvingande val, ingen automatisk omstart.
-- **Berörda filer:** components/Views.tsx (`GameOverView` 817-1030: effekten 836-875, `handleSaveScore` 877-882, rubriksektion 975-1000, knapp 1018). App.tsx behöver inga ändringar.
-- **Verifiering:** `npm run build`. Manuellt: dö, tryck R och landa direkt i ny runda; dö med lägre poäng än tidigare och se "X poäng från ditt rekord"; skriv i namnfältet och tryck mellanslag/R utan att starta om; dev-läge med StrictMode ger inte dubbel XP.
-- **Risk:** Låg (isolerat i en komponent). Se upp med tangentbordsfokus i inputfältet.
+  - I `setupLevel` (1714-1850), efter att `game` skapats: välj `game.rule` deterministiskt: `level >= 3 && level % 5 !== 0` och `seededRandom(level * 29.3)`: ca 45 % `NONE`, 28 % `GOLDRUSH` (fiskpoäng x2 via `registerCombo`/poängraden vid fiskplockning ≈3257, men fiender +15 % fart: multiplicera `velocityX` en gång efter fiendegenerering, ≈2064), 27 % `MOON` (`game.gravity *= 0.82`, bara om `levelMode !== 'Speed Run'`, 1754-1760, svävande hopp och längre bågar; inget straff).
+  - Visa regeln med en toast vid bansstart (`pushToast`, 2412-) och en liten tagg i HUD bredvid `EVENT {stats.miniEvent}` (≈5992); lägg `rule` i `setStats` (≈5770-5780).
+  - Ingen ändring av platformsgenerering, hål, fiender eller `Math.random()`-användning. Befintligt `miniEvent` lämnas orört (regler och miniEvent kan samexistera; undvik `MOON` när `miniEvent.type === 'LOW_GRAVITY'` för att inte dubbla).
+- **Berörda filer:** components/Views.tsx (setupLevel ≈1714-1850, fiskplockning ≈3257, HUD ≈5992, stats-uppdatering ≈5770).
+- **Verifiering:** `npm run build`. Manuellt: starta nivå 3, 4, 6, 7, 8, 9 (hoppa via devtools eller spela) och bekräfta att samma nivå får samma regel vid omstart; kontrollera att bossnivå och Speed Run inte får `MOON`; kontrollera poängökning x2 i GOLDRUSH och att banan går att klara.
+- **Risk:** Låg-medel (påverkar balans men inte struktur; lätt att slå av med `game.rule = 'NONE'`).
 - **Status:** GODKÄND
 
----
+### B-012 - Rätta kontoförmånerna nivå 10 och 15 (dubbel +2 ammo, "Vaksintinkt")
+- **Bakgrund:** A1-020.
+- **Ändring:**
+  - Ta bort den dubbla ammo-bonusen: behåll `if (progress.level >= 10) game.ammo += 2;` (1843) och ta bort `(progress.level >= 10 ? 2 : 0)` ur ammo-uttrycket (1749). Spelare på kontonivå 10+ får därmed en bonus på +2 i stället för +4 (avsiktligt; texten i butiken/skill tree säger "+2 skott" om den finns, kontrollera 6205-6209).
+  - Gör nivå 15-förmånen verklig: ersätt `invincibleTimer = 20` (1844) med `game.player.invincible = true; game.player.invincibleTimer = 120;` (2 sekunders startskydd i varje bana). Texten på 6209 kompletteras med "2 s startskydd".
+- **Berörda filer:** components/Views.tsx (1749, 1843-1844, 6209).
+- **Verifiering:** `npm run build`. Manuellt: sätt `progress.level` till 10 och 15 via importerat sparat tillstånd eller devtools och kontrollera ammo i HUD vid banstart (+2, inte +4) och att katten blinkar (5549) i 2 s på nivå 15 utan att ta skada.
+- **Risk:** Låg (tydlig nerf av ammo för höga nivåer; flaggas för ägaren).
+- **Status:** GODKÄND
 
-## 3. Fria idéer för framtiden (ej med i byggplanen)
+## Fria idéer för framtiden (ej med i byggplanen)
 
-Spelmekanik och identitet
-1. **Daglig utmaning med seedad bana:** gör `setupLevel` deterministisk (seedad RNG, A1-035) och lägg ett läge "Dagens bana" (samma för alla spelare det datumet, lokal bästa poäng; ingen server behövs). Förutsätter A1-035 och en nåbarhetskontroll.
-2. **Skuggmekanik (unik identitet):** en "Skuggdash" som lämnar en skuggkopia som lockar fiender (kort cooldown), eller att stå stilla i skugga laddar nästa skott. Passar namnet och neon-cyberpunk.
-3. **Risk/belöning:** valfria "riskkoder" före en bana (t.ex. ett liv färre för x1,5 mynt). Alltid frivilligt, tydligt förklarat.
-4. **Fiendevarianter och ny boss per tema:** fler beteenden (skärmhoppande dronor, sköldfiender som måste stampas) med tydliga signaler innan attack.
-5. **Förmågor via skins:** varje skin ger en liten kosmetisk eller lätt förmåga (spår efter dash, annan landningspartikel) men aldrig statfördelar som kräver mynt.
-
-Retention och framsteg
-6. **Prestationslista (A1-044):** vy med ikon, framsteg och datum; toast i spel vid upplåsning.
-7. **Mästerskapsmål:** "Slå ditt bästa combo", "klara bana X utan skada" som valfria personliga mål ovanpå dagliga uppdrag.
-8. **Spökdata:** rita spelarens bästa körning som svag skugga (positioner sparas varje 6:e frame) som tävlan mot sig själv.
-9. **Delbar rundsammanfattning** via Web Share API (A1-027) med lokalt bildkort.
-
-Teknik och känsla
-10. **Uppgraderingstak och stigande pris (A1-019):** maxnivåer, "MAX", validering i uppdateringsfunktionen.
-11. **Splitta update/render (A1-007) och cacha bakgrund (A1-008):** nödvändigt för stabil 60 fps på mobil; bör föregås av uppdelning av Views.tsx (A1-014) och typer (A1-013).
-12. **Ljud:** `unlock()` vid första gest (A1-016/017), polyfonibegränsning, cacha brusbuffert, flytta Sounds till `public/` och komprimera (A1-030).
-13. **PWA/offline (A1-041):** manifest, PNG-ikoner, service worker som cachar app-skal och musik.
-14. **Säker lagring (A1-010):** `safeStorage`, versionsfält, schemavalidering och backup som verkligen kan läsas tillbaka.
-15. **Tillgänglighet (A1-025, A1-026):** fullt stöd för `reduceMotion`, färgblindsäkra former för faror, `aria`-etiketter.
-16. **Gemini (A1-001/A1-032):** besluta om funktionen ska finnas kvar; annars ta bort `define`, `@google/genai` och använd bara statiska repliker (fler varianter per poängintervall).
-17. **Byggprocess (A1-012, A1-013, A1-031):** `typecheck`-skript, rensa CI och ta bort `.claude/settings.local.json` ur versionshanteringen.
+- **Mynt vid banslut (A1-009/A1-045b):** bokför mynt först när banan klaras; löser både farming via omstart och localStorage-skrivning per fisk.
+- **Välj ett av tre runuppgraderingar** vid runnivå-upp (dubbel dash, studsande skott, högre combo-tak) som roguelite-lager ovanpå B-010.
+- **Checkpoint mitt i långa banor** och "andra chansen" (A1-055); bör vänta tills B-009 visar var spelare faktiskt dör.
+- **Daglig seedad bana** med lokal rekordtavla och streak (A1-057), kräver att banagenereringen byter från `Math.random()` till seedat, ett eget block.
+- **Prestationsvy** (A1-044) med redan befintliga achievements; billigt och ger mål.
+- **Auto-sikte på touch** (A1-053): minsta möjliga kon-assist mot närmaste fiende.
+- **Update/render-uppdelning med interpolation** (A1-007/A1-061) och gradient-cache (A1-063): störst teknisk vinst, men stor diff, bör föregås av A1-014 (uppdelning av Views.tsx) och mätning.
+- **Combo-slut-feedback** (A1-054): "COMBO FÖRLORAD" och ljud.
+- **Telemetri till nytta:** visa "Din vanligaste död" och använd för balans (A1-064).
+- **Pekkontroll-val i Inställningar** (Auto/På/Av, A1-059) och landskaps-uppmaning/safe-area (A1-062).
+- **Ljud/haptik-palett:** unikt ljud per pickup och per banregel när B-010/B-011 är inne.
 
 ---
-Godkänt av orkestratören å ägarens vägnar 2026-10-20 20:5x (ägarens uttryckliga förhandsgodkännande i chatten: agenterna får fritt förbättra ShadowPaw).
+Omgång 2 godkänd av orkestratören å ägarens vägnar 2026-10-20 (ägarens uttryckliga förhandsgodkännande i chatten: agenterna får fritt förbättra ShadowPaw). Notera B-012: kontoförmånen på nivå 10 går från +4 till +2 ammo.
