@@ -19,6 +19,8 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   frost: { name: 'Frost', color: '#62b7ff', accent: '#27415f', unlockHint: 'Collect 300 fish' },
   shadow: { name: 'Shadow', color: '#4f5d75', accent: '#141b2d', unlockHint: 'Reach combo x10' },
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Beat 3 bosses' },
+  umbra: { name: 'Umbra', color: '#6d28d9', accent: '#1e0b3a', unlockHint: 'Gör 10 skuggpassager i en körning' },
+  gold: { name: 'Guldtass', color: '#e0b43a', accent: '#4a3508', unlockHint: 'Nå bana 10' },
 };
 
 const ACHIEVEMENTS: { id: string; name: string; desc: string }[] = [
@@ -909,9 +911,26 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     }
   });
   const isNewRecord = score > bestBefore;
+  const reachedLevel = Math.max(1, Math.floor(Number(lastRun.level) || 1));
+  // Snapshot före applyRunResults så att "nästan"-raden inte dubbelräknar körningen.
+  const [statsBefore] = useState(progress.stats);
+  const [skinsBefore] = useState(progress.unlockedSkins);
+  const nearGoal = (() => {
+    const goals: { left: number; text: string; skin: string }[] = [
+      { left: 300 - ((statsBefore.totalFishCollected || 0) + fishesCollected), text: 'fisk', skin: 'frost' },
+      { left: 60 - ((statsBefore.totalEnemiesDefeated || 0) + (lastRun.enemiesDefeated || 0)), text: 'fiender', skin: 'ember' },
+      { left: 3 - ((statsBefore.bossesDefeated || 0) + (lastRun.bossDefeated ? 1 : 0)), text: 'boss', skin: 'aurora' },
+      { left: 10 - Math.max(statsBefore.bestCombo || 0, lastRun.bestCombo || 0), text: 'kombo', skin: 'shadow' },
+      { left: 10 - (lastRun.shadowPasses || 0), text: 'skuggpassager', skin: 'umbra' },
+      { left: 10 - reachedLevel, text: 'banor', skin: 'gold' },
+    ];
+    const open = goals.filter(g => g.left > 0 && SKINS[g.skin] && !skinsBefore.includes(g.skin));
+    if (open.length === 0) return null;
+    const best = open.reduce((a, b) => (b.left < a.left ? b : a));
+    return `${best.left} ${best.text} kvar till ${SKINS[best.skin].name}`;
+  })();
   // Bästa nivå före denna körning (separat nyckel, rör inte PlayerProgress).
   const [bestRecordBefore] = useState(readBestRecord);
-  const reachedLevel = Math.max(1, Math.floor(Number(lastRun.level) || 1));
   const isNewBestLevel = reachedLevel > bestRecordBefore.level;
   const didFinishRef = useRef(false);
 
@@ -986,12 +1005,14 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     }
     if ((lastRun.shadowPasses || 0) >= 10) {
       unlockAchievement('shadow_10');
+      unlockSkin('umbra');
     }
     if (((progress.stats.shadowPasses || 0) + (lastRun.shadowPasses || 0)) >= 100) {
       unlockAchievement('shadow_100');
     }
     if (reachedLevel >= 10) {
       unlockAchievement('level_10');
+      unlockSkin('gold');
     }
     try { localStorage.removeItem('shadow_paw_last_run'); } catch { /* ignore */ }
   }, [score, fishesCollected, coinsEarned]);
@@ -1113,6 +1134,12 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
         <StatTile icon="monetization_on" label="Mynt totalt" value={totalCoins} tone="text-yellow-400" glow="rgba(250,204,21,0.14)" />
         <StatTile icon="military_tech" label="XP" value={`+${Math.floor(score / 10)}`} tone="text-cyan-300" glow="rgba(103,232,249,0.14)" />
       </div>
+      {nearGoal && (
+        <p className="-mt-4 mb-8 flex items-center justify-center gap-2 text-sm text-white/70">
+          <span className="material-symbols-outlined text-base text-primary" aria-hidden="true">lock_open</span>
+          {nearGoal}
+        </p>
+      )}
 
       {/* High Score Section */}
       <div className={`card-premium mb-8 p-6 md:p-8${score <= 0 ? " opacity-60" : ""}`}>
