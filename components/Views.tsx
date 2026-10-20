@@ -236,6 +236,15 @@ const RUN_PERKS: { id: string; icon: string; title: string; desc: string }[] = [
   { id: 'SHIELD_START', icon: 'shield', title: 'Startsköld', desc: '3 sekunders sköld i början av varje bana.' },
 ];
 
+/** Tips på Game Over per dödsorsak. */
+const DEATH_TIPS: Record<string, { icon: string; text: string }> = {
+  enemy: { icon: 'pets', text: 'Hoppa på fiender uppifrån eller skjut dem.' },
+  hazard: { icon: 'warning', text: 'Vänta in lasern och hoppa över.' },
+  hole: { icon: 'arrow_downward', text: 'Använd dubbelhopp och dash över hål.' },
+  timer: { icon: 'timer', text: 'Samla fisk i en jämn takt, tiden tar slut.' },
+  boss: { icon: 'shield', text: 'Rör dig och undvik projektilerna, skjut när bossen stannar.' },
+};
+
 /** START MENU **/
 /** Läser rekordet från den separata nyckeln shadow_paw_best (aldrig kraschande). */
 const readBestRecord = (): { level: number; score: number; runLevel: number } => {
@@ -1028,6 +1037,12 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
               ? ` · Ny bästa nivå! (Bästa: ${bestRecordBefore.level}, +${reachedLevel - bestRecordBefore.level})`
               : isNewBestLevel ? ' · Ny bästa nivå!' : bestRecordBefore.level > 0 ? ` · Bästa: ${bestRecordBefore.level}` : ''}
           </p>
+          {!quit && DEATH_TIPS[lastRun.deathCause as string] && (
+            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-white/80">
+              <span className="material-symbols-outlined text-base text-yellow-300" aria-hidden="true">{DEATH_TIPS[lastRun.deathCause as string].icon}</span>
+              {DEATH_TIPS[lastRun.deathCause as string].text}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1649,6 +1664,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [lives, setLives] = useState(5);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
+  const lastDeathCauseRef = useRef<string | null>(null);
   const [chosenPerks, setChosenPerks] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
@@ -2540,10 +2556,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       runLevel: game.runLevel || 1,
       level: game.level || 1,
       coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
+      deathCause: lastDeathCauseRef.current,
     }));
   };
 
   const trackDeathCause = (cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
+    lastDeathCauseRef.current = cause;
     try {
       const key = 'shadow_paw_telemetry';
       const prev = JSON.parse(localStorage.getItem(key) || '{}');
