@@ -1,162 +1,190 @@
-# 02 - Idéer och byggplan (Agent 2), omgång 5
+# 02 - Idéer och byggplan (Agent 2, Idégranskare), varv 6
 
-Datum: 2026-10-20. Branch `agents/build-20261020-r5`. Underlag: `reports/01-analys.md` (omgång 5), `reports/VISION.md`, samt kodläsning av `components/Views.tsx` (7001 rader) och `services/AudioEngine.ts`. Inget har byggts eller körts av mig. Alla punkter har `- **Status:** FÖRESLAGEN`; endast ägaren/orkestratören ändrar dem.
+Datum: 2026-10-20. Underlag: `reports/01-analys.md` (varv 6, Paket P6), `reports/VISION.md`, kodläsning av `components/Views.tsx` (7061 rader), `context/ProgressContext.tsx`, `types.ts`, `services/AudioEngine.ts`. Inget bygge kördes av mig. Radnummer gäller nuvarande filer; Agent 3 ska söka på funktionsnamn/kodsnuttar om raderna har glidit.
 
 ## Bedömning av Agent 1:s rapport
 
 Stämmer (verifierat mot koden):
-- **A1-090 (skuggdash-exploit)**: korrekt. `shadowPass` (Views.tsx:2548-2566) triggas när `e.shadowDashId !== game.dashId` (3264); `dashId` ökar vid varje dash (2525) och fienden försvinner aldrig, så samma patrullerande fiende ger +100 poäng, +10 XP, combo och (Skuggjägare) +1 skott var 45:e bildruta (30 med Snabb dash). Samma mönster för lasrar (3481-3487, `h.shadowDashId`).
-- **A1-091**: korrekt. Fiendepassage kräver `!invincible` (3264) och laserblocket ligger inuti `if (!game.player.invincible)` (3476), så under sköld/osårbarhet ges ingen belöning. Det är fördelaktigt som regel (hindrar att Startsköld + dash blir en belöningsmaskin), så jag föreslår att dokumentera, inte ändra.
-- **A1-094 (rerolla kort)**: korrekt. `perkOffer` (2696-2706) använder `Math.random()` i `useMemo` på `[levelSummary, chosenPerks]`; `BONUS_LIFE` (250, tillämpas 1986) filtreras inte vid 5 liv. `runSeedRef` (1699) och `mulberry32` (1345) finns redan och kan återanvändas.
-- **A1-097**: korrekt. Dialogerna (6528, 6546) har fokusflytt men ingen fokusfälla.
-- **A1-117**: korrekt. `tone()` (AudioEngine.ts:8-30) saknar slump och det finns inget landningsljud.
-- **A1-123/A1-053**: korrekt. Touch-skjutknappen (6690) anropar `fireBullet()` utan mål, så skottet går rakt i `facing`-riktningen (2798-2801). `isTouchDevice` finns (1769).
-- **A1-105**: korrekt. `game.rule` har bara MOON och GOLDRUSH (2456-2468); slumptalsintervallen 0,45-0,73 respektive >=0,73 lämnar 0-0,45 ledigt.
+- A1-130: rad 2533 `Math.min(SHADOWFLOW ? 22 : 45, FAST_DASH ? 30 : 45)` ger alltid 22 på SHADOWFLOW-banor, FAST_DASH är verkningslös där. Korrekt.
+- A1-131: rad 2706 läser `gameRef.current?.lives` inne i `useMemo` (2703-2715) med `eslint-disable` på deps. Korrekt. Rättningen är enklare än Agent 1 antydde: `levelSummary` (setLevelSummary, rad 5868-5876) är redan en dep, man behöver bara lägga `lives: game.lives` i objektet och läsa därifrån.
+- A1-135/A1-141: `e.type` används bara vid ritning (5086, 5163) och skapas på 2209-2214. Rörelsen (3309-3313) är gemensam. Korrekt.
+- A1-136: slumpintervallen på 2462-2474 stämmer: MOON >= 0.73, GOLDRUSH 0.45-0.73, SHADOWFLOW 0.30-0.45, alltså är intervallet 0.00-0.30 ledigt (ingen regel).
+- A1-140: skuggpassager räknas inte i någon statistik (`shadowPass`, 2555-2573, ändrar bara poäng/XP/effekter). `applyRunResults` (ProgressContext.tsx:303-356) och `runStatsRef` (Views.tsx:1728-1751) saknar fältet.
+- A1-152 / A1-151: SKINS (Views.tsx:16-22) har 5 poster och används i butiken (6890) och QuestsView (7043), så nya skins syns automatiskt på båda ställena.
 
-Fel eller föråldrat:
-- **A1-118 (landningsdamm)**: delvis föråldrat. Landningsdamm och squash finns redan (Views.tsx:3216-3229). Det som saknas är landningsLJUD och haptik/pitch. B-028 avgränsas därför till ljud.
-- **Nummerförvirring**: i orkestratörens instruktion kallas korterbjudandet "A1-092", men i rapporten är det **A1-094**; A1-092 är stomp-under-dash. Planen hänvisar till rapportens ID.
-- **A1-091 "överväg dash genom movingSaw"**: avråds. Det skulle göra dashen för stark utan speltest.
-- **Överdrift**: "obegränsad ammunition" (A1-090) kräver Skuggjägare-kortet; utan det är det poäng/XP-farm. Allvarlighet Medel är dock rimlig.
-- A1-099 (`node -e require`) är osäkert och ej verifierat; tas inte med.
+Fel eller överdrivet:
+- A1-142: VIND och MÖRKER finns redan som miniEvents (`WIND` 1895/3000, `BLACKOUT` 1895/6253). Att lägga dem som banregler vore dubbelt och kan kollidera. FISKREGN är riskabelt: banan klaras bara när alla fiskar i `game.fishes` är tagna (5848), så fallande fisk som missas skulle kunna göra banan omöjlig. Det som är säkert och nytt är ISGLID och en regel som lyfter skuggpassagen (se B-033).
+- A1-157: hit-stop finns redan (`game.hitStop`, 1893, 2950-2953, satt till 2 vid bossträff 3077). Det som saknas är att använda den vid skuggpassage och stomp. Det är alltså inte ny infrastruktur.
+- A1-155: haptiken är utspridd på nio ställen (2502, 2517, 2550, 2571, 2609, 2862, 3515, 3560, 3635), inte bara två. Att centralisera är därför lite större än Agent 1 skrev, men fortfarande mekaniskt.
+- A1-150: prestationer visas inte med namn någonstans (QuestsView 7041 visar bara antal). Nya prestationer är därför osynliga utan en namnlista; den ingår i B-034. A1-134 (toast i spel) tas inte med, det är en egen punkt.
+- A1-143 (skuggfiende) kallas "Liten/Låg" men rör skott, fiendekollision, `enemiesDefeatedInRun` och fiskräkning och bör ses som medel; flyttad till fria idéer.
+- Paketordningen "6, 3, 1, 2, 4, 5" följs i princip, men B-034 måste byggas före B-035 eftersom skins låses upp via de nya prestationerna.
 
 ## Byggplan
 
-Regler för alla punkter: ingen ändring av sparformat (endast nya nycklar om nödvändigt; inga behövs här), inga nya beroenden, inga borttagna funktioner eller banor, `npm run build` ska gå igenom. Radnummer gäller före byggstart och förskjuts när tidigare punkter byggs; sök på funktionsnamn.
+Gemensamma regler för Agent 3: en punkt i taget, kör `npm run build` efter varje, ändra inte `Math.random()`-sekvensen i banbygget (2195-2216; ny slump i spelloopen får använda `Math.random` men inte i `buildLevel`), inga ändringar i befintligt sparformat (nya fält är valfria). Respektera `progress.settings.reduceMotion` och `haptics`.
 
-### B-025: Skuggpassage en gång per fiende och laser (stoppa farmning)
-- **Bakgrund:** A1-090 (Medel), A1-091.
+### B-031: SHADOWFLOW/FAST_DASH och liv i perkOffer
+
+- **Bakgrund:** A1-130, A1-131.
 - **Ändring:**
-  1. I fiendeloopen (`game.enemies.forEach`, ca 3239-3272): ändra villkoret på rad 3264 från `e.shadowDashId !== game.dashId` till `!e.shadowPassed`, och sätt `e.shadowPassed = true` (behåll gärna `e.shadowDashId`-raden eller ta bort den). Resultat: en skuggpassage per fiende och bana. Dashen fortsätter vara ofarlig mot fienden (grenen `if (game.player.dashing > 0)` ändras inte), bara belöningen uteblir vid upprepning.
-  2. I hazard-loopen (ca 3476-3488): samma sak för lasrar, `h.shadowPassed` i stället för `h.shadowDashId !== game.dashId`.
-  3. Skuggjägarens skott (`shadowPass`, ca 2553) behöver ingen separat ändring eftersom en passage nu ger högst 1 skott per fiende; det är därmed även högst 1 skott per dash.
-  4. A1-091: behåll regeln (ingen belöning under sköld). Lägg en rad i "Hur man spelar" (ca 675, efter raden "Dash - snabb burst...") som säger att skuggpassage genom fiender och lasrar ger poäng en gång per hinder och inte räknas medan sköld är aktiv.
-  5. Flaggorna lever på fiende- och hazardobjekten, som skapas på nytt av `setupLevel` vid varje bana och varje "Starta om bana", så ingen extra återställning behövs.
-- **Berörda filer:** `components/Views.tsx` (fiendeloop ca 3262-3272, hazard-loop ca 3481-3488, hjälptext ca 675). Funktion `shadowPass` (2548) oförändrad.
-- **Verifiering:** `npm run build`. Kodgranskning: sök `shadowDashId` och bekräfta att inga kvarvarande jämförelser mot `game.dashId` finns för belöning. Manuellt: dasha två gånger genom samma patrullerande fiende; endast första ger "SKUGGA!". Dasha genom en annan fiende; ger poäng. Dash genom aktiv laser ger fortfarande ingen skada. Starta om banan; passagen fungerar igen.
+  1. I `triggerDash` (Views.tsx 2526-2552, raden 2533): ersätt `Math.min(...)` med multiplikativ beräkning: `let cd = game.perks?.includes('FAST_DASH') ? 30 : 45; if (game.rule === 'SHADOWFLOW') cd = Math.max(18, Math.floor(cd * 0.5));` => 45 normalt, 30 med FAST_DASH, 22 med SHADOWFLOW, 18 med båda (golv 18 så att dashen (12 frames) aldrig blir i princip ständig).
+  2. I `setLevelSummary({...})` (5868-5876) lägg `lives: game.lives`. I `perkOffer` (2703-2715, rad 2706) byt `gameRef.current?.lives ?? 0` mot `levelSummary?.lives ?? 0`. Behåll deps `[levelSummary, chosenPerks]` men ta bort `eslint-disable`-raden om ingen annan varning uppstår.
+- **Berörda filer:** `components/Views.tsx` (`triggerDash`, `PlayingView` perkOffer, `setLevelSummary`).
+- **Verifiering:** `npm run build`. Läs koden: kontrollera att alla fyra kombinationer ger 45/30/22/18. Manuellt: nå en SHADOWFLOW-bana med och utan kortet "Snabb dash" och se att dashen laddas märkbart fortare med kortet. Kontrollera att kortvalet efter bana fortfarande visar 3 kort och att BONUS_LIFE inte erbjuds vid 5 liv.
 - **Risk:** Låg.
 - **Status:** GODKÄND
 
-### B-026: Seedade uppgraderingskort och inget Extra liv vid fulla liv
-- **Bakgrund:** A1-094 (rapportens ID; orkestratören kallar det A1-092).
-- **Ändring:**
-  1. I `perkOffer` (`useMemo`, ca 2696-2706): ersätt `Math.random()` med `const rng = mulberry32(runSeedRef.current ^ Math.imul((levelSummary?.runLevel || 1) + 1, 2654435761) ^ Math.imul(chosenPerks.length + 1, 40503));` och använd `rng()` i blandningen. Samma bana, samma antal valda kort och samma körning ger då alltid samma tre kort, så omstart av banan ger ingen gratis reroll. Efter ett val ändras `chosenPerks.length`, så kortsetet byts som i dag.
-  2. Filtrera bort `BONUS_LIFE` när `gameRef.current?.lives >= 5` (gäller bonusfallbacken, ca 2699): `left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (gameRef.current?.lives ?? 0) < 5)`. Listan blir aldrig tom eftersom två andra bonuskort finns kvar.
-  3. Kontrollera att `useMemo`-beroendena fortfarande räcker; `gameRef` är en ref och behöver inte ligga i beroendena (behåll eslint-kommentaren).
-- **Berörda filer:** `components/Views.tsx` (`perkOffer` ca 2696-2706; `mulberry32` ca 1345 och `runSeedRef` ca 1699 återanvänds, inga nya).
-- **Verifiering:** `npm run build`. Manuellt: avsluta en bana, notera de tre korten, pausa/"Starta om bana"/klara banan igen; samma kort erbjuds. Välj ett kort; nya kort visas. Med 5 liv och tom vanlig pool erbjuds inte Extra liv.
+### B-032: Olika beteende per fiendetyp (utfall och hopp)
+
+- **Bakgrund:** A1-141 (A1-135).
+- **Ändring:** I fiendeloopen `game.enemies.forEach` (3292) ersätt det gemensamma rörelseblocket 3308-3313 med typberoende logik, men behåll standardpatrull (`e.x += e.velocityX` + studs mot plattformskanter) för typ 0 och som grundrörelse för övriga.
+  - Lazy-init vid första uppdatering: `if (e.baseVx === undefined) { e.baseVx = e.velocityX; e.baseY = e.y; }` (efter GOLDRUSH-multiplikationen vid 2469, därför lazy).
+  - **Typ 1 (råtta), bara från bana 4 (`game.level >= 4`, kontrollera fältnamnet för banan i `game`):** när katten är på samma höjd (`|dy| < 50`), horisontellt 60-200 px bort, inte `invincible`, inte `dashing`, och `e.lungeCd` är 0: starta förvarning `e.windup = 24` (råttan står still, ritas med röd blinkning och "!" över sig). När `windup` når 0: utfall `e.lunge = 14` frames med fart `Math.sign(riktning mot katten) * Math.max(4, Math.abs(e.baseVx) * 2.2)` men högst 5,5 px/frame; klampa `e.x` inom plattformens kanter. Efter utfallet `e.lungeCd = 150` och `e.velocityX = riktning * Math.abs(e.baseVx)`. Skuggdash, stomp och hopp fungerar som vanligt (kollisionsreglerna rörs inte).
+  - **Typ 2, bara från bana 3:** litet hopp i rytm: var 90:e frame (förskjuten med `e.x` så att de inte hoppar i takt) en 24-frames båge, `e.y = e.baseY - 16 * Math.sin(Math.PI * t / 24)`. Max 16 px så att stomp-regeln (`playerBottom < enemyTop + 20`, rad 3342) och skott (3046) fungerar som förut. Återställ `e.y = e.baseY` efter bågen.
+  - Rita förvarningen i fiendeloopen för rendering (5072-5085, före typgrenen 5086): om `e.windup > 0`, rita röd halvtransparent ruta/ring runt fienden och ett "!" ovanför. Med `reduceMotion` används stadig färg i stället för blinkning.
+  - Bana 1-2 påverkas inte (bana 1 begränsar redan fiender, 2450-2457).
+- **Berörda filer:** `components/Views.tsx` (fiendeuppdatering ca 3292-3313, fiendeutritning ca 5072-5086).
+- **Verifiering:** `npm run build`. Starta bana 4-5 och se: råttor ger tydlig röd förvarning i 0,4 s före utfall, utfallet stannar på plattformen, dash genom utfallet ger "SKUGGA!", stomp ger +200 som förut. Bana 1-3 oförändrad för råttor. Typ 2 hoppar men går fortfarande att stompa och skjuta. Leta efter fiender som glider av plattformen eller fastnar (e.x klampad).
+- **Risk:** Medel (ändrar spelkänsla; hålls smal med bana-gating, 0,4 s förvarning och fartstak så att det inte blir orättvist).
+- **Status:** GODKÄND
+
+### B-033: Två nya banregler, ISGLID och SKUGGJAKT
+
+- **Bakgrund:** A1-142, A1-136 (rättad enligt bedömningen ovan: VIND/MÖRKER/FISKREGN utgår).
+- **Ändring:** I regelblocket (Views.tsx 2459-2475) lägg till två grenar i det lediga intervallet utan att ändra befintliga trösklar (MOON >= 0.73, GOLDRUSH 0.45-0.73, SHADOWFLOW 0.30-0.45):
+  - `else if (roll >= 0.18 && roll < 0.30)`: `rule = 'ISGLID'`, `game.friction = 0.92` (nu 0.85, används bara på rad 2979 för marken), toast "ISGLID: längre glid".
+  - `else if (roll >= 0.08 && roll < 0.18)`: `rule = 'SKUGGJAKT'`, toast "SKUGGJAKT: skuggpassager ger dubbla poäng". I `shadowPass` (2555-2573): `const pts = (hunter ? 200 : 100) * (game.rule === 'SKUGGJAKT' ? 2 : 1)`.
+  - Rulla 0.00-0.08 förblir "ingen regel". Samma `mulberry32`-roll som idag.
+  - HUD (6459-6472): lägg två etiketter i `ruleStyle` ("Isglid" ljusblå, "Skuggjakt" lila) i stället för nuvarande fallback "Månsvävning" för okända regler; gör kedjan explicit så att okända regler inte visas som månsvävning.
+  - Valfritt: bryt inte mot att samma regel kan komma två banor i rad (A1-136); lämna.
+- **Berörda filer:** `components/Views.tsx` (regelblock 2459-2475, `shadowPass` 2555-2573, HUD 6459-6472). Ingen ändring av banbygget.
+- **Verifiering:** `npm run build`. Tillfälligt tvinga regeln i dev (ändra inte i commit) eller spela banor 3-12 tills de dyker upp: ISGLID ger synligt längre glid vid stopp, SKUGGJAKT visar "SKUGGA! +200" (+400 med SHADOW_HUNTER). Regelkortet i HUD visar rätt text. MOON/GOLDRUSH/SHADOWFLOW oförändrade (samma roll-intervall).
 - **Risk:** Låg.
 - **Status:** GODKÄND
 
-### B-027: Fokusfälla och fokusåterställning i pausdialog och banresultat
-- **Bakgrund:** A1-097 (och A1-081 kvarstående del).
+### B-034: Skuggpassager i statistik, veckouppdrag och fler prestationer
+
+- **Bakgrund:** A1-140, A1-133, A1-150.
 - **Ändring:**
-  1. Lägg en liten hjälpfunktion `trapTab(e: React.KeyboardEvent<HTMLElement>, root: HTMLElement | null)` nära fokus-effekterna (ca 2709-2722) som vid `Tab`/`Shift+Tab` samlar `button:not([disabled]), [tabindex]:not([tabindex="-1"])` i `root`, och loopar fokus mellan första och sista (anropar `preventDefault`).
-  2. Koppla `onKeyDown={e => trapTab(e, pauseDialogRef.current)}` på pausdialogens `div` (ca 6528) och motsvarande på banresultatets `div` (ca 6546).
-  3. Spara `document.activeElement` när dialogen öppnas (i de två befintliga effekterna) och återställ fokus till det (eller `document.body`) i effektens cleanup när dialogen stängs. Spelet styrs via window-tangentlyssnare, så detta ska inte påverka spelinput.
-  4. Escape i pausdialogen hanteras redan (2761, `togglePause`); lägg ingen ny Escape-hantering i banresultatet (det skulle kunna hoppa över uppgraderingsval).
-  5. Lägg inte till `inert`.
-- **Berörda filer:** `components/Views.tsx` (ca 2709-2722, 6528, 6546).
-- **Verifiering:** `npm run build`. Manuellt med tangentbord: pausa med Escape; Tab och Shift+Tab stannar kvar bland dialogens knappar; Fortsätt återger spelet och tangenterna fungerar. Samma i banresultatet; uppgraderingskorten nås med Tab och Enter. Space och piltangenter ska inte trigga spelet under paus (oförändrat beteende).
+  1. Räkna: i `shadowPass` (2555) `game.shadowPassesInLevel = (game.shadowPassesInLevel || 0) + 1;`. Lägg `shadowPasses: 0` i `runStatsRef` (1728), `r.shadowPasses += game.shadowPassesInLevel || 0;` i `commitLevelToRun` (1736-1751), och `shadowPasses: runStatsRef.current.shadowPasses + (game.shadowPassesInLevel || 0)` i `persistRunSummary` (2663-2678).
+  2. Sparande: `types.ts` stats (rad 75-82) får `shadowPasses?: number` (valfri). `defaultProgress.stats` (ProgressContext.tsx:71-78) får `shadowPasses: 0`. `applyRunResults` (typ 97-105, impl 303-356) får valfritt `shadowPasses?: number` och adderar `stats.shadowPasses = (p.stats.shadowPasses || 0) + (results.shadowPasses || 0)`. Läsningen sprider redan `defaultProgress.stats`, så gamla sparfiler fungerar.
+  3. Veckouppdrag: `createWeeklyQuests` (35-41) får `w3` "Vecko-jakt: skuggpassager" (`target: 25 + Math.floor(seededRandom(seed + 13) * 15)`, `reward: 450`), och `applyRunResults` ökar `w3`. Migrering för befintliga sparfiler: i mount-effekten (166-180) om `weeklyQuests` saknar `w3` och veckan inte nollställs, lägg till `w3` från `createWeeklyQuests(week)`. Rör inga andra uppdrag.
+  4. Prestationer: ny konstant `ACHIEVEMENTS` (id, svenskt namn, beskrivning) nära SKINS (Views.tsx rad ca 16-22) med de sju befintliga (`combo_10`, `enemy_60`, `fish_300`, `boss_3`, `flawless`, `close_call`, `streak_20`) plus tre nya: `shadow_10` ("Skuggtass": 10 skuggpassager i en körning), `shadow_100` ("Skuggmästare": 100 skuggpassager totalt, `(progress.stats.shadowPasses||0) + run >= 100`), `level_10` ("Tio banor": nådde bana 10, `reachedLevel >= 10`). Lås upp i GameOverView-effekten (938-973) med `unlockAchievement` bredvid de befintliga (läs `lastRun.shadowPasses`). Skicka `shadowPasses: lastRun.shadowPasses || 0` till `applyRunResults` (938).
+  5. UI: i QuestsView (7038-7050) lista `ACHIEVEMENTS` med namn/beskrivning och låst/upplåst-status i stället för bara antalet.
+- **Berörda filer:** `components/Views.tsx`, `context/ProgressContext.tsx`, `types.ts`.
+- **Verifiering:** `npm run build`. Spela en körning, gör flera skuggpassager, dö: GameOver/uppdrag visar att `w3` har ökat, `progress.stats.shadowPasses` ökat (se `localStorage['shadow_paw_progress_v2']`). Starta med gammal sparfil (utan `w3`/`shadowPasses`): ingen krasch, `w3` tillkommer. Prestationslistan visar 10 poster; befintliga upplåsta syns som upplåsta. 10 passager i en körning ger `shadow_10`.
+- **Risk:** Låg (nya valfria fält; rör inte befintliga nycklar). Kontrollera att `applyRunResults` fortfarande bara körs en gång per körning (didFinishRef, 927).
+- **Status:** GODKÄND
+
+### B-035: Två nya skins och "nästan"-indikatorer
+
+- **Bakgrund:** A1-151, A1-152. Beroende: B-034 (prestationerna och `shadowPasses`).
+- **Ändring:**
+  1. SKINS (Views.tsx 16-22): lägg `umbra` ("Umbra", `color: '#6d28d9'`, `accent: '#1e0b3a'`, hint "Gör 10 skuggpassager i en körning") och `gold` ("Guldtass", `color: '#e0b43a'`, `accent: '#4a3508'`, hint "Nå bana 10"). Ren kosmetika, ingen fördel. Lås upp i GameOver-effekten: `shadow_10` -> `unlockSkin('umbra')`, `level_10` -> `unlockSkin('gold')`. Skinn visas automatiskt i butiken (6890) och QuestsView (7043). Kontrollera att spelfiguren ritas med `skin.color/accent` (1851) så att inget extra behövs.
+  2. "Nästan"-indikator på GameOver (nära 1094-1131, under resultatkortet): ta ett snapshot `const [statsBefore] = useState(progress.stats)` vid mount (som `bestBefore`, 889) och visa ett rad med närmaste olåsta mål: t.ex. "12 fisk kvar till Frost" (300 - (totalFishCollected + fishesCollected)), "9 fiender kvar till Ember", "1 boss kvar till Aurora", "3 skuggpassager kvar till Umbra". Visa bara det närmaste olåsta målet (en rad), dölj om allt är upplåst. Räkna med `statsBefore` + körningens värden (inte `progress.stats`, som uppdateras av `applyRunResults` efter första renderingen och annars dubbelräknas).
+  3. Samma text som liten hint på skinnkorten i butiken är valfritt; gör det bara om det är en rad.
+- **Berörda filer:** `components/Views.tsx` (SKINS 16-22, GameOverView 874-1150, ev. butik 6890).
+- **Verifiering:** `npm run build`. Dummy-spara progress med 290 totala fiskar och avsluta en körning med 3 fisk: raden visar "7 fisk kvar till Frost" (inte dubbelräknat). Efter upplåsning visas ett annat mål. Nya skins syns som låsta i butik och QuestsView, kan väljas när upplåsta, och spelfiguren ritas med dem. Inget borttaget.
 - **Risk:** Låg.
 - **Status:** GODKÄND
 
-### B-028: Landningsljud och pitchvariation i ljudmotorn
-- **Bakgrund:** A1-117, A1-082 (kvar), delvis A1-118.
-- **Ändring:**
-  1. `services/AudioEngine.ts`, `tone()` (rad 8-30): lägg till valfritt fält `jitter?: number` (andel, t.ex. 0,05). När satt multipliceras `from` och `to` med `1 + (Math.random() * 2 - 1) * jitter`. Standard 0, så befintliga ljud oförändrade.
-  2. Sätt `jitter: 0.05` på `playJump` (63), `playCoin` (båda tonerna ska ha SAMMA faktor; beräkna faktorn en gång i funktionen och skicka som `shift`, eller låt `tone` ta ett färdigt `pitch`-fält), `playShoot` (127) och `playNearMiss` (111).
-  3. Ny metod `public static playLand(strength = 0.5)`: kort lågt dunk, t.ex. `tone({ type: 'sine', from: 180, to: 70, duration: 0.09, gain: 0.05 + 0.1 * clamp(strength,0,1) })` med `jitter: 0.04`.
-  4. `Views.tsx` landningsblocket (ca 3216-3229, `if (!wasOnGround)`): anropa `AudioEngine.playLand(Math.min(1, impactSpeed / 14))` endast när `impactSpeed > 4` så att små steg inte spammar. Ingen haptik tillagd.
-- **Berörda filer:** `services/AudioEngine.ts` (tone, playJump, playCoin, playShoot, playNearMiss, ny playLand), `components/Views.tsx` (ca 3216-3229).
-- **Verifiering:** `npm run build`. Manuellt/kodgranskning: hopp och mynt låter lätt varierat, landning efter högt fall ger dunk, vanlig löpning på platt mark ger inget landningsljud, mute och volym fungerar som förut. Kontrollera att `Math.max(20, ...)`-skyddet i `tone` fortfarande gäller efter jitter.
-- **Risk:** Låg.
-- **Status:** GODKÄND
+### B-036: Juice, hit-stop, stigande ton och centraliserad haptik
 
-### B-029: Tredje banregel "Skuggflöde" (dash laddas dubbelt så snabbt)
-- **Bakgrund:** A1-105 (rapportens förslag till fler banregler), bygger på Skuggdash (A1-085) för unik identitet.
+- **Bakgrund:** A1-155, A1-156, A1-157 (korrigerade: `hitStop` finns redan).
 - **Ändring:**
-  1. I regelblocket i `setupLevel` (ca 2455-2468): lägg en tredje gren `else if (roll >= 0.30 && roll < 0.45)` med `(game as any).rule = 'SHADOWFLOW'` och `pushToast(game, 'SKUGGFLÖDE: dashen laddas snabbt', '#67e8f9')`. Befintliga intervall (MOON >= 0,73; GOLDRUSH 0,45-0,73) ändras inte, så banor som redan har en regel behåller den. Några banor som tidigare saknade regel får Skuggflöde; det är avsiktligt.
-  2. I `triggerDash` (ca 2526): `p.dashCooldown = game.rule === 'SHADOWFLOW' ? 22 : (game.perks?.includes('FAST_DASH') ? 30 : 45);`. Med Snabb dash tar man det lägre värdet: använd `Math.min` av de två.
-  3. HUD-chipen (ca 6406-6412): utöka villkoren så att `stats.rule === 'SHADOWFLOW'` ger text `Skuggflöde` och en cyan kantfärg (`border-cyan-300/40`, `text-cyan-200`); befintliga två regler får samma utseende som idag. Skriv gärna en tydlig `ruleLabel`/`ruleStyle`-uppslagning i stället för kapslade ternärer.
-  4. Skuggflöde gäller bara på banor där regeln redan är aktiv i dag (nivå >= 3, inte bossbanor, ej "Speed Run" behöver inte uteslutas).
-  5. Eftersom B-025 gör belöningen engångs per hinder blir snabb dash en rörelsefördel, inte en poängmaskin.
-- **Berörda filer:** `components/Views.tsx` (`setupLevel` regelblock ca 2455-2468, `triggerDash` ca 2519-2526, HUD ca 6406-6412). `stats.rule` skrivs redan från `game.rule` (ca 6220).
-- **Verifiering:** `npm run build`. Kodgranskning: `rule`-värdet SHADOWFLOW påverkar endast dash-cooldown. Manuellt: hitta en bana (nivå >= 3) med Skuggflöde via toast och HUD-chip; dashen laddas om på ca 22 bildrutor; MOON och GOLDRUSH-banor är oförändrade. Starta om en bana ger samma regel (regeln är seedad via `runSeedRef`).
-- **Risk:** Låg.
-- **Status:** GODKÄND
-
-### B-030: Auto-sikte på touch-skjutknappen
-- **Bakgrund:** A1-123 / A1-053.
-- **Ändring:**
-  1. Ny hjälpfunktion nära `fireBullet` (ca 2786), t.ex. `autoAim(game)`, som bland `game.enemies` (levande, `e.x > -500`) väljer den närmaste fienden framför katten i `facing`-riktningen inom 450 px horisontellt och 140 px vertikalt, mätt från kattens centrum, och returnerar `{ x: e.x + e.width / 2 - game.scrollX, y: e.y + e.height / 2 }` (skärmkoordinat, samma konvention som `targetX` i `fireBullet`, rad 2795) eller `null`.
-  2. Skjutknappens `holdProps` (ca 6690): ersätt `fireBullet()` med `fireBullet(...)` som anropar `autoAim` och skickar `null, null` om inget mål finns (då skjuter katten rakt framåt som idag). Gäller endast touchknappen; tangentbord och mus (2782, 2878) ändras inte.
-  3. Bossar ingår inte (de har egen träffzon); begränsning kan skrivas i en kommentar.
-  4. Ingen ny inställning krävs. Frivilligt för senare: växel i inställningar.
-- **Berörda filer:** `components/Views.tsx` (`fireBullet` ca 2786-2812, skjutknapp ca 6687-6694).
-- **Verifiering:** `npm run build`. Manuellt i webbläsare med mobilemulering (pointer: coarse): skjut mot en fiende på en något högre/lägre plattform och träffa den; utan fiende i konen skjuter katten rakt fram; tangentbord/mus oförändrat; ammunition dras som förut (`game.ammo--`). Kontrollera att kulan inte kan skjutas bakåt eftersom endast mål framför katten väljs.
-- **Risk:** Låg-Medel (påverkar balans på mobil något: lättare att träffa; ingen risk för sparad data).
+  1. Haptik: lägg `const haptic = (kind: 'jump'|'dash'|'shadow'|'hit'|'land'|'shoot'|...)` i `PlayingView` (före `tryPerformJump`, rad ca 2494) med mönster och som respekterar `progress.settings.haptics && navigator.vibrate`. Ersätt de nio inline-anropen (2502, 2517, 2550, 2571, 2609, 2862, 3515, 3560, 3635) med `haptic(...)` med samma längder som idag. Nytt: kort `haptic('land')` (6 ms) i landningsblocket 3268-3272 när `impactSpeed > 6`. Inga beteendeändringar utöver landningen.
+  2. Stigande ton: `AudioEngine.playShadowPass(chain = 0)` (AudioEngine.ts:111-114) multiplicerar `from`/`to` med `Math.pow(1.06, Math.min(chain, 6))`. I `shadowPass` (2555): `game.shadowChain = (game.shadowChainTimer > 0 ? game.shadowChain + 1 : 0); game.shadowChainTimer = 120;` och minska timern i spelloopen (t.ex. i `simulate`, nära 2995); anropa `playShadowPass(game.shadowChain)`. Tonerna går via `tone()` som redan har tak på 20 Hz.
+  3. Hit-stop: i `shadowPass` och vid stomp (3342-3353) sätt `if (!progress.settings.reduceMotion && game.hitStop === 0) game.hitStop = 3` (stomp: 2). Använd befintlig `hitStop`-hantering (2950-2953), som frysar simuleringen, så dashen (`p.dashing`) fryser också och tidsfönster blir inte kortare. Sätt aldrig hitStop > 3.
+- **Berörda filer:** `components/Views.tsx` (`PlayingView` 1689+, `tryPerformJump`, `triggerDash`, `shadowPass`, `simulate`, fiendeloopen 3292+), `services/AudioEngine.ts` (`playShadowPass`).
+- **Verifiering:** `npm run build`. Spela: skuggpassager i följd (inom 2 s) låter allt högre och återställs efter paus; en enskild passage låter som tidigare. Merkbar men kort frysning vid skuggpassage/stomp, ingen frysning med `reduceMotion` på. Haptiken (testa på mobil eller `navigator.vibrate`-mock i konsolen) ger samma längder som förut plus kort landning. Ingen dubbel haptik, inget ljudfel i konsolen.
+- **Risk:** Låg (hit-stop är tunt och begränsat till 3 frames; refaktorn av haptik är mekanisk).
 - **Status:** GODKÄND
 
 ## Fria idéer för framtiden
 
-Högrisk eller för stora för en enskild granskning. Ingen av dessa ska byggas utan separat godkännande av ägaren.
+Dessa är för stora eller för riskfyllda för ett litet varv. Orkestratören godkänner inga punkter härifrån; de är underlag för framtida varv.
 
-### F-001: Seedad banlayout, Dagens bana och dagsstreak
-- **Bakgrund:** A1-057 steg 1, A1-109. Kräver att `setupLevel` byter alla `Math.random()` (120 träffar i Views.tsx) mot lokal seedad PRNG (`mulberry32` finns redan).
-- **Risk:** Hög (ändrar bangenerering för alla banor och balans).
-- **Status:** FÖRESLAGEN
-- **Notering:** Ge `Math.random()`-sekvensen i enstaka delsystem (partiklar, väder) fortsatt fritt flöde; seeda enbart layout, fiender, hinder och fisk.
-
-### F-002: Spöke (ghost-körning)
-- **Bakgrund:** A1-100. Kräver F-001 och F-004. Inspelning av position per 3:e bildruta per bana/seed.
-- **Risk:** Hög
+### F-001: Dagens bana (seedad layout)
+- **Bakgrund:** A1-057, A1-109, A1-100. Banbygget använder `Math.random()` (2195-2216 m.fl.); en daglig delad bana kräver att allt i `buildLevel` flyttas till en seedad `mulberry32`.
+- **Idé:** Samma bana för alla en dag, egen topplista lokalt, streak.
+- **Risk:** Hög (ändrar generering, balans och alla banor).
 - **Status:** FÖRESLAGEN
 
-### F-003: Checkpoints och "Fortsätt från bana X"
-- **Bakgrund:** A1-110, A1-055, A1-095. Berör livscykel, poängräkning och mynt-golvet (`coinFloorRef`).
-- **Risk:** Hög
+### F-002: Spöke (replay av bästa körningen)
+- **Bakgrund:** A1-100. Kräver deterministisk simulering eller inspelning av positioner per frame.
+- **Risk:** Hög.
 - **Status:** FÖRESLAGEN
 
-### F-004: Dela update och render med interpolation
-- **Bakgrund:** A1-061/A1-120. Ritning sker idag inne i `simulate()`. Förutsättning för spöke, enhetstester och 120 Hz.
-- **Risk:** Hög
+### F-003: Checkpoints
+- **Bakgrund:** Banorna är långa; en checkpoint halvvägs minskar frustration men påverkar poäng, fisk och boss-arena.
+- **Risk:** Hög (balans, state, fiskräkning).
 - **Status:** FÖRESLAGEN
 
-### F-005: PWA med offline
-- **Bakgrund:** A1-122, A1-099. Manifest, service worker, cache av ca 35 MB ljud; kräver att `Sounds/` flyttas till `public/` och test av Pages-bas `./`.
-- **Risk:** Hög (cachefel kan låsa användare vid gammal version).
+### F-004: Dela upp update/render och Views.tsx
+- **Bakgrund:** A1-120, A1-107, A1-014. `Views.tsx` är 7061 rader och `PlayingView` blandar logik och ritning.
+- **Risk:** Hög (stor omstrukturering, svårgranskad, bryter radhänvisningar).
 - **Status:** FÖRESLAGEN
 
-### F-006: Dela upp Views.tsx (7001 rader)
-- **Bakgrund:** A1-014. Börja med att lyfta ut ren logik (`RUN_PERKS`, `mulberry32`, kombo- och poängberäkning) till `services/` med enhetstester, därefter vyer en i taget.
-- **Risk:** Hög
+### F-005: PWA (manifest + service worker)
+- **Bakgrund:** A1-122, A1-163, A1-099. Kräver flytt av `Sounds/` till `public/` och cache-strategi.
+- **Risk:** Medel-Hög (cachebuggar kan servera gammal version).
 - **Status:** FÖRESLAGEN
 
-### F-007: Skuggläge (ljus/skugga-växling) och skuggmynt
-- **Bakgrund:** A1-101, A1-102. Ny kärnmekanik; kräver speltest. Efter B-025 finns en balanserad skuggpassage att bygga vidare på.
-- **Risk:** Medel-Hög
+### F-006: Skuggläge
+- **Bakgrund:** A1-101 m.fl. En hel spelvariant där skuggmekaniken är kärnan.
+- **Risk:** Hög.
 - **Status:** FÖRESLAGEN
 
-### F-008: Nya fiendetyper med regler (spegelfiende, drönare, skuggfiende) och bossfaser
-- **Bakgrund:** A1-103, A1-104, A1-098. Fiendetyp väljs med `Math.floor(Math.random()*3)` (ca 2205) och ritas i en kedja `e.type === 0/1/2` (ca 5033-5110+); en ny typ kräver ny ritning, beteende och balans. Rekommendation: börja med en `ENEMY_TYPES`-tabell när F-006 påbörjats.
-- **Risk:** Medel-Hög
+### F-007: Bossfaser och svag punkt via skuggdash
+- **Bakgrund:** A1-145, A1-102. Kräver speltest av bossarnas profiler (`BOSS_ATTACK_PROFILES`, 1335).
+- **Risk:** Hög.
 - **Status:** FÖRESLAGEN
 
-### F-009: Achievements, rotera veckomål, kosmetika med mynt som sänka
-- **Bakgrund:** A1-112, A1-113, A1-114. Nya nycklar i `ProgressContext` (sparformatet får inte brytas; endast tillägg). Ingen tvingande återkomst, inga timers som straffar.
-- **Risk:** Medel
+### F-008: Skuggfiende (kan bara besegras via skuggpassage)
+- **Bakgrund:** A1-143. Rör skottkollision (3046), fiendekollision (3316-3361), `enemiesDefeatedInRun` och fiskräkning; bör bygga på B-034 och B-032.
+- **Risk:** Medel (omklassad från Agent 1:s Låg).
 - **Status:** FÖRESLAGEN
 
-### F-010: Adaptiv musik, slow-motion och skugglik post-processing
-- **Bakgrund:** A1-116, A1-118 (slowMo, kamera), A1-119. Prestandarisk på mobil; gör valbart via inställning.
-- **Risk:** Medel
+### F-009: Skuggmätare och skuggsprängning
+- **Bakgrund:** A1-146. HUD-stapel + ny dasheffekt som rensar fiender; kräver balans mot poäng och uppdrag.
+- **Risk:** Medel.
 - **Status:** FÖRESLAGEN
 
-### F-011: Prestandaläge och offscreen-cache
-- **Bakgrund:** A1-121, A1-125, A1-063. Bör föregås av mätning på låg-end-mobil.
-- **Risk:** Medel
+### F-010: Miniboss var 5:e bana mellan bossarna
+- **Bakgrund:** A1-144. Återanvänder bossprofiler men ny spawn och belöning.
+- **Risk:** Medel.
+- **Status:** FÖRESLAGEN
+
+### F-011: Riskkort (Skuggpakt, Glaskatt)
+- **Bakgrund:** A1-149. Ny kortkategori i `RUN_PERKS`; balansrisk (x2 poäng på 1 liv).
+- **Risk:** Medel.
+- **Status:** FÖRESLAGEN
+
+### F-012: FISKREGN och hemliga fiskstigar
+- **Bakgrund:** A1-142/A1-148. Fisk som skapas dynamiskt påverkar `game.fishes`-räkningen (5848) och kan göra banor ospelbara om den inte exkluderas från kravet.
+- **Risk:** Medel.
+- **Status:** FÖRESLAGEN
+
+### F-013: Adaptiv musik och auto-prestandaläge
+- **Bakgrund:** A1-158, A1-160. Lågpassfilter styrt av combo (`useBackgroundMusic`, 1154); automatisk sänkning av partiklar vid låg fps.
+- **Risk:** Medel (webbljud och fps-mätning på olika enheter).
+- **Status:** FÖRESLAGEN
+
+### F-014: Autosikte v2 och touch-inställningar
+- **Bakgrund:** A1-132, A1-161. Bossar som mål, förutsägelse, knappstorlek och vänsterhandsläge i `settings` (types.ts:60-72).
+- **Risk:** Medel (kräver test på riktig touch-enhet).
+- **Status:** FÖRESLAGEN
+
+### F-015: Toast i spel för prestationer, titlar/ranger, rekordindikator
+- **Bakgrund:** A1-134, A1-153, A1-154. Små UI-förbättringar som kan tas i ett senare varv efter B-034/B-035.
+- **Risk:** Låg.
+- **Status:** FÖRESLAGEN
+
+### F-016: CI-typkontroll och enhetstester
+- **Bakgrund:** A1-013, A1-055. Tre kända tsc-fel ska rättas först; tester för `mulberry32` och `registerCombo`.
+- **Risk:** Låg-Medel.
 - **Status:** FÖRESLAGEN
 
 ---
-Varv 5: B-025...B-030 godkända av orkestratören å ägarens vägnar 2026-10-20 (ägarens uttryckliga förhandsgodkännande i chatten). Punkterna under "Fria idéer" är högrisk/medel-hög och förblir FÖRESLAGEN.
+Varv 6: B-031...B-036 godkända av orkestratören å ägarens vägnar 2026-10-20 (ägarens uttryckliga förhandsgodkännande i chatten). Punkterna under "Fria idéer" förblir FÖRESLAGEN.
