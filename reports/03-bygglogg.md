@@ -1,39 +1,39 @@
-# 03 - Bygglogg (Agent 3), varv 5
+# 03 - Bygglogg (Agent 3), varv 6
 
-Branch `agents/build-20261020-r5b`. `npm run build` kördes efter varje punkt; alla gick igenom. Ingen punkt återställdes. Inget manuellt speltest utfört.
+Branch: `agents/build-20261020-r6b`. Alla sex punkter byggda, en commit per punkt, `npm run build` OK efter varje. Ingen push/fetch gjord.
 
-## B-025: Skuggpassage en gång per fiende och laser
-- Ändring: `e.shadowPassed` / `h.shadowPassed` ersätter jämförelsen mot `game.dashId`; ny hjälptextrad om skuggpassage.
-- Filer: `components/Views.tsx`
-- Build: OK
-- Begränsningar: `shadowDashId` används inte längre. Ingen belöning under sköld (oförändrat, dokumenterat).
+## B-031: SHADOWFLOW/FAST_DASH och liv i perkOffer
+- Ändring: dash-cooldown beräknas multiplikativt (45 / 30 FAST_DASH / 22 SHADOWFLOW / 18 båda, golv 18). `levelSummary` får `lives`; `perkOffer` läser `levelSummary?.lives`; `eslint-disable`-raden borttagen.
+- Filer: `components/Views.tsx`.
+- Build: OK.
+- Begränsningar: ej speltestat i webbläsare.
 
-## B-026: Seedade kort, inget Extra liv vid 5 liv
-- Ändring: `perkOffer` använder `mulberry32` seedad på körning, nivå och antal valda kort; `BONUS_LIFE` filtreras bort i bonusfallbacken vid >= 5 liv.
-- Filer: `components/Views.tsx`
-- Build: OK
-- Begränsningar: Filtret gäller endast bonusfallbacken (som i planen).
+## B-032: Fiendetyper
+- Ändring: typ 1 (råtta) från bana 4: 24 frames röd förvarning ("!" + ring, stadig färg vid reduceMotion), utfall 14 frames (fart 4-5,5 px/frame, klampad till plattformen), cooldown 150. Typ 2 från bana 3: hopp om max 16 px var 90:e frame (fasförskjutet via startposition). Typ 0 och bana 1-2 (för typ 1/2) oförändrade. Kollisionsreglerna orörda.
+- Filer: `components/Views.tsx` (fiendeloop, fiendeutritning).
+- Build: OK.
+- Begränsningar: antagandet att typ 1 = råtta och typ 2 = hoppare följer planen/ritkoden; balans ej speltestad. Under dash/invincible startar inget utfall. Hoppfas använder egen räknare per fiende (`hopT`) eftersom ingen global frameräknare finns.
 
-## B-027: Fokusfälla och fokusåterställning
-- Ändring: `trapTab` på pausdialog och banresultat; effekt som sparar och återställer fokus när dialog öppnas/stängs. Ingen `inert`, ingen ny Escape.
-- Filer: `components/Views.tsx`
-- Build: OK
-- Begränsningar: Ej testat med tangentbord i webbläsare.
+## B-033: ISGLID och SKUGGJAKT
+- Ändring: nya regler i intervallen 0.18-0.30 (friction 0.92) och 0.08-0.18 (dubbla skuggpoäng) i samma roll; HUD-etiketter Isglid/Skuggjakt; befintliga trösklar oförändrade.
+- Filer: `components/Views.tsx`.
+- Build: OK.
+- Begränsningar: HUD-kedjans sista fallback är fortfarande "Månsvävning" (alla kända regler har nu egen gren).
 
-## B-028: Landningsljud och pitchvariation
-- Ändring: `jitter`/`pitch` i `tone()`; jitter på hopp, skott, nära-miss; mynt delar en pitchfaktor; ny `playLand`, anropas vid landning när `impactSpeed > 4`.
-- Filer: `services/AudioEngine.ts`, `components/Views.tsx`
-- Build: OK
-- Begränsningar: Ingen haptik. Ljudet ej lyssnat på.
+## B-034: Skuggpassager i statistik, w3, prestationer
+- Ändring: `shadowPassesInLevel` räknas i `shadowPass`, summeras via `runStatsRef`/`persistRunSummary`; `stats.shadowPasses?` (valfri) och `applyRunResults.shadowPasses`; veckouppdrag `w3` (migreras in i befintliga sparfiler); `ACHIEVEMENTS` (10 st) med nya `shadow_10`, `shadow_100`, `level_10`; lista i QuestsView.
+- Filer: `components/Views.tsx`, `context/ProgressContext.tsx`, `types.ts`.
+- Build: OK.
+- Begränsningar: namn/beskrivningar på de sju gamla prestationerna är mina formuleringar. Befintliga sparfiler startar `shadowPasses` från 0. tsc har fortsatt de kända förhandsfelen (import.meta.env, `rule`-typen).
 
-## B-029: Banregel Skuggflöde
-- Ändring: ny regel SHADOWFLOW för roll 0,30-0,45 (nivå >= 3, ej var 5:e), dash-cooldown `min(22, perk-värde)`, HUD-chip via `ruleStyle`-uppslagning (cyan).
-- Filer: `components/Views.tsx`
-- Build: OK
-- Begränsningar: Regeln kan även hamna på Speed Run-banor (som planen tillåter). Bossbanor (nivå % 5) har ingen regel.
+## B-035: Skins Umbra/Guldtass och nästan-indikator
+- Ändring: SKINS `umbra` (shadow_10) och `gold` (level_10), upplåsning i GameOver-effekten. En rad på GameOver med närmaste olåsta mål (fisk, fiender, boss, kombo, skuggpassager, banor), beräknad från snapshot (`statsBefore`, `skinsBefore`) så att inget dubbelräknas. Spelfiguren använder redan `skin.color/accent`.
+- Filer: `components/Views.tsx`.
+- Build: OK.
+- Begränsningar: "närmast" jämför råa tal över olika enheter. Ingen hint på butikskorten (valfritt, hoppades över). `reachedLevel` flyttades upp i komponenten för att undvika TDZ.
 
-## B-030: Auto-sikte på touch-skjutknappen
-- Ändring: `autoAim` väljer närmaste fiende framför katten (<= 450 px horisontellt, <= 140 px vertikalt, `e.x > -500`); touchknappen skjuter dit, annars rakt fram. Tangentbord/mus oförändrade.
-- Filer: `components/Views.tsx`
-- Build: OK
-- Begränsningar: Bossar ingår inte. Ej testat med touch.
+## B-036: Juice, hit-stop, stigande ton, haptik
+- Ändring: `haptic(kind)` ersätter de nio inline-anropen med samma längder, plus `haptic('land')` (6 ms, impactSpeed > 6). `playShadowPass(chain)` höjer tonen 6 % per länk (max 6, kedja bryts efter 120 frames utan passage). Hit-stop 3 frames vid skuggpassage och 2 vid stomp via befintlig `game.hitStop`, av vid reduceMotion.
+- Filer: `components/Views.tsx`, `services/AudioEngine.ts`.
+- Build: OK.
+- Begränsningar: ej testat på mobil/ljud i webbläsare. Kedjetimern räknar ned i `simulate` (pausas under hit-stop).
