@@ -1727,6 +1727,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   /** Fish collected over the whole run (finished levels + the current one). */
   const runFishTotal = (game?: any) => runStatsRef.current.fish + ((game ?? gameRef.current)?.totalCollectedInLevel ?? 0);
 
+  // Hur många mynt som redan betalats ut för banan under tidigare försök.
+  const coinFloorRef = useRef<{ level: number; paid: number }>({ level: 0, paid: 0 });
+
   const restartCurrentLevel = () => {
     setIsPaused(false);
     isPausedRef.current = false;
@@ -2541,8 +2544,16 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   /** Coin payout helper that keeps the counter in sync with the HUD. */
   const awardCoins = (game: any, amount: number) => {
-    game.coinsThisLevel = (game.coinsThisLevel || 0) + amount;
-    addCoins(amount);
+    const before = game.coinsThisLevel || 0;
+    const after = before + amount;
+    game.coinsThisLevel = after;
+    // Efter "Starta om bana" betalas bara mynt över tidigare utbetalt antal ut.
+    const lvl = game.level || 1;
+    if (coinFloorRef.current.level !== lvl) coinFloorRef.current = { level: lvl, paid: 0 };
+    const floor = coinFloorRef.current;
+    const pay = Math.max(0, after - Math.max(floor.paid, before));
+    floor.paid = Math.max(floor.paid, after);
+    if (pay > 0) addCoins(pay);
   };
 
   // Frivilligt avslut från paus/banresultat: spara körningens statistik (vid
@@ -6332,6 +6343,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
               <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
+              <p className="text-center text-xs text-white/60">Poäng, liv och XP på banan återställs. Redan utbetalda mynt betalas inte igen.</p>
               <button onClick={quitRun} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Avsluta körning</button>
             </div>
           </div>
