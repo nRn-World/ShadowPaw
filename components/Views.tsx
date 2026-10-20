@@ -228,13 +228,30 @@ const InjuredCatVisual: React.FC = () => (
 );
 
 /** Körningsuppgraderingar (väljs på banresultatet, nollställs vid ny körning). */
-const RUN_PERKS: { id: string; icon: string; title: string; desc: string }[] = [
+type RunPerk = { id: string; icon: string; title: string; desc: string; requires?: string };
+const RUN_PERKS: RunPerk[] = [
   { id: 'LONG_COMBO', icon: 'timer', title: 'Lång combo', desc: 'Combofönstret är 40 % längre.' },
   { id: 'FAST_DASH', icon: 'bolt', title: 'Snabb dash', desc: 'Dashen laddas om snabbare.' },
   { id: 'AMMO_START', icon: 'target', title: 'Extra skott', desc: '+3 skott i början av varje bana.' },
   { id: 'MAGNET', icon: 'attractions', title: 'Fiskmagnet', desc: 'Du fångar fisk på längre avstånd.' },
-  { id: 'SHIELD_START', icon: 'shield', title: 'Startsköld', desc: '3 sekunders sköld i början av varje bana.' },
+  { id: 'SHIELD_START', icon: 'shield', title: 'Startsköld', desc: '5 sekunders sköld i början av varje bana.' },
+  { id: 'LONG_COMBO_2', icon: 'timer', title: 'Lång combo II', desc: 'Combofönstret blir ännu längre (270 bildrutor).', requires: 'LONG_COMBO' },
+  { id: 'GREEDY', icon: 'savings', title: 'Girig katt', desc: '+50 % poäng på fisk och fiender, men combofönstret är 25 % kortare.' },
+  { id: 'SWIFT_PAW', icon: 'directions_run', title: 'Snabba tassar', desc: '+8 % springfart.' },
+  { id: 'AMMO_START_2', icon: 'target', title: 'Fler skott II', desc: '+3 skott till i början av varje bana.', requires: 'AMMO_START' },
+  { id: 'SHIELD_START_2', icon: 'shield', title: 'Startsköld II', desc: '+3 sekunders startsköld.', requires: 'SHIELD_START' },
 ];
+
+/** Bonuskort som erbjuds när alla vanliga uppgraderingar är valda. Engångseffekt nästa bana. */
+const BONUS_PERKS: RunPerk[] = [
+  { id: 'BONUS_AMMO', icon: 'target', title: 'Skottpaket', desc: '+5 skott nästa bana.' },
+  { id: 'BONUS_POINTS', icon: 'stars', title: 'Poängbonus', desc: '+1000 poäng.' },
+  { id: 'BONUS_LIFE', icon: 'favorite', title: 'Extra liv', desc: '+1 liv (max 5).' },
+];
+const perkTitle = (id: string) => {
+  const base = id.split('#')[0];
+  return RUN_PERKS.find(pk => pk.id === base)?.title || BONUS_PERKS.find(pk => pk.id === base)?.title || base;
+};
 
 /** Tips på Game Over per dödsorsak. */
 const DEATH_TIPS: Record<string, { icon: string; text: string }> = {
@@ -1708,6 +1725,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     bestStreak: 0, nearMisses: 0, coins: 0, fish: 0,
     xp: 0, runLevel: 1, xpIntoLevel: 0, xpNeeded: 120,
     perks: [] as string[],
+    bonusCommitted: 0, // perks-poster före detta index har sin engångseffekt redan använd i en avklarad bana
+    bonusSeen: 0, // antal perks-poster när den pågående banan startade
   });
   const commitLevelToRun = (game: any) => {
     const r = runStatsRef.current;
@@ -1723,6 +1742,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     r.runLevel = game.runLevel || 1;
     r.xpIntoLevel = game.xpIntoLevel || 0;
     r.xpNeeded = game.xpNeeded || 120;
+    r.bonusCommitted = r.bonusSeen;
   };
   /** Fish collected over the whole run (finished levels + the current one). */
   const runFishTotal = (game?: any) => runStatsRef.current.fish + ((game ?? gameRef.current)?.totalCollectedInLevel ?? 0);
@@ -1924,11 +1944,22 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (progress.level >= 10) game.ammo += 2;
     if (progress.level >= 15) { game.player.invincible = true; game.player.invincibleTimer = 120; }
     if (game.perks.includes('AMMO_START')) game.ammo += 3;
+    if (game.perks.includes('AMMO_START_2')) game.ammo += 3;
+    if (game.perks.includes('SWIFT_PAW')) game.player.speed *= 1.08;
     if (game.perks.includes('SHIELD_START')) {
+      const shieldFrames = 300 + (game.perks.includes('SHIELD_START_2') ? 180 : 0);
       game.player.invincible = true;
-      game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, 180);
-      game.player.shieldTimer = 180;
+      game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, shieldFrames);
+      game.player.shieldTimer = Math.max(game.player.shieldTimer || 0, shieldFrames);
     }
+    // Bonuskort (engångs): tillämpas på nästa bana efter valet, och på nytt vid omstart av banan.
+    game.perks.slice(runStatsRef.current.bonusCommitted).forEach((pid: string) => {
+      const base = pid.split('#')[0];
+      if (base === 'BONUS_AMMO') game.ammo += 5;
+      else if (base === 'BONUS_POINTS') game.score += 1000;
+      else if (base === 'BONUS_LIFE') game.lives = Math.min(5, game.lives + 1);
+    });
+    runStatsRef.current.bonusSeen = game.perks.length;
 
     // Generate background elements
     game.backgroundElements = generateBackgroundElements(theme);
@@ -2488,7 +2519,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
     game.combo = (game.combo || 0) + 1;
-    game.comboTimer = game.perks?.includes('LONG_COMBO') ? 210 : 150;
+    let comboFrames = game.perks?.includes('LONG_COMBO_2') ? 270 : game.perks?.includes('LONG_COMBO') ? 210 : 150;
+    const greedy = !!game.perks?.includes('GREEDY');
+    if (greedy) comboFrames = Math.round(comboFrames * 0.75);
+    game.comboTimer = comboFrames;
+    if (greedy) baseScore = Math.round(baseScore * 1.5);
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
 
     // Streak feeds the visible multiplier, so fast play is worth much more.
@@ -2610,7 +2645,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   const perksOwed = levelSummary ? Math.max(0, (levelSummary.runLevel || 1) - 1 - chosenPerks.length) : 0;
   const perkOffer = useMemo(() => {
-    const left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id));
+    let left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id) && (!pk.requires || chosenPerks.includes(pk.requires)));
+    // Poolen slut: erbjud bonuskort så att uppgraderingskön aldrig fastnar.
+    if (left.length === 0) left = [...BONUS_PERKS];
     for (let i = left.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [left[i], left[j]] = [left[j], left[i]];
@@ -2619,8 +2656,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelSummary, chosenPerks]);
   const perkPending = perksOwed > 0 && perkOffer.length > 0;
-  const choosePerk = (id: string) => {
-    if (runStatsRef.current.perks.includes(id)) return;
+  const choosePerk = (cardId: string) => {
+    const isBonus = cardId.startsWith('BONUS_');
+    if (!isBonus && runStatsRef.current.perks.includes(cardId)) return;
+    const id = isBonus ? `${cardId}#${runStatsRef.current.perks.length}` : cardId;
     runStatsRef.current.perks = [...runStatsRef.current.perks, id];
     setChosenPerks(runStatsRef.current.perks);
   };
@@ -6337,7 +6376,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
             {chosenPerks.length > 0 && (
               <p className="max-w-xs text-center text-xs text-white/70 md:max-w-sm">
-                Uppgraderingar: {chosenPerks.map(id => RUN_PERKS.find(pk => pk.id === id)?.title || id).join(', ')}
+                Uppgraderingar: {chosenPerks.map(perkTitle).join(', ')}
               </p>
             )}
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
@@ -6409,7 +6448,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             )}
             {chosenPerks.length > 0 && (
               <p className="mb-3 text-center text-xs text-white/70">
-                Uppgraderingar: {chosenPerks.map(id => RUN_PERKS.find(pk => pk.id === id)?.title || id).join(', ')}
+                Uppgraderingar: {chosenPerks.map(perkTitle).join(', ')}
               </p>
             )}
 
