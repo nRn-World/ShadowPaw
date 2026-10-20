@@ -1748,6 +1748,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   /** Fish collected over the whole run (finished levels + the current one). */
   const runFishTotal = (game?: any) => runStatsRef.current.fish + ((game ?? gameRef.current)?.totalCollectedInLevel ?? 0);
 
+  // HUD-knappar nås med Tab. Mellanslag är hoppknappen och ska varken hoppa
+  // eller aktivera en fokuserad HUD-knapp; Enter fungerar som vanligt.
+  const hudSpaceGuard = {
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); } },
+    onKeyUp: (e: React.KeyboardEvent) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); } },
+  };
+
   // Hur många mynt som redan betalats ut för banan under tidigare försök.
   const coinFloorRef = useRef<{ level: number; paid: number }>({ level: 0, paid: 0 });
 
@@ -2684,6 +2691,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelSummary, chosenPerks]);
   const perkPending = perksOwed > 0 && perkOffer.length > 0;
+
+  // Fokus till dialogerna så att tangentbords- och skärmläsaranvändare hamnar rätt.
+  const pauseDialogRef = useRef<HTMLDivElement | null>(null);
+  const levelDialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (isPaused && !showLevelComplete) {
+      pauseDialogRef.current?.querySelector<HTMLElement>('[data-continue]')?.focus();
+    }
+  }, [isPaused, showLevelComplete]);
+  useEffect(() => {
+    if (!showLevelComplete) return;
+    const root = levelDialogRef.current;
+    if (!root) return;
+    (root.querySelector<HTMLElement>('[data-perk-card]') ?? root.querySelector<HTMLElement>('[data-next-level]'))?.focus();
+  }, [showLevelComplete, perkPending, chosenPerks]);
+  const srStatus = `${stats.shield > 0 ? 'Sköld aktiv. ' : ''}${perkPending ? 'Välj en uppgradering.' : ''}`;
+
   const choosePerk = (cardId: string) => {
     const isBonus = cardId.startsWith('BONUS_');
     if (!isBonus && runStatsRef.current.perks.includes(cardId)) return;
@@ -2827,6 +2851,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const handleKeyDown = (e: KeyboardEvent) => {
       // Håll-nere ska inte toggla paus eller tömma ammo
       if (e.repeat && [27, 80, 70, 74, 90, 17].includes(e.keyCode)) return;
+      // Mellanslag på en fokuserad knapp (HUD/dialog) är inte ett hopp.
+      if (e.keyCode === 32 && (e.target as HTMLElement | null)?.closest?.('button')) return;
       setKeyState(e.keyCode, true);
     };
     const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
@@ -6393,7 +6419,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 {!showLevelComplete && (
                   <button
                     onClick={(e) => { e.currentTarget.blur(); togglePause(); }}
-                    tabIndex={-1}
+                    {...hudSpaceGuard}
                     aria-label="Pausa"
                     title="Pausa"
                     className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
@@ -6403,7 +6429,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 )}
                 <button
                   onClick={(e) => { e.currentTarget.blur(); toggleMuted(); }}
-                  tabIndex={-1}
+                  {...hudSpaceGuard}
                   aria-pressed={isMuted}
                   aria-label={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
                   title={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
@@ -6417,7 +6443,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 </button>
                 <button
                   onClick={(e) => { e.currentTarget.blur(); toggleFullscreen(); }}
-                  tabIndex={-1}
+                  {...hudSpaceGuard}
+                  aria-label={isFullscreen ? 'Lämna helskärm' : 'Helskärm'}
+                  title={isFullscreen ? 'Lämna helskärm' : 'Helskärm'}
                   className="flex items-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
                 >
                   <span className="material-symbols-outlined text-base text-white/70">
@@ -6470,6 +6498,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           </div>
         )}
 
+        <div className="sr-only" aria-live="polite" role="status">{srStatus}</div>
         <canvas
           ref={canvasRef}
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217] touch-none select-none"
@@ -6477,7 +6506,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         />
 
         {isPaused && !showLevelComplete && (
-          <div role="dialog" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
+          <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
             <span className="material-symbols-outlined text-5xl text-primary" aria-hidden="true">pause_circle</span>
             <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
             {chosenPerks.length > 0 && (
@@ -6486,7 +6515,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               </p>
             )}
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
-              <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
+              <button data-continue onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
               <p className="text-center text-xs text-white/60">Poäng, liv och XP på banan återställs. Redan utbetalda mynt betalas inte igen.</p>
               <button onClick={quitRun} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Avsluta körning</button>
@@ -6495,7 +6524,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         )}
 
         {showLevelComplete && (
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
+          <div ref={levelDialogRef} role="dialog" aria-modal="true" aria-label="Nivå klar" className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
             <span className="material-symbols-outlined text-4xl md:text-7xl text-primary mb-1 md:mb-3" style={{ filter: 'drop-shadow(0 0 20px rgba(43,238,121,0.6))' }}>stars</span>
             {/* Inter, not Outfit: Outfit draws the ring of "Å" so small it reads as "Ä".
                 tracking-normal + leading-tight need the space between the words. */}
@@ -6541,6 +6570,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   {perkOffer.map(pk => (
                     <button
                       key={pk.id}
+                      data-perk-card
+                      aria-label={`${pk.title}: ${pk.desc}`}
                       onClick={() => choosePerk(pk.id)}
                       className="flex min-h-[48px] flex-col items-center gap-1 rounded-2xl border border-yellow-300/40 bg-white/5 p-3 text-center transition-transform hover:scale-105 hover:bg-white/10 active:scale-[0.98]"
                     >
@@ -6559,7 +6590,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             )}
 
             <div className="flex flex-col sm:flex-row gap-2 md:gap-3 w-full max-w-xs md:max-w-md">
-              <button onClick={startNextLevel} disabled={perkPending} className="disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
+              <button data-next-level onClick={startNextLevel} disabled={perkPending} className="disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
                 {currentLevel % 5 === 4
                   ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
                   : `NÄSTA NIVÅ (${currentLevel + 1})`}
@@ -6576,12 +6607,14 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
+              aria-label="Vänster" title="Vänster"
               className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               {...holdProps(() => setKeyState(65, true), () => setKeyState(65, false))}
             >
               <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_back</span>
             </button>
             <button
+              aria-label="Höger" title="Höger"
               className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               {...holdProps(() => setKeyState(68, true), () => setKeyState(68, false))}
             >
@@ -6593,7 +6626,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           <div className="flex items-center gap-3">
             {/* Hopp-knapp */}
             <button
-              className="size-16 md:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
+              aria-label="Hoppa" title="Hoppa"
+              className="size-16 md:size-20 bg-primary/20backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
               {...holdProps(() => requestJump(), () => releaseJump())}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">arrow_upward</span>
@@ -6602,7 +6636,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
             {/* Dash-knapp */}
             <button
-              className="size-14 md:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
+              aria-label="Dash" title="Dash"
+              className="size-14 md:size-16 bg-cyan-400/20backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
               {...holdProps(() => triggerDash(), () => {})}
             >
               <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
@@ -6611,7 +6646,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
             {/* Shoot-knapp */}
             <button
-              className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
+              aria-label="Skjut" title="Skjut"
+              className="size-16 md:size-20 bg-primary-red/30backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
               {...holdProps(() => fireBullet(), () => {})}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
