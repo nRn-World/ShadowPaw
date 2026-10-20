@@ -1692,7 +1692,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     setRestartKey(k => k + 1);
   };
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', rule: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
   // Computed synchronously so the level is not rebuilt after mount.
   const isTouchDevice = useState<boolean>(() => {
     try {
@@ -2340,6 +2340,21 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       // Begränsa antalet fiender till max 2
       if (game.enemies.length > 2) {
         game.enemies = game.enemies.slice(0, 2);
+      }
+    }
+
+    // Banregel (B-011): deterministisk per bana, rör inte Math.random()-sekvensen.
+    (game as any).rule = 'NONE';
+    if (level >= 3 && level % 5 !== 0) {
+      const roll = seededRandom(level * 29.3);
+      if (roll >= 0.73 && levelMode !== 'Speed Run' && game.miniEvent.type !== 'LOW_GRAVITY') {
+        (game as any).rule = 'MOON';
+        game.gravity *= 0.82;
+        pushToast(game, 'MÅNSVÄVNING: svävande hopp', '#a5b4fc');
+      } else if (roll >= 0.45 && roll < 0.73) {
+        (game as any).rule = 'GOLDRUSH';
+        game.enemies.forEach((e: any) => { e.velocityX *= 1.15; });
+        pushToast(game, 'GULDRUSH: x2 fiskpoäng, snabbare fiender', '#ffd166');
       }
     }
 
@@ -3373,6 +3388,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x &&
             game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {            f.collected = true;
             registerCombo(game, 50, f.x, f.y);
+            if (game.rule === 'GOLDRUSH') game.score += 50;
             grantXp(game, 10);
             awardCoins(game, 1);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
@@ -5927,6 +5943,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           levelType: game.levelType,
           timer: game.levelTimer || 0,
           miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
+          rule: game.rule || 'NONE',
           xp: game.xp || 0,
           runLevel: game.runLevel || 1,
           xpNeeded: game.xpNeeded || 120,
@@ -6106,6 +6123,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
                   {stats.nearMisses > 0 && <span className="text-[10px] font-black text-white/70">{stats.nearMisses}</span>}
                 </div>
+                {stats.rule !== 'NONE' && (
+                  <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.rule === 'GOLDRUSH' ? 'border-yellow-400/40' : 'border-indigo-300/40'}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
+                      {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
+                    </span>
+                  </div>
+                )}
                 {stats.levelType === 'Speed Run' && (
                   <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-orange-400/30 px-2.5 py-1.5">
                     <span className="material-symbols-outlined text-orange-300 text-base">timer</span>
