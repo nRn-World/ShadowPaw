@@ -113,7 +113,7 @@ const App: React.FC = () => {
           menus never wait on a remote host, and the CSS backdrop grades it to the
           game's neon palette on top. */}
       <div className="app-backdrop" aria-hidden="true">
-        <img src="/city-bg.jpg" alt="" className="app-city-photo" />
+        <img src={`${import.meta.env.BASE_URL}city-bg.jpg`} alt="" className="app-city-photo" />
         <div className="app-backdrop-stars" />
         <div className="app-vignette" />
       </div>

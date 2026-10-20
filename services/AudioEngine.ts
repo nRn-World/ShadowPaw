@@ -33,8 +33,9 @@ export class AudioEngine {
         if (!this.ctx) {
             this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
             this.masterGain = this.ctx.createGain();
-            this.masterGain.gain.value = this.sfxVolume;
+            this.masterGain.gain.value = this.muted ? 0 : this.sfxVolume;
             this.masterGain.connect(this.ctx.destination);
+            if (this.ctx.state === 'suspended') this.ctx.resume();
         }
     }
 
