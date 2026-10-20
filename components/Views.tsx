@@ -2468,6 +2468,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         (game as any).rule = 'GOLDRUSH';
         game.enemies.forEach((e: any) => { e.velocityX *= 1.15; });
         pushToast(game, 'GULDRUSH: x2 fiskpoäng, snabbare fiender', '#ffd166');
+      } else if (roll >= 0.30 && roll < 0.45) {
+        (game as any).rule = 'SHADOWFLOW';
+        pushToast(game, 'SKUGGFLÖDE: dashen laddas snabbt', '#67e8f9');
       }
     }
 
@@ -2527,7 +2530,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
     game.dashId = (game.dashId || 0) + 1;
-    p.dashCooldown = game.perks?.includes('FAST_DASH') ? 30 : 45;
+    p.dashCooldown = Math.min(game.rule === 'SHADOWFLOW' ? 22 : 45, game.perks?.includes('FAST_DASH') ? 30 : 45);
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -6436,13 +6439,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
                   {stats.nearMisses > 0 && <span className="text-[11px] font-black text-white/70">{stats.nearMisses}</span>}
                 </div>
-                {stats.rule !== 'NONE' && (
-                  <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.rule === 'GOLDRUSH' ? 'border-yellow-400/40' : 'border-indigo-300/40'}`}>
-                    <span className={`text-[11px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
-                      {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
-                    </span>
-                  </div>
-                )}
+                {stats.rule !== 'NONE' && (() => {
+                  const ruleStyle = stats.rule === 'GOLDRUSH'
+                    ? { label: 'Guldrush x2', border: 'border-yellow-400/40', text: 'text-yellow-300' }
+                    : stats.rule === 'SHADOWFLOW'
+                      ? { label: 'Skuggflöde', border: 'border-cyan-300/40', text: 'text-cyan-200' }
+                      : { label: 'Månsvävning', border: 'border-indigo-300/40', text: 'text-indigo-200' };
+                  return (
+                    <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${ruleStyle.border}`}>
+                      <span className={`text-[11px] font-black uppercase tracking-widest ${ruleStyle.text}`}>
+                        {ruleStyle.label}
+                      </span>
+                    </div>
+                  );
+                })()}
                 {stats.shield > 0 && (
                   <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-sky-300/40 px-2.5 py-1.5">
                     <span className="material-symbols-outlined text-sky-300 text-base">shield</span>
