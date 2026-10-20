@@ -2818,6 +2818,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
   };
 
+  // Auto-sikte för touchknappen: närmaste fiende framför katten (bossar ingår inte).
+  const autoAim = (game: any): { x: number; y: number } | null => {
+    const cx = game.player.x + game.player.width / 2;
+    const cy = game.player.y + game.player.height / 2;
+    let best: any = null;
+    let bestDist = Infinity;
+    game.enemies.forEach((e: any) => {
+      if (e.x <= -500) return;
+      const ex = e.x + e.width / 2;
+      const ey = e.y + e.height / 2;
+      const ahead = (ex - cx) * game.player.facing;
+      if (ahead <= 0 || ahead > 450 || Math.abs(ey - cy) > 140) return;
+      if (ahead < bestDist) { bestDist = ahead; best = e; }
+    });
+    return best ? { x: best.x + best.width / 2 - game.scrollX, y: best.y + best.height / 2 } : null;
+  };
+
   const fireBullet = (targetX: number | null = null, targetY: number | null = null) => {
     if (!gameRef.current || !gameRef.current.running || isPausedRef.current) return;
     const game = gameRef.current;
@@ -6730,7 +6747,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <button
               aria-label="Skjut" title="Skjut"
               className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
-              {...holdProps(() => fireBullet(), () => {})}
+              {...holdProps(() => { const t = gameRef.current ? autoAim(gameRef.current) : null; fireBullet(t ? t.x : null, t ? t.y : null); }, () => {})}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
               <span className="text-[11px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
