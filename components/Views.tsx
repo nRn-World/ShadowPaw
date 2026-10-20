@@ -814,7 +814,7 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
 };
 
 /** GAME OVER **/
-export const GameOverView: React.FC<{ score: number, fishesCollected?: number, onRestart: () => void, onMenu: () => void }> = ({ score, fishesCollected = 0, onRestart, onMenu }) => {
+export const GameOverView: React.FC<{ score: number, fishesCollected?: number, quit?: boolean, onRestart: () => void, onMenu: () => void }> = ({ score, fishesCollected = 0, quit = false, onRestart, onMenu }) => {
   const [taunt, setTaunt] = useState<string>("Bättre lycka nästa gång!");
   const [name, setName] = useState("");
   const [isSaved, setIsSaved] = useState(false);
@@ -873,7 +873,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       perfectLevel: !!lastRun.perfectLevel,
       bestCombo: lastRun.bestCombo || 0,
       bossDefeated: !!lastRun.bossDefeated,
-      deaths: 1,
+      deaths: quit ? 0 : 1,
     });
 
     if ((lastRun.bestCombo || 0) >= 10) {
@@ -967,7 +967,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
               <span className="material-symbols-outlined text-white/60 text-base">warning</span>
               <div className="min-w-0">
                 <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest">Status</p>
-                <p className="text-white font-black uppercase tracking-wide truncate">Uppdraget misslyckades</p>
+                <p className="text-white font-black uppercase tracking-wide truncate">{quit ? 'Körning avslutad' : 'Uppdraget misslyckades'}</p>
               </div>
             </div>
           </div>
@@ -976,7 +976,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
         <div className="text-center md:text-left">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-red/10 border border-primary-red/20 mb-4">
             <span className="material-symbols-outlined text-primary-red text-lg">sentiment_dissatisfied</span>
-            <span className="text-white text-xs font-bold uppercase tracking-widest">Uppdraget misslyckades</span>
+            <span className="text-white text-xs font-bold uppercase tracking-widest">{quit ? 'Körning avslutad' : 'Uppdraget misslyckades'}</span>
           </div>
           <h1 className="text-white text-5xl md:text-7xl font-black uppercase tracking-tight">
             Spelet <span className="text-primary-red">över</span>
@@ -1593,7 +1593,7 @@ const drawCloud = (
 };
 
 /** ADVANCED 50-LEVEL PLAYABLE GAME VIEW **/
-export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: number) => void }> = ({ onEnd }) => {
+export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: number, opts?: { quit?: boolean }) => void }> = ({ onEnd }) => {
   // The game loop is started once per level. Reading onEnd through a ref keeps a
   // parent re-render (e.g. the coin counter updating after every fish) from
   // changing the loop's dependencies and restarting the whole level.
@@ -2422,6 +2422,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     addCoins(amount);
   };
 
+  // Frivilligt avslut från paus/banresultat: spara körningens statistik (vid
+  // banresultat är den redan sparad) och markera att det inte var en död.
+  const quitRun = () => {
+    const game = gameRef.current;
+    if (game && !showLevelComplete) {
+      persistRunSummary(game, false);
+      game.running = false;
+      onEndRef.current(game.score, runFishTotal(game), { quit: true });
+      return;
+    }
+    onEndRef.current(totalScore, runFishTotal(), { quit: true });
+  };
+
   const persistRunSummary = (game: any, perfectLevel: boolean) => {
     localStorage.setItem('shadow_paw_last_run', JSON.stringify({
       enemiesDefeated: game.enemiesDefeatedInRun || 0,
@@ -2481,6 +2494,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const setKeyState = (code: number, active: boolean) => {
     if (!gameRef.current) return;
     const game = gameRef.current;
+    if (!game.running && [27, 80].includes(code)) return;
 
     // Paus med Escape (27) eller P (80)
     if (active && [27, 80].includes(code)) {
@@ -2573,6 +2587,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const game = setupLevel(currentLevel, levelStartRef.current.score, levelStartRef.current.lives);
     if (!game) return;
     gameRef.current = game;
+    // Ny bana ska aldrig börja pausad (t.ex. Esc/P på banresultatet)
+    setIsPaused(false);
+    isPausedRef.current = false;
 
     const autoPause = () => {
       if (!game.running || isPausedRef.current) return;
@@ -5970,6 +5987,16 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     <span className="text-sm font-black text-orange-300">{Math.ceil(stats.timer)}s</span>
                   </div>
                 )}
+                {!showLevelComplete && (
+                  <button
+                    onClick={togglePause}
+                    aria-label="Pausa"
+                    title="Pausa"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
+                  >
+                    <span className="material-symbols-outlined text-base text-white/70">pause</span>
+                  </button>
+                )}
                 <button
                   onClick={toggleMuted}
                   aria-pressed={isMuted}
@@ -6050,7 +6077,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
               <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
-              <button onClick={() => onEnd(totalScore, runFishTotal())} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Huvudmeny</button>
+              <button onClick={quitRun} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Avsluta körning</button>
             </div>
           </div>
         )}
@@ -6099,7 +6126,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
                   : `NÄSTA NIVÅ (${currentLevel + 1})`}
               </button>
-              <button onClick={() => onEnd(totalScore, runFishTotal())} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
+              <button onClick={quitRun} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
             </div>
           </div>
         )}
