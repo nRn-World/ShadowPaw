@@ -1323,6 +1323,18 @@ const seededRandom = (seed: number) => {
   return x - Math.floor(x);
 };
 
+/** Liten seedbar PRNG (mulberry32), returnerar ett tal i [0, 1). */
+const mulberry32 = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
 const getWeatherForLevel = (level: number) => {
   if (level === 1) {
     return { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY' };
@@ -1665,6 +1677,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
   const lastDeathCauseRef = useRef<string | null>(null);
+  // En seed per körning: omstart av bana ger samma regel och pickups.
+  const runSeedRef = useRef<number>(Math.floor(Math.random() * 2 ** 31));
   const [chosenPerks, setChosenPerks] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
@@ -2292,10 +2306,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const candidates = game.platforms.filter((pl: any) =>
         !pl.isGround && !pl.bossArena && pl.width >= 80 && pl.x > 500 && pl.x + pl.width < levelLength - 500);
       const usedPlatforms = new Set<any>();
+      const pickupRng = mulberry32(runSeedRef.current ^ Math.imul(level, 2654435761) ^ 0x51ED27);
       pickupTypes.forEach((type, n) => {
         if (candidates.length === 0) return;
         for (let attempt = 0; attempt < 6; attempt++) {
-          const plat = candidates[Math.floor(seededRandom(level * 31.7 + n * 7.3 + attempt * 3.1) * candidates.length)];
+          const plat = candidates[Math.floor(pickupRng() * candidates.length)];
           if (usedPlatforms.has(plat)) continue;
           usedPlatforms.add(plat);
           const px = plat.x + plat.width / 2 - 12;
@@ -2380,7 +2395,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     // Banregel (B-011): deterministisk per bana, rör inte Math.random()-sekvensen.
     (game as any).rule = 'NONE';
     if (level >= 3 && level % 5 !== 0) {
-      const roll = seededRandom(level * 29.3);
+      const roll = mulberry32(runSeedRef.current ^ Math.imul(level, 2654435761))();
       if (roll >= 0.73 && levelMode !== 'Speed Run' && game.miniEvent.type !== 'LOW_GRAVITY') {
         (game as any).rule = 'MOON';
         game.gravity *= 0.82;
