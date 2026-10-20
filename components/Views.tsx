@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppView, ScoreEntry } from '../types';
 import { getJerryTaunt } from '../services/geminiService';
 import { useProgress } from '../context/ProgressContext';
@@ -226,6 +226,15 @@ const InjuredCatVisual: React.FC = () => (
     `}</style>
   </div>
 );
+
+/** Körningsuppgraderingar (väljs på banresultatet, nollställs vid ny körning). */
+const RUN_PERKS: { id: string; icon: string; title: string; desc: string }[] = [
+  { id: 'LONG_COMBO', icon: 'timer', title: 'Lång combo', desc: 'Combofönstret är 40 % längre.' },
+  { id: 'FAST_DASH', icon: 'bolt', title: 'Snabb dash', desc: 'Dashen laddas om snabbare.' },
+  { id: 'AMMO_START', icon: 'target', title: 'Extra skott', desc: '+3 skott i början av varje bana.' },
+  { id: 'MAGNET', icon: 'attractions', title: 'Fiskmagnet', desc: 'Du fångar fisk på längre avstånd.' },
+  { id: 'SHIELD_START', icon: 'shield', title: 'Startsköld', desc: '3 sekunders sköld i början av varje bana.' },
+];
 
 /** START MENU **/
 /** Läser rekordet från den separata nyckeln shadow_paw_best (aldrig kraschande). */
@@ -1640,6 +1649,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [lives, setLives] = useState(5);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
+  const [chosenPerks, setChosenPerks] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
   isPausedRef.current = isPaused;
@@ -1667,6 +1677,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     enemiesDefeated: 0, levelsCompleted: 0, bestCombo: 0, bossDefeated: false,
     bestStreak: 0, nearMisses: 0, coins: 0, fish: 0,
     xp: 0, runLevel: 1, xpIntoLevel: 0, xpNeeded: 120,
+    perks: [] as string[],
   });
   const commitLevelToRun = (game: any) => {
     const r = runStatsRef.current;
@@ -1817,6 +1828,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       runLevel: runStatsRef.current.runLevel,
       xpIntoLevel: runStatsRef.current.xpIntoLevel,
       xpNeeded: runStatsRef.current.xpNeeded,
+      perks: [...runStatsRef.current.perks],
       streak: 0,
       bestStreak: 0,
       multiplier: 1,
@@ -1878,6 +1890,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (progress.level >= 5) game.player.speed += 0.6;
     if (progress.level >= 10) game.ammo += 2;
     if (progress.level >= 15) { game.player.invincible = true; game.player.invincibleTimer = 120; }
+    if (game.perks.includes('AMMO_START')) game.ammo += 3;
+    if (game.perks.includes('SHIELD_START')) {
+      game.player.invincible = true;
+      game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, 180);
+      game.player.shieldTimer = 180;
+    }
 
     // Generate background elements
     game.backgroundElements = generateBackgroundElements(theme);
@@ -2413,7 +2431,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const p = game.player;
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
-    p.dashCooldown = 45;
+    p.dashCooldown = game.perks?.includes('FAST_DASH') ? 30 : 45;
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -2436,7 +2454,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
     game.combo = (game.combo || 0) + 1;
-    game.comboTimer = 150;
+    game.comboTimer = game.perks?.includes('LONG_COMBO') ? 210 : 150;
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
 
     // Streak feeds the visible multiplier, so fast play is worth much more.
@@ -2479,6 +2497,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       game.ammo += 2;
       game.score += 500;
       pushToast(game, `NIVÅ ${game.runLevel}! +2 SKOTT`, '#2bee79');
+      pushToast(game, 'UPPGRADERING VÄNTAR', '#fbbf24');
       game.slowMo = 18;
     }
   };
@@ -2545,7 +2564,25 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
   };
 
+  const perksOwed = levelSummary ? Math.max(0, (levelSummary.runLevel || 1) - 1 - chosenPerks.length) : 0;
+  const perkOffer = useMemo(() => {
+    const left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id));
+    for (let i = left.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [left[i], left[j]] = [left[j], left[i]];
+    }
+    return left.slice(0, 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levelSummary, chosenPerks]);
+  const perkPending = perksOwed > 0 && perkOffer.length > 0;
+  const choosePerk = (id: string) => {
+    if (runStatsRef.current.perks.includes(id)) return;
+    runStatsRef.current.perks = [...runStatsRef.current.perks, id];
+    setChosenPerks(runStatsRef.current.perks);
+  };
+
   const startNextLevel = () => {
+    if (perkPending) return;
     if (gameRef.current) commitLevelToRun(gameRef.current);
     setShowLevelComplete(false);
     setLevelSummary(null);
@@ -3393,8 +3430,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           }
 
           // Check collision with player - collect coin
-          if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x &&
-            game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {            f.collected = true;
+          const magnetPad = game.perks?.includes('MAGNET') ? 36 : 0;
+          if (game.player.x < f.x + f.width + magnetPad && game.player.x + game.player.width > f.x - magnetPad &&
+            game.player.y < f.y + f.height + magnetPad && game.player.y + game.player.height > f.y - magnetPad) {            f.collected = true;
             const scoreBeforeFish = game.score;
             registerCombo(game, 50, f.x, f.y);
             if (game.rule === 'GOLDRUSH') game.score += game.score - scoreBeforeFish;
@@ -6253,6 +6291,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           <div role="dialog" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
             <span className="material-symbols-outlined text-5xl text-primary" aria-hidden="true">pause_circle</span>
             <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
+            {chosenPerks.length > 0 && (
+              <p className="max-w-xs text-center text-xs text-white/70 md:max-w-sm">
+                Uppgraderingar: {chosenPerks.map(id => RUN_PERKS.find(pk => pk.id === id)?.title || id).join(', ')}
+              </p>
+            )}
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
               <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
@@ -6299,8 +6342,34 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               </div>
             )}
 
+            {perkPending && (
+              <div className="w-full max-w-md mb-4" role="group" aria-label="Välj en uppgradering">
+                <p className="mb-2 text-center text-xs font-black uppercase tracking-widest text-yellow-300">
+                  Välj uppgradering{perksOwed > 1 ? ` (${perksOwed} val kvar)` : ''}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {perkOffer.map(pk => (
+                    <button
+                      key={pk.id}
+                      onClick={() => choosePerk(pk.id)}
+                      className="flex min-h-[48px] flex-col items-center gap-1 rounded-2xl border border-yellow-300/40 bg-white/5 p-3 text-center transition-transform hover:scale-105 hover:bg-white/10 active:scale-[0.98]"
+                    >
+                      <span className="material-symbols-outlined text-2xl text-yellow-300" aria-hidden="true">{pk.icon}</span>
+                      <span className="text-sm font-black text-white">{pk.title}</span>
+                      <span className="text-xs text-white/70">{pk.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {chosenPerks.length > 0 && (
+              <p className="mb-3 text-center text-xs text-white/70">
+                Uppgraderingar: {chosenPerks.map(id => RUN_PERKS.find(pk => pk.id === id)?.title || id).join(', ')}
+              </p>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-2 md:gap-3 w-full max-w-xs md:max-w-md">
-              <button onClick={startNextLevel} className="bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
+              <button onClick={startNextLevel} disabled={perkPending} className="disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
                 {currentLevel % 5 === 4
                   ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
                   : `NÄSTA NIVÅ (${currentLevel + 1})`}
