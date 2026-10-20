@@ -15,3 +15,14 @@ Allt arbete samlas på branchen `agents/auto` med en enda öppen pull request mo
 
 ## Köra om
 Starta om flödet när som helst: Agent 1 skriver över `01-analys.md`, och så vidare. Historik finns i git.
+
+## Fyrstegsflöde (gäller från omgång 4)
+| Steg | Agent | Uppgift | Skriver |
+|------|-------|---------|---------|
+| 1 | `agent1-analyst` | Går igenom all kod, granskar förra omgången och kommer på nya idéer | `01-analys.md` |
+| 2 | `agent2-ideas` | Analyserar Agent 1:s rapport och bestämmer vad Agent 3 ska bygga | `02-idéer.md` |
+| 3 | `agent3-builder` | Bygger godkända punkter | koden + `03-bygglogg.md` |
+| 4 | `agent4-verifier` | Kontrollerar att allt är byggt utan fel | `04-verifiering.md` |
+
+Hittar Agent 4 fel (`Resultat: UNDERKÄND`) skickas felrapporten till alla agenter och omgången börjar om med rättning (högst 3 varv, därefter revertas de felande punkterna).
+Hittar Agent 4 inga fel (`Resultat: GODKÄND`) pushas grenen och en pull request öppnas och mergas, så att uppdateringar går live direkt efter varandra. Blockeras mergen av en behörighetskontroll lämnas PR:en öppen.
