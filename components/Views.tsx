@@ -6138,7 +6138,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 )}
                 {!showLevelComplete && (
                   <button
-                    onClick={togglePause}
+                    onClick={(e) => { e.currentTarget.blur(); togglePause(); }}
+                    tabIndex={-1}
                     aria-label="Pausa"
                     title="Pausa"
                     className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
@@ -6147,7 +6148,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   </button>
                 )}
                 <button
-                  onClick={toggleMuted}
+                  onClick={(e) => { e.currentTarget.blur(); toggleMuted(); }}
+                  tabIndex={-1}
                   aria-pressed={isMuted}
                   aria-label={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
                   title={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
@@ -6160,7 +6162,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   </span>
                 </button>
                 <button
-                  onClick={toggleFullscreen}
+                  onClick={(e) => { e.currentTarget.blur(); toggleFullscreen(); }}
+                  tabIndex={-1}
                   className="flex items-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
                 >
                   <span className="material-symbols-outlined text-base text-white/70">
