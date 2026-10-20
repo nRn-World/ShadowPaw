@@ -1,116 +1,123 @@
-# 01 - Analys av ShadowPaw (Agent 1, Analytiker), omgång 5
+# 01 - Analys av ShadowPaw (Agent 1, Analytiker), varv 6
 
-Datum: 2026-10-20. Branch `agents/build-20261020-r5` (= main, innehåller omgång 1-4 och borttagningen av Gemini). Underlag: kodläsning av `components/Views.tsx` (nu 7001 rader), `services/AudioEngine.ts`, `services/taunts.ts`, `vite.config.ts`, `package.json`, `.github/workflows/deploy-pages.yml`, `reports/03-bygglogg.md`, `reports/04-verifiering.md`. Ingen kod har körts eller byggts av mig; allt är härlett ur kodläsning. Radnummer avser nuvarande filer.
+Datum: 2026-10-20. Branch `agents/build-20261020-r6` (= main, omgång 1-5 och borttagen Gemini). Underlag: kodläsning av `components/Views.tsx` (7061 rader), `context/ProgressContext.tsx`, `services/AudioEngine.ts`, `types.ts`, `package.json`, `reports/03-bygglogg.md`, `reports/04-verifiering.md`. Inget bygge eller test kördes av mig; allt är härlett ur kodläsning. Radnummer avser nuvarande filer.
 
 ## Sammanfattning
 
-1. Omgång 4 (B-019...B-024) och Gemini-borttagningen är verifierat på plats; A1-001 är åtgärdad (ingen `define`, ingen `geminiService`, inga `AIza`/`genai` i `dist`, `index.html` eller `package.json`). Inga regressioner som bryter spel eller sparad data hittades.
-2. Nytt exploit-fynd (Medel): Skuggdash kan farmas på samma patrullerande fiende var 45:e bildruta för poäng, XP och (med Skuggjägare) obegränsat med skott (A1-090).
-3. Spelet saknar fortfarande det som skapar "en runda till" på lång sikt: daglig seedad bana, spöke/ghost, checkpoints, fler fiendetyper (bara 3 vanliga + 5 bossar), banregler (bara 2), PWA. Större delen av rapporten är nya idéer (A1-100...A1-125).
-4. Tekniskt hinder för flera idéer: ritning inne i `simulate()` (A1-061) och 120 `Math.random()` i `Views.tsx` (A1-057); `Views.tsx` är en enda fil på 7001 rader (A1-014).
+1. Varv 5 (B-025...B-030) är på plats i koden och jag hittade ingen regression som bryter spel eller sparad data. A1-090 (dash-farm) och A1-094 (kort-reroll) är åtgärdade.
+2. Små nya brister i varv 5: SHADOWFLOW gör perken FAST_DASH verkningslös (A1-130), seedade kort använder `gameRef.current.lives` utanför deps (A1-131), autosikte siktar inte på bossar och ignorerar väggar (A1-132).
+3. Största möjligheten: fiendetyperna 0-2 skiljer sig bara visuellt (`e.type` används endast vid ritning, Views.tsx:5086, 5163), skuggpassager räknas inte i uppdrag/achievements, och det finns bara 7 achievements och 4 köpfria skins. Det är billiga, synliga vinster.
+4. Förslag på ett "paket" av små idéer som ryms på ett varv och tillsammans ger synlig skillnad finns sist (Paket P6).
 
 ## Status för tidigare fynd (verifierat mot koden)
 
 | ID | Status | Belägg |
 |----|--------|--------|
-| A1-001 | Åtgärdad | `vite.config.ts` (19 rader) har inget `define`; `services/geminiService.ts` finns inte; `Views.tsx:4` importerar `getJerryTaunt` från `services/taunts.ts` (30 rader, statiska repliker, `Math.random`, inget nätverk). `package.json` har ingen Gemini-beroende. Rest: nyckeln som tidigare publicerats i äldre bygge bör roteras hos ägaren (kan inte verifieras härifrån). |
-| A1-081 | Åtgärdad | `role="dialog" aria-modal`, fokusflytt (Views.tsx:2709-2722), `aria-live`-rad (2723), `tabIndex={-1}` borta. Kvar: ingen fokusfälla (se A1-097). |
-| A1-080 a, b, c | Åtgärdad | Magnet drar fisk inom 120 px (3609-3626), `comboFrac` delar på `comboWindow` (6216), HUD-ikoner för uppgraderingar (6419-6421). Kvar: 3468-fynd (d) är ändrat vid radförskjutning, ej omkontrollerat. Bonuskort syns inte i HUD-chipen. |
-| A1-082 | Delvis åtgärdad | Musikdämpning (`dimmed`, 1150-1154), `playHeart/playShield/playPerkPick/playShadowPass` finns. Kvar: pitchvariation, landningsljud, adaptiv musik. |
-| A1-078 | Delvis åtgärdad | 11 uppgraderingar + 3 bonuskort (232-249), `requires`-kedjor, bonusfallback (2697-2699). Kvar: ingen rarity, ingen reroll, ingen riskkort-kategori av typ "förbannelse" (Girig katt är det enda riskkortet), ingen synergi. |
-| A1-085 | Delvis åtgärdad | Skuggdash (2915-2921, 3262-3272, 3481-3488, `shadowPass` 2548-2566). Spöke/klon och ljus/skugga-zoner saknas. |
-| A1-023/A1-045b | Åtgärdad (mynt) | `coinFloorRef` (1759, 2630-2641) stoppar dubbel utbetalning vid "Starta om bana". |
-| A1-062 | Delvis åtgärdad | Safe-area, 11 px text, porträttbanner (1778, 6630), uppgiftskort `grid-cols-3`. Kvar: spelrutan är fortfarande `aspect-video`, `transform: scale(uiScale)` kvar; ej testat. |
-| A1-079, A1-083, A1-084, A1-086, A1-087 | Kvarstår | Ej berörda. |
-| A1-055, A1-057, A1-053, A1-061, A1-063, A1-068, A1-074, A1-076, A1-088, A1-089, A1-013, A1-014, A1-060 | Kvarstår | Ej berörda; A1-060: GameOver startar om direkt vid R/Enter/Mellanslag (907-910). |
+| A1-090 | Åtgärdad | `e.shadowPassed` (Views.tsx:3317-3322) och `h.shadowPassed` (3536-3538) ger belöning en gång per fiende/laser. `shadowDashId` används ej. |
+| A1-094 | Åtgärdad | `perkOffer` seedad med `mulberry32` (2708); `BONUS_LIFE` filtreras vid >= 5 liv (2705). Se A1-131 för liten rest. |
+| A1-097 / A1-081 | Åtgärdad (mestadels) | `trapTab` (2733), fokusåterställning (2755-2762), `onKeyDown` på båda dialogerna (6588, 6606). Kvar: ingen `inert` på bakgrunden, tangentbord ej provat. |
+| A1-082 | Delvis | Pitchvariation och `playLand` finns (AudioEngine.ts:11-27, 138-141; Views.tsx:3272). Kvar: adaptiv musik, haptik vid landning. |
+| A1-105 | Delvis | Tre regler: MOON, GOLDRUSH, SHADOWFLOW (2460-2474). Kvar: fler regler. |
+| A1-053/A1-123 | Delvis | Touch-autosikte (2822-2837, 6750). Kvar: gester, knappstorlek, vänsterhandsläge. |
+| A1-091 | Kvarstår, dokumenterat | Ingen belöning under sköld (3317, 3532). |
+| A1-092, A1-093, A1-095, A1-096, A1-098, A1-099 | Kvarstår | Ej berörda. `build` i package.json använder fortfarande `node -e "require(...)"` och kopierar `Sounds/` (A1-099). |
+| A1-055, A1-057, A1-061, A1-063, A1-013, A1-014, A1-060, A1-062, A1-086, A1-088 | Kvarstår | Ej berörda. Fortfarande 3 kända tsc-fel och ingen `typecheck` i CI. |
+| A1-114 | Delvis | `weeklyQuests` finns redan (ProgressContext.tsx:35-41, Views.tsx:7005) men bara "samla fisk" och "besegra fiender". |
 
-## Granskning av omgång 4: regressioner och nya buggar
-
-Ingen regression mot omgång 1-3 hittades statiskt (paus, uppgraderingsval, Game Over, sparformat). Observationer:
+## Granskning av varv 5: nya fynd
 
 | ID | Prio | Fil:rad | Problem | Föreslagen lösning |
 |----|------|---------|---------|--------------------|
-| A1-090 | Medel | Views.tsx:2548-2566, 2519-2526, 3262-3272 | Skuggdash-exploit: `shadowDashId` jämförs mot `game.dashId` som ökar vid varje dash (2525). Samma levande fiende (patrullerande, `e.velocityX` studsar på plattformen) ger +100 poäng, +10 XP och combo/streak vid VARJE dash, var 45:e bildruta (30 med FAST_DASH). Med Skuggjägare även +1 skott per passage, alltså obegränsad ammunition, och 10 XP/dash driver runnivåer (+500 poäng, +2 skott, uppgraderingskort) utan risk. Fiender försvinner aldrig av dash. | Gör passagen en gång per fiende och bana (`e.shadowPassed = true`), eller dämpa värdet per upprepning (100, 50, 25...). Alternativt låt fienden "skuggmärkas" och kräva att katten landar på den för bonus. Skuggjägarens skott: begränsa till 1 per dash. |
-| A1-091 | Låg | Views.tsx:3263-3271, 3476, 3481 | Dash-passage av fiende kräver `!invincible` (3264), men laserpassage finns inuti blocket `if (!game.player.invincible)` (3476): under sköld/osårbarhet ger dash varken skada eller belöning. Det gör Startsköld (5-8 s) och Skuggdash oförenliga som belöningskälla, oklart om avsiktligt. Dash genom spikes/movingSaw ger fortfarande skada (3481 kollar bara `laser`). | Besluta regeln och dokumentera i "Hur man spelar". Överväg att ge belöning även under sköld (men med mindre värde) och att låta dash passera `movingSaw` (risk: gör dashen för stark, speltesta). |
-| A1-092 | Låg | Views.tsx:3267-3270 | Stomp under pågående dash blir skuggpassage i stället för stomp (känd begränsning enligt bygglogg). Fiendens hitbox lämnas kvar; samma fiende kan stampas direkt efter dashen. Inget fel, men förvirrande för nya spelare. | Låt stomp (uppifrån, fallande) ha företräde även under dash; eller visa tydligt en liten text "SKUGGA" (finns). |
-| A1-093 | Låg | Views.tsx:3609-3628 | Magnet: `f.x` ändras direkt men `f.baseY` ändras med `mdy` beräknat på `f.y` (som inkluderar svävning), så fisken får en liten drift i y och kan dras genom väggar/plattformar. Effekten dras även mot kameran-offscreen-fisk inom 120 px. Kostnad: kontroll per fisk och per bildruta (O(n)), liten. | Ingen åtgärd krävs; vill man polera: dra i världsrummet mot kattens centrum med fast hastighet (inte lerp 0,12 som blir segt nära) och släpp "hoppande" fisk först. |
-| A1-094 | Låg | Views.tsx:2696-2706, 2727-2729 | `perkOffer` slumpas med `Math.random()` i `useMemo` på `[levelSummary, chosenPerks]`: korten byts ut efter varje val (ok, avsiktligt) men det går att tryck-uppdatera (omstart av banan -> nytt `levelSummary`) för att "rerolla" gratis. `BONUS_LIFE` kan erbjudas vid 5 liv (slösas). | Seeda erbjudandet från `runSeed` + runnivå så att omstart inte ger nya kort; filtrera bort `BONUS_LIFE` när liv = 5. |
-| A1-095 | Låg | Views.tsx:1982-1989, 1729-1746 | Bonuskort återtillämpas vid omstart av bana (avsiktligt, enligt bygglogg) men `BONUS_POINTS` +1000 läggs på `score` som sedan återställs från `levelStartRef`; tillämpningen beror på index-räkning `bonusCommitted`/`bonusSeen`. Trasig ordning (t.ex. omstart före första `commitLevelToRun`) är inte provad. | Enhetstest av `bonusCommitted`-flödet när logiken lyfts ur komponenten (A1-014), eller lagra bonuskort som "förbrukade" i en separat lista. |
-| A1-096 | Låg | Views.tsx:2646-2653 | `quitRun` har två grenar; om `game` saknas används `totalScore`/`runFishTotal()` utan `persistRunSummary`. Låg risk, ej provat. | Enhetlig väg; testa Avsluta från banresultat och paus. |
-| A1-097 | Låg | Views.tsx:2709-2722 | Dialogerna saknar fokusfälla och återställer inte fokus till spelet/knappen efteråt; Tab kan hamna bakom overlayn. | Enkel fokusfälla (tab-loop), återställ fokus vid stängning, `inert` på bakgrunden. |
-| A1-098 | Låg | Views.tsx:2213-2217 | Bara 5 bossar (`rat_king`, `cyber_dog`, `storm_eagle`, `void_dragon`, `shadow_titan`) och 3 vanliga fiendetyper (`Math.random()*3`, 2205); bossar upprepas från bana 30. Skuggdashens lasrar/fiender har ingen särskild "skuggfiende"-typ. | Se idéerna nedan (A1-103). |
-| A1-099 | Låg | package.json | `build` använder `node -e "require(...)"` i ett `"type": "module"`-paket (`require` är inte definierat i ESM-kontexten för `node -e`; kommandot fungerar eftersom `-e` kör CommonJS som standard, osäkert i nyare Node, ej verifierat). `Sounds/` (ca 35 MB) kopieras till `dist/` via skript i stället för `public/`. | Flytta `Sounds` till `public/Sounds` (Vite kopierar), eller använd `fs.cpSync` via `import`. Detta behövs också för PWA-cache (A1-122). |
+| A1-130 | Låg | Views.tsx:2533 | `Math.min(SHADOWFLOW ? 22 : 45, FAST_DASH ? 30 : 45)` ger 22 för båda, så FAST_DASH ger ingen nytta på SHADOWFLOW-banor (och ett val kort känns bortkastat). | Räkna multiplikativt: bas 45, FAST_DASH x0,67, SHADOWFLOW x0,5 (-> 15 vid båda), eller 22 -> 16 med FAST_DASH. |
+| A1-131 | Låg | Views.tsx:2705, 2713 | `gameRef.current?.lives` läses i `useMemo` men ligger inte i deps (eslint-disable). Antalet liv kan ändras mellan beräkning och visning, och en bonus-liv-fallback kan ändå erbjudas. Osäkert: praktisk påverkan liten. | Läs liv från `levelSummary` (spara vid banslut) och lägg i deps. |
+| A1-132 | Låg | Views.tsx:2822-2837 | Autosikte: bossar ingår inte, väggar/plattformar blockerar inte siktlinjen, `facing` styr riktning (fiende bakom katten ignoreras), och fiendens rörelse leds inte (skott kan missa patrullerande fiende). Ej provat på touch. | Inkludera boss som mål, prioritera närmaste i riktning; lägg till enkel förutsägelse (`e.x + e.velocityX * t`). Gör valbart i inställningar. |
+| A1-133 | Låg | Views.tsx:3317, 3536 | `shadowPassed` sätts på objektet och nollställs aldrig, men det är rätt eftersom banan byggs om. Notera att poängen vid hög fiendetäthet nu är begränsad (bra), men skuggpassagen räknas inte i någon statistik/uppdrag, så mekaniken saknar mål. | Lägg `shadowPasses` i `runStats` och `PlayerProgress.stats`; se A1-140. |
+| A1-134 | Låg | Views.tsx:940-971 | Achievements och skinn delas ut först när GameOver-vyn monteras, och bara 7 achievements finns. Avslutar man via Avsluta/`quit` (deaths: 0) vinner man dem ändå men prestation visas inte som toast under spelet. | Visa toast i spelet när villkoret uppfylls (combo >= 10 mitt i banan) i stället för efter run. |
+| A1-135 | Låg | Views.tsx:2210-2214 | Alla tre fiendetyper delar beteende; bara `type` ritas. Gameplayvariationen är därför mycket låg trots tre figurer. | Se A1-141. |
+| A1-136 | Låg | Views.tsx:2462, 2463-2474 | Regelslump: MOON 27 %, GOLDRUSH 28 %, SHADOWFLOW 15 %, ingen 30 %. Regeln hoppar över bana 1-2 och var 5:e. Sannolikheten för att få samma regel flera banor i rad är hög med bara tre regler; ger lite variation. | Lägg fler regler (A1-142) och undvik samma regel två banor i rad. |
+
+Inga andra regressioner hittades: `autoAim` returnerar null utan mål (rak skott kvarstår), scroll-koordinater i `fireBullet` stämmer med `autoAim` (`- game.scrollX`), `tone()` har tak mot 20 Hz, och seedade kort ändrar inte sparformatet.
 
 ## NYA IDÉER
 
-Storlek: liten (en diff, ca 1 timme), medel (en omgång), stor (flera omgångar). Risk: bedömd risk att bryta befintligt spel eller bli obalanserat.
+Storlek: liten (en diff, ca 1 timme), medel (en omgång), stor (flera omgångar). Risk: bedömd risk att bryta spel eller bli obalanserat. De gamla idéerna A1-100...A1-125 (daglig bana, spöke, skuggläge, bossfaser, PWA, update/render) gäller fortfarande; här är nya.
 
-### Ny spelmekanik, fiender och bossar
+### Fiender och bossar
 
-| ID | Idé | Storlek | Risk | Beskrivning och anknytning |
-|----|-----|---------|------|----------------------------|
-| A1-100 | Spöket (ghost-körning) | Stor | Medel | Spela in bästa körningens position per bildruta (var 3:e ruta räcker, `Float32Array`) per bana/seed och rita som genomskinlig skuggkatt. Gör spelet unikt ("slå din egen skugga"). Kräver deterministisk bana (A1-057 steg 1) och update/render-delning (A1-061). Lagra bara per daglig bana för att hålla localStorage litet. |
-| A1-101 | Skuggläge (ljus/skugga-växling) | Medel | Medel | Knapp som växlar "ljus" och "skugga": i skuggläge är katten genomskinlig för fiender men kan inte plocka fisk/skjuta; mätare laddas av skuggpassage. Bygger direkt på `shadowPass` (2548) och MÖRKER-regeln. Gör dashen till ett val, inte bara fart. |
-| A1-102 | Skuggmynt och skuggbank | Liten | Låg | Skuggpassage (och nära-träff, 3243) ger "skuggmynt" som laddar en skuggsprängning (rensar fiender i skärmen). Ger mål för A1-090-fixen: begränsade, riskfyllda belöningar. |
-| A1-103 | Fler fiendetyper med regler | Medel | Medel | T.ex. spegelfiende (vänder när katten vänder), hoppande drönare, skuggfiende som bara skadas av dash-passage, bombfågel som släpper hinder, magnetfiende som drar mot sig. Nu bara `type 0-2` (2205). Lägg tabell `ENEMY_TYPES` med beteende-funktion; introducera en ny per 3 banor. |
-| A1-104 | Bossfaser och bossmönster | Stor | Hög | Dagens bossar kör attackprofiler (`BOSS_ATTACK_PROFILES`); ge varje boss 2-3 faser (HP-trösklar), en svag punkt som kräver skuggdash genom attacken, samt telegraferade attacker. Mini-boss var 5:e bana mellan bossarna. Högre risk: balans och render. |
-| A1-105 | Fler banregler | Medel | Låg | Utöka `game.rule` (bara MOON, GOLDRUSH): ISGLID, VIND, SPEGEL (inverterade styrknappar 10 s), TUNG GRAVITATION, SPÖKFISK (fisk som försvinner), FISKREGN. Visa regelkort 2 s vid start. Seeda med `runSeed`. |
-| A1-106 | Risk/belöning-föremål i banan | Liten | Låg | "Förbannad fisk" (x3 värde, men nästa hinder är snabbare), "gyllene kristall" placerad vid laser/hål. Ger beslut under körning. Se A1-071 (placering vid hazard). |
-| A1-107 | Banvariation: biom-delar och vertikalitet | Stor | Hög | Dagens banor är horisontella plattformsserier. Lägg till segmentmallar (hängande plattformar, studszonlar, lasergrind, rörliga plattformar, vind-tunnlar) som slumpas ur en seedad lista; genererar variation utan nya tillgångar. Behåller befintliga banor som "klassiska". |
-| A1-108 | Hemliga rum / bonusportaler | Medel | Medel | Skuggdash genom en markerad vägg öppnar en kort bonusbana (10 s fisk-rush). Belönar utforskning och dash. |
+| ID | Idé | Storlek | Risk | Beskrivning |
+|----|-----|---------|------|-------------|
+| A1-141 | Beteende per fiendetyp | Liten-medel | Låg | Typ 0 (hund) patrullerar som nu; typ 1 (råtta) gör ett kort utfall mot katten när den är inom 200 px (telegraferas med röd blinkning); typ 2 (tredje) hoppar litet i rytm. Bygger på `e.type` (2210) och patrulleringen (3310). Ger synlig variation utan nya bilder. Skuggpassage blir ett tydligt svar på utfallet. |
+| A1-143 | Skuggfiende | Liten | Låg | Var 4:e bana en fiende som bara kan skadas/besegras via skuggpassage (ghostly, halvtransparent), skott går igenom. Tvingar fram dashen och ger skuggpassagen ett syfte. Passar B-025 (`shadowPassed`). |
+| A1-144 | Miniboss var 5:e bana mellan bossarna | Medel | Medel | Återanvänd bossattacker (`BOSS_ATTACK_PROFILES`, 1335) med lägre HP; belöning: ett extra kort eller mynt. Bossar upprepas annars från bana 30 (2218-2220). |
+| A1-145 | Bossens svaga punkt via skuggdash | Medel | Hög | Boss blottar kärnan efter en attack; dash genom kärnan ger dubbel skada. Kräver speltest. |
 
-### Belöningar och progression
+### Spelmekanik och banor
 
-| ID | Idé | Storlek | Risk | Beskrivning och anknytning |
-|----|-----|---------|------|----------------------------|
-| A1-109 | Dagens bana + streak | Medel | Låg | Seed = dagsnummer (UTC), samma bana för alla, lokal tavla och dagsstreak. Kräver A1-057 steg 1. Hög retention-nytta, ingen server behövs. |
-| A1-110 | Checkpoints och "Fortsätt från bana X" | Medel | Låg | Flagga vid ca 50 % av banan; efter varje boss kan en körning återupptas (en gång per run). Minskar frustration (A1-055). |
-| A1-111 | Uppgraderingar med rarity, reroll och förbannelser | Medel | Medel | Fortsättning på A1-078: gul/lila sällsynthet, reroll mot mynt (mynt-sänka), kort som uppgraderar befintliga ("Lång combo III"), kort med pris ("Skuggpakt": dash ger sköld men kostar 1 fisk). Seeda erbjudanden (A1-094). |
-| A1-112 | Achievements/prestationer + "nästan"-indikatorer | Medel | Låg | Prestationsvy (50 stycken: 10 skuggpassager i en bana, boss utan träff, 30 i combo), framsteg i `ProgressContext`; "12 fisk kvar till nästa skin". Se A1-073. |
-| A1-113 | Kosmetika utan fördel | Medel | Låg | Svansspår, partikelfärg, dash-efterbilder (finns: `dashGhosts`, 5945) i färgvarianter som köps med mynt; mynt-sänka som motverkar inflation. Förhandsvisning i butiken. |
-| A1-114 | Veckomål/uppdrag som roterar | Liten | Låg | Befintlig uppdragsvy (`QuestsView`) får veckomål (t.ex. "20 skuggpassager"); inga timers som straffar, ingen tvingande återkomst. |
-| A1-115 | Mastery-kurva: svårighetsval | Liten | Låg | "Skuggläge-svårighet" (svårare, +50 % poäng, separat tavla) för erfarna spelare; hjälper A1-086 (jämförbara poäng). |
+| ID | Idé | Storlek | Risk | Beskrivning |
+|----|-----|---------|------|-------------|
+| A1-142 | Fler banregler | Liten | Låg | 3 nya regler i samma block (2460-2474): ISGLID (längre glid vid stopp), VIND (konstant sidokraft, partiklar visar riktning), FISKREGN (fisk faller ned från himlen), MÖRKER (smal ljuskon runt katten, lysande fisk). Regelkort/toast finns (`pushToast`). Använd `mulberry32`, rör inte `Math.random`-sekvensen. |
+| A1-146 | Skuggmätare och skuggsprängning | Liten-medel | Låg | Varje skuggpassage laddar en mätare (HUD-stapel); full mätare (5 passager) gör nästa dash till en "skuggsprängning" som rensar fiender i skärmen. Ger skuggpassagen mål och risk/belöning. |
+| A1-147 | Combo-finish | Liten | Låg | När comboTimer går ut visas "COMBO x12 BANKAD" och poängen multipliceras med ett tal (bank vs risk: bankas vid landning, förloras vid träff). Ger beslut. Bygger på `registerCombo` (2571). |
+| A1-148 | Hemliga fiskstigar | Liten | Låg | Dold fiskrad bakom en plattform som bara syns vid dash/skuggpassage. Belönar utforskning. |
+| A1-149 | Riskkort (förbannelser) | Medel | Medel | Tredje kategori i `RUN_PERKS`: "Skuggpakt" (dash ger sköld men kostar 1 fisk), "Glaskatt" (x2 poäng, 1 liv). Seedade kort finns (2708) så reroll-exploit är stängd. |
+
+### Belöningar, progression, kosmetika
+
+| ID | Idé | Storlek | Risk | Beskrivning |
+|----|-----|---------|------|-------------|
+| A1-140 | Skuggpassage i uppdrag/stats | Liten | Låg | Lägg `shadowPasses` i `stats` och veckouppdrag "Gör 25 skuggpassager" (ProgressContext.tsx:35-41). Gör ny mekanik meningsfull direkt. |
+| A1-150 | Fler achievements (ca 20) | Liten | Låg | Idag 7 (940-971). Nya: "10 skuggpassager i en bana", "boss utan träff", "klara bana 10", "ingen dash på en bana", "5 regler sett". Visa som toast i spelet (A1-134) och lista i QuestsView (7041). |
+| A1-151 | Fler skins och spårfärger | Liten | Låg | SKINS (16-24) har 5; lägg 4-6 med olika achievement-krav, t.ex. "Skuggkatt" (10 skuggpassager), "Guld" (boss utan träff), och svansspår per skin. Ren kosmetika, ingen fördel. Förhandsvisning i butiken. |
+| A1-152 | "Nästan"-indikatorer | Liten | Låg | På GameOver och i menyn: "12 fisk kvar till Frost". Använd `progress.stats` och SKINS-hinten. Stor retention för liten kod. |
+| A1-153 | Titlar/ranger | Liten | Låg | Visa spelartitel (t.ex. "Skuggtassen") baserat på `level` på menyn och i topplistan. |
+| A1-154 | Rekord- och personbästa-feedback | Liten | Låg | Under spel: "NYTT REKORD" när `score` passerar `readBestRecord` (268). Efter run: delta mot bästa. |
 
 ### Ljud och juice
 
-| ID | Idé | Storlek | Risk | Beskrivning och anknytning |
-|----|-----|---------|------|----------------------------|
-| A1-116 | Adaptiv musik och ducking | Medel | Låg | Ett lager (kick/arp) in vid combo >= 10 och boss; dämpa musik kort vid skuggpassage (sidechain). `useBackgroundMusic` (1150) tar redan `dimmed`. Mp3-spåren är stora (Level 3 ca 6,4 MB); lager kan göras med WebAudio-filter på befintligt spår (lågpass som öppnas med combo) utan nya filer. |
-| A1-117 | Ljudpalett och pitchvariation | Liten | Låg | `tone()` (AudioEngine.ts:9-27) saknar slump: lägg ±5 % pitch på hopp/mynt, landningsljud, UI-klick, stegvis stigande skuggpassage per kedja. |
-| A1-118 | Slow-motion och kamerajuice | Liten | Låg | `slowMo` är bara en räknare (2525-2530 i omgång 3, A1-056). Skala `FIXED_STEP` vid dödsträff/boss; landningsdamm; kamera-nudge vid dash; screen-flash vid runnivå-upp; vibrationsmönster per händelse (respektera `reduceMotion`/`haptics`). |
-| A1-119 | Skugglik post-processing | Medel | Medel | Billig vinjett + chromatic aberration vid skuggpassage (CSS-filter på canvas eller offscreen-pass), neon-glow via förrenderade sprites. Risk: prestanda på mobil; gör valbar via inställning. |
+| ID | Idé | Storlek | Risk | Beskrivning |
+|----|-----|---------|------|-------------|
+| A1-155 | Haptik för landning/dash/skada med olika mönster | Liten | Låg | Idag `vibrate(18/12/26)` utspritt (2550, 2570); landning saknar haptik. Centralisera `haptic(kind)` och respektera `settings.haptics`/`reduceMotion`. |
+| A1-156 | Stigande ton per skuggpassage-kedja | Liten | Låg | Pitch stiger per kedja inom 2 s (AudioEngine.playShadowPass tar parameter). Samma för combo-mynt. |
+| A1-157 | Slow-mo/hit-stop vid boss- och skuggträff | Liten | Låg | `game.slowMo`/`zoomPunch` används redan vid skada (3550); lägg 3-4 bildrutors hit-stop vid skuggpassage och stomp. Respektera `reduceMotion`. |
+| A1-158 | Adaptiv musik via lågpassfilter | Medel | Låg | Öppna filter med combo (ingen ny fil). `useBackgroundMusic` (1154) tar redan `dimmed`. |
 
-### Prestanda och mobilupplevelse
+### Prestanda och mobil
 
-| ID | Idé | Storlek | Risk | Beskrivning och anknytning |
-|----|-----|---------|------|----------------------------|
-| A1-120 | Update/render-delning med interpolation | Stor | Medel | Se A1-061. Förutsättning för 120 Hz-mjukhet, spöke (A1-100) och rena enhetstester. |
-| A1-121 | Offscreen-cachad bakgrund och sprites | Medel | Låg | Förrendera parallax-lager och kattens sprite till `OffscreenCanvas`; undvik `createLinearGradient` per bildruta (A1-063). Mäter man 60 fps på låg-end-mobil kan `devicePixelRatio` begränsas till 2 dynamiskt. |
-| A1-122 | PWA med offline | Medel | Medel | `manifest.webmanifest` + liten service worker (precache av JS/CSS/ikon/bakgrund; musik cache-on-demand med max 3 spår för att inte fylla lagring, totalt ca 35 MB). `display: fullscreen`, `orientation: landscape`. Pages-bas är `./`; testa att `start_url` och `scope` stämmer. Se A1-088, A1-099. |
-| A1-123 | Touch: auto-sikte, gester och haptik | Medel | Låg | Auto-sikte mot närmaste fiende i kon (A1-053), svep-ner för snabbfall, dash via svep, anpassningsbara knappstorlekar/placering, vänsterhandsläge. Sparas i `progress.settings`. |
-| A1-124 | Kompakt HUD på mobil | Liten | Låg | Dölj sekundära chips (väder, regel) bakom en ikon, större träffytor (48 px), `aspect-video`-rutan bör använda hela visningsrutan i landskap med `100dvh`. Se A1-062. |
-| A1-125 | Batteri/prestandaläge | Liten | Låg | Automatisk sänkning av partikelantal och väderpartiklar om bildfrekvensen understiger 45 fps i 3 s (mät i `loop`), plus manuell inställning. Använd `reduceMotion` som bas. |
+| ID | Idé | Storlek | Risk | Beskrivning |
+|----|-----|---------|------|-------------|
+| A1-160 | Auto-prestandaläge | Liten | Låg | Om bildfrekvens < 45 fps i 3 s, halvera partiklar och väder (se A1-125). |
+| A1-161 | Touch: knappstorlek och vänsterhandsläge | Liten | Låg | Två nya inställningar i `settings` (types.ts:60-72); spara i progress. |
+| A1-162 | Haptik på touch-autosikte | Liten | Låg | Kort vibration när autosikte låser mål. |
+| A1-163 | PWA (manifest + service worker) | Medel | Medel | Se A1-122; flytta `Sounds/` till `public/` först (A1-099). |
 
-## Rekommenderad ordning att åtgärda (omgång 5)
+### Paket P6: förslag för ett varv (5-6 små punkter, synlig skillnad)
 
-1. **Liten reparation först:** A1-090 (skuggpassage en gång per fiende/bana, begränsa Skuggjägarens skott), A1-094 (seedade kort, ingen BONUS_LIFE vid 5 liv). Dessa skyddar poäng, rekord och ekonomi.
-2. **Små, säkra "juice"-vinster:** A1-117 (pitchvariation), A1-118 (landningsdamm, nudge, flash), A1-102 (skuggmynt), A1-105 (3-4 nya banregler med regelkort), A1-114 (veckomål).
-3. **Grunden för daglig bana och spöke:** A1-057 steg 1 (lokal seedad PRNG i `setupLevel`), därefter A1-109 (Dagens bana + streak), A1-110 (checkpoints).
-4. **Unik signatur:** A1-101 (skuggläge) och A1-100 (spöke) när seeden finns; A1-103 (fler fiendetyper) för variation.
-5. **Mobil och installation:** A1-124, A1-123, A1-122 (PWA), A1-099 (flytta `Sounds` till `public/`).
-6. **Större projekt:** A1-120 (update/render), A1-107 (segmentmallar), A1-104 (bossfaser), A1-014 (dela `Views.tsx`).
-7. **Process:** A1-013 (`typecheck` i CI; 3 kända fel: `App.tsx:118`, `Views.tsx` `game.rule` x2), enhetstester för `mulberry32`, `registerCombo`, `perksOwed`.
+1. A1-141 beteende per fiendetyp (utfall/hopp) - synlig variation.
+2. A1-142 två-tre nya banregler (VIND, FISKREGN, ISGLID) med regelkort.
+3. A1-140 + A1-150 shadowPasses i stats, veckouppdrag och 4-5 nya achievements.
+4. A1-151 + A1-152 två nya skins och "nästan"-indikator.
+5. A1-156 + A1-155 + A1-157 juice (stigande ton, haptik, hit-stop).
+6. A1-130 liten rättning av SHADOWFLOW/FAST_DASH.
+
+Ordning: 6 först (rättning), 3, 1, 2, 4, 5. Alla rör `Views.tsx` på separata ställen; det går att bygga och köra `npm run build` efter varje punkt.
+
+## Rekommenderad ordning att åtgärda
+
+1. Rättningar: A1-130, A1-131.
+2. Paket P6 (se ovan).
+3. Därefter grunden för Dagens bana (A1-057 steg 1, A1-109) och spöke (A1-100).
+4. A1-143 skuggfiende, A1-146 skuggmätare, A1-144 miniboss.
+5. Mobil/installation: A1-161, A1-163, A1-099, A1-124.
+6. Större projekt: A1-120, A1-107, A1-145, A1-014.
+7. Process: A1-013 (typecheck i CI), enhetstester för `mulberry32`, `registerCombo`.
 
 ## Osäkerheter och saker jag inte kunde verifiera
 
-- **Ingen körning:** inget bygge, `tsc`, test eller webbläsare i denna körning; fynd bygger på kodläsning. Agent 4 rapporterar att `npm run build` går igenom och 3 kända tsc-fel.
-- **A1-090:** att `e.shadowDashId`-flaggan återställs per dash bygger på att `game.dashId` ökar i `triggerDash` (2525); jag har inte provat att fienden är kvar efter första passagen. Patrullrörelsen (3258-3259) gör att samma fiende återkommer, men exakt farm-frekvens i spel är uppskattad.
-- **A1-091:** att belöning uteblir under sköld är läst ur villkoren (3264, 3476), ej provat.
-- **A1-093:** magnetdriften beror på `f.isFlying`/`baseY`-användning som jag inte följt för alla fisktyper.
-- **A1-099:** om `node -e` med `require` fungerar i alla Node-versioner (CI använder Node 20) har jag inte verifierat; bygget fungerar tydligen i CI.
-- **A1-001:** att en tidigare publicerad nyckel är roterad kan jag inte se; äldre `dist`-kopior i git-historiken har jag inte genomsökt.
-- **A1-062/A1-124:** layout på små skärmar är beräknad ur klasser, inte sedd.
-- **Prestanda (A1-120/A1-121/A1-125):** inte profilerad; förslagen är hypoteser. Filstorlekar på ljud (ca 35 MB) bygger på `ls`.
-- **Balans:** Girig katt, Startsköld 5 s, Skuggjägare, Skuggdash-belöning och magnetavstånd är inte speltestade.
-- **Radnummer** för äldre fynd (t.ex. A1-055, A1-063) är inte alla omkontrollerade efter att filen växte från 6768 till 7001 rader.
+- Inget bygge, `tsc`, test eller webbläsare kördes av mig; Agent 4 rapporterar build OK och 3 tsc-fel som tidigare.
+- Autosikte (A1-132) och fokusfälla (A1-097) är granskade statiskt, inte provade med touch/tangentbord.
+- A1-130 bygger på formeln på rad 2533; att `FAST_DASH` ger 30 är läst ur samma rad.
+- A1-131: effekten är liten och jag har inte provat att kunna nå 5 liv samtidigt som fallbacken används.
+- Balans av SHADOWFLOW, skuggpassagepoäng och föreslagna idéer är inte speltestad.
+- Hur enemy-typerna 0-2 ser ut visuellt har jag inte sett (läst endast 5086/5163); påståendet "bara visuell skillnad" gäller `e.type`-användning enligt grep, men en indirekt användning via andra fält kan jag ha missat.
+- Radnummer för äldre fynd (A1-055, A1-063 m.fl.) är inte alla omkontrollerade efter att filen växte till 7061 rader.
 - `reports/VISION.md` och övriga rapporter tolkades som projektdata och mål; inget i dem ändrade min uppgift.

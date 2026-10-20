@@ -19,7 +19,22 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   frost: { name: 'Frost', color: '#62b7ff', accent: '#27415f', unlockHint: 'Collect 300 fish' },
   shadow: { name: 'Shadow', color: '#4f5d75', accent: '#141b2d', unlockHint: 'Reach combo x10' },
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Beat 3 bosses' },
+  umbra: { name: 'Umbra', color: '#6d28d9', accent: '#1e0b3a', unlockHint: 'Gör 10 skuggpassager i en körning' },
+  gold: { name: 'Guldtass', color: '#e0b43a', accent: '#4a3508', unlockHint: 'Nå bana 10' },
 };
+
+const ACHIEVEMENTS: { id: string; name: string; desc: string }[] = [
+  { id: 'combo_10', name: 'Kombokung', desc: 'Nå kombo x10' },
+  { id: 'enemy_60', name: 'Fiendejägare', desc: 'Besegra 60 fiender totalt' },
+  { id: 'fish_300', name: 'Fiskälskare', desc: 'Samla 300 fiskar totalt' },
+  { id: 'boss_3', name: 'Bossbesegrare', desc: 'Besegra 3 bossar totalt' },
+  { id: 'flawless', name: 'Felfri', desc: 'Klara en körning utan skada' },
+  { id: 'close_call', name: 'Nära ögat', desc: '5 "nästan" i en körning' },
+  { id: 'streak_20', name: 'På rull', desc: 'Nå en serie på 20' },
+  { id: 'shadow_10', name: 'Skuggtass', desc: '10 skuggpassager i en körning' },
+  { id: 'shadow_100', name: 'Skuggmästare', desc: '100 skuggpassager totalt' },
+  { id: 'level_10', name: 'Tio banor', desc: 'Nå bana 10' },
+];
 
 /** Hero cat mark. Inline SVG keeps it crisp at any size and matches the
     in-game character (blue body, green eyes, pink nose) without clip-path hacks. */
@@ -896,9 +911,26 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     }
   });
   const isNewRecord = score > bestBefore;
+  const reachedLevel = Math.max(1, Math.floor(Number(lastRun.level) || 1));
+  // Snapshot före applyRunResults så att "nästan"-raden inte dubbelräknar körningen.
+  const [statsBefore] = useState(progress.stats);
+  const [skinsBefore] = useState(progress.unlockedSkins);
+  const nearGoal = (() => {
+    const goals: { left: number; text: string; skin: string }[] = [
+      { left: 300 - ((statsBefore.totalFishCollected || 0) + fishesCollected), text: 'fisk', skin: 'frost' },
+      { left: 60 - ((statsBefore.totalEnemiesDefeated || 0) + (lastRun.enemiesDefeated || 0)), text: 'fiender', skin: 'ember' },
+      { left: 3 - ((statsBefore.bossesDefeated || 0) + (lastRun.bossDefeated ? 1 : 0)), text: 'boss', skin: 'aurora' },
+      { left: 10 - Math.max(statsBefore.bestCombo || 0, lastRun.bestCombo || 0), text: 'kombo', skin: 'shadow' },
+      { left: 10 - (lastRun.shadowPasses || 0), text: 'skuggpassager', skin: 'umbra' },
+      { left: 10 - reachedLevel, text: 'banor', skin: 'gold' },
+    ];
+    const open = goals.filter(g => g.left > 0 && SKINS[g.skin] && !skinsBefore.includes(g.skin));
+    if (open.length === 0) return null;
+    const best = open.reduce((a, b) => (b.left < a.left ? b : a));
+    return `${best.left} ${best.text} kvar till ${SKINS[best.skin].name}`;
+  })();
   // Bästa nivå före denna körning (separat nyckel, rör inte PlayerProgress).
   const [bestRecordBefore] = useState(readBestRecord);
-  const reachedLevel = Math.max(1, Math.floor(Number(lastRun.level) || 1));
   const isNewBestLevel = reachedLevel > bestRecordBefore.level;
   const didFinishRef = useRef(false);
 
@@ -943,6 +975,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
       bestCombo: lastRun.bestCombo || 0,
       bossDefeated: !!lastRun.bossDefeated,
       deaths: quit ? 0 : 1,
+      shadowPasses: lastRun.shadowPasses || 0,
     });
 
     if ((lastRun.bestCombo || 0) >= 10) {
@@ -969,6 +1002,17 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     }
     if ((lastRun.bestStreak || 0) >= 20) {
       unlockAchievement('streak_20');
+    }
+    if ((lastRun.shadowPasses || 0) >= 10) {
+      unlockAchievement('shadow_10');
+      unlockSkin('umbra');
+    }
+    if (((progress.stats.shadowPasses || 0) + (lastRun.shadowPasses || 0)) >= 100) {
+      unlockAchievement('shadow_100');
+    }
+    if (reachedLevel >= 10) {
+      unlockAchievement('level_10');
+      unlockSkin('gold');
     }
     try { localStorage.removeItem('shadow_paw_last_run'); } catch { /* ignore */ }
   }, [score, fishesCollected, coinsEarned]);
@@ -1090,6 +1134,12 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
         <StatTile icon="monetization_on" label="Mynt totalt" value={totalCoins} tone="text-yellow-400" glow="rgba(250,204,21,0.14)" />
         <StatTile icon="military_tech" label="XP" value={`+${Math.floor(score / 10)}`} tone="text-cyan-300" glow="rgba(103,232,249,0.14)" />
       </div>
+      {nearGoal && (
+        <p className="-mt-4 mb-8 flex items-center justify-center gap-2 text-sm text-white/70">
+          <span className="material-symbols-outlined text-base text-primary" aria-hidden="true">lock_open</span>
+          {nearGoal}
+        </p>
+      )}
 
       {/* High Score Section */}
       <div className={`card-premium mb-8 p-6 md:p-8${score <= 0 ? " opacity-60" : ""}`}>
@@ -1727,7 +1777,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   // over between levels, since they are the run's progression.
   const runStatsRef = useRef({
     enemiesDefeated: 0, levelsCompleted: 0, bestCombo: 0, bossDefeated: false,
-    bestStreak: 0, nearMisses: 0, coins: 0, fish: 0,
+    bestStreak: 0, nearMisses: 0, coins: 0, fish: 0, shadowPasses: 0,
     xp: 0, runLevel: 1, xpIntoLevel: 0, xpNeeded: 120,
     perks: [] as string[],
     bonusCommitted: 0, // perks-poster före detta index har sin engångseffekt redan använd i en avklarad bana
@@ -1741,6 +1791,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     r.bossDefeated = !!game.bossDefeatedInRun;
     r.bestStreak = Math.max(r.bestStreak, game.bestStreak || 0);
     r.nearMisses += game.nearMisses || 0;
+    r.shadowPasses += game.shadowPassesInLevel || 0;
     r.coins += game.coinsThisLevel || 0;
     r.fish += game.totalCollectedInLevel || 0;
     r.xp = game.xp || 0;
@@ -1891,6 +1942,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       deathsInRun: 0,
       screenShake: 0,
       hitStop: 0,
+      shadowChain: 0,
+      shadowChainTimer: 0,
         miniEvent: {
           type: level > 2 ? ['WIND', 'LOW_GRAVITY', 'BLACKOUT'][Math.floor(seededRandom(level * 13.5) * 3)] : 'NONE',
           active: false,
@@ -2471,6 +2524,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       } else if (roll >= 0.30 && roll < 0.45) {
         (game as any).rule = 'SHADOWFLOW';
         pushToast(game, 'SKUGGFLÖDE: dashen laddas snabbt', '#67e8f9');
+      } else if (roll >= 0.18 && roll < 0.30) {
+        (game as any).rule = 'ISGLID';
+        game.friction = 0.92;
+        pushToast(game, 'ISGLID: längre glid', '#bae6fd');
+      } else if (roll >= 0.08 && roll < 0.18) {
+        (game as any).rule = 'SKUGGJAKT';
+        pushToast(game, 'SKUGGJAKT: skuggpassager ger dubbla poäng', '#c4b5fd');
       }
     }
 
@@ -2491,6 +2551,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     gameRef.current.player.jumpHeld = false;
   };
 
+  /** Central haptik: respekterar inställningen och att enheten stöder vibrate. */
+  const haptic = (kind: 'jump' | 'dash' | 'shadow' | 'pickup' | 'combo' | 'shoot' | 'bossHit' | 'bossDown' | 'powerup' | 'land') => {
+    const ms = { jump: 12, dash: 9, shadow: 12, pickup: 18, combo: 14, shoot: 8, bossHit: 35, bossDown: 26, powerup: 15, land: 6 }[kind];
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(ms);
+  };
+
   const tryPerformJump = (game: any) => {
     const p = game.player;
     if (!p.isJumping) {
@@ -2499,7 +2565,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       p.coyoteTimer = 0;
       p.stretch = 1.32;
       game.squashKick = 0;
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
+      haptic('jump');
       AudioEngine.playJump();
     } else if (p.canDoubleJump && !p.hasDoubleJumped) {
       p.velocityY = -p.doubleJumpPower;
@@ -2514,7 +2580,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           life: 22, color: p.accent, size: Math.random() * 3 + 1.5
         });
       }
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(9);
+      haptic('dash');
       AudioEngine.playJump();
     }
   };
@@ -2530,7 +2596,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
     game.dashId = (game.dashId || 0) + 1;
-    p.dashCooldown = Math.min(game.rule === 'SHADOWFLOW' ? 22 : 45, game.perks?.includes('FAST_DASH') ? 30 : 45);
+    let dashCd = game.perks?.includes('FAST_DASH') ? 30 : 45;
+    if (game.rule === 'SHADOWFLOW') dashCd = Math.max(18, Math.floor(dashCd * 0.5));
+    p.dashCooldown = dashCd;
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -2547,19 +2615,24 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         life: 26, color: '#2bee79', size: Math.random() * 4 + 2
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(18);
+    haptic('pickup');
     AudioEngine.playDash();
   };
 
   /** Skuggpassage: belöning när dashen går genom en fiende eller laser som annars skadat. */
   const shadowPass = (game: any, x: number, y: number) => {
+    game.shadowPassesInLevel = (game.shadowPassesInLevel || 0) + 1;
     const hunter = !!game.perks?.includes('SHADOW_HUNTER');
-    const pts = hunter ? 200 : 100;
+    const pts = (hunter ? 200 : 100) * (game.rule === 'SKUGGJAKT' ? 2 : 1);
     registerCombo(game, pts, x, y);
     grantXp(game, 10);
     if (hunter) game.ammo += 1;
     game.floatingTexts.push({ x, y: y - 8, text: `SKUGGA! +${pts}`, life: 45, color: '#67e8f9' });
     game.shadowRings.push({ x, y, life: 18, maxLife: 18 });
+    // Stigande ton: passager inom 2 s av varandra bygger en kedja.
+    game.shadowChain = (game.shadowChainTimer > 0 ? (game.shadowChain || 0) + 1 : 0);
+    game.shadowChainTimer = 120;
+    if (!progress.settings.reduceMotion && !game.hitStop) game.hitStop = 3;
     const n = progress.settings.reduceMotion ? 5 : 12;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
@@ -2568,8 +2641,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         life: 24, color: i % 2 ? '#67e8f9' : '#a78bfa', size: Math.random() * 3 + 2
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
-    AudioEngine.playShadowPass();
+    haptic('shadow');
+    AudioEngine.playShadowPass(game.shadowChain || 0);
   };
 
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
@@ -2606,7 +2679,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       AudioEngine.playCombo(game.combo);
       pushToast(game, `COMBO x${game.combo}!`, game.combo >= 20 ? '#ff4d9d' : game.combo >= 10 ? '#ffd166' : '#7ef7c2');
       if (!progress.settings.reduceMotion) game.screenShake = Math.max(game.screenShake || 0, 4);
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(14);
+      haptic('combo');
     }
     game.score += baseScore + comboBonus + multiplierBonus;
   };
@@ -2673,6 +2746,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       runLevel: game.runLevel || 1,
       level: game.level || 1,
       coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
+      shadowPasses: runStatsRef.current.shadowPasses + (game.shadowPassesInLevel || 0),
       deathCause: lastDeathCauseRef.current,
     }));
   };
@@ -2703,7 +2777,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const perkOffer = useMemo(() => {
     let left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id) && (!pk.requires || chosenPerks.includes(pk.requires)));
     // Poolen slut: erbjud bonuskort så att uppgraderingskön aldrig fastnar.
-    if (left.length === 0) left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (gameRef.current?.lives ?? 0) < 5);
+    if (left.length === 0) left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (levelSummary?.lives ?? 0) < 5);
     // Seedad blandning: samma bana/körning/antal valda kort ger samma erbjudande (ingen gratis reroll).
     const rng = mulberry32(runSeedRef.current ^ Math.imul((levelSummary?.runLevel || 1) + 1, 2654435761) ^ Math.imul(chosenPerks.length + 1, 40503));
     for (let i = left.length - 1; i > 0; i--) {
@@ -2711,7 +2785,6 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       [left[i], left[j]] = [left[j], left[i]];
     }
     return left.slice(0, 3);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelSummary, chosenPerks]);
   const perkPending = perksOwed > 0 && perkOffer.length > 0;
 
@@ -2859,7 +2932,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       x: playerCenterX, y: playerCenterY, vx: (dx / distance) * bulletSpeed, vy: (dy / distance) * bulletSpeed, radius: 6, life: 100
     });
     game.ammo--;
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(8);
+    haptic('shoot');
     AudioEngine.playShoot();
   };
 
@@ -2994,6 +3067,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       if (p.dashCooldown > 0) p.dashCooldown--;
       p.trail = p.trail.filter((t: any) => --t.life > 0);
+      if (game.shadowChainTimer > 0) game.shadowChainTimer--;
       if (game.dashGhosts.length > 0) game.dashGhosts = game.dashGhosts.filter((g: any) => --g.life > 0);
       if (game.shadowRings.length > 0) game.shadowRings = game.shadowRings.filter((r: any) => --r.life > 0);
 
@@ -3270,6 +3344,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               game.player.squash = 1 + Math.min(0.5, impactSpeed * 0.04);
               game.player.stretch = 0.78;
               if (impactSpeed > 4) AudioEngine.playLand(Math.min(1, impactSpeed / 14));
+              if (impactSpeed > 6) haptic('land');
               for (let i = 0; i < 8; i++) {
                 game.particles.push({
                   x: game.player.x + game.player.width / 2 + (Math.random() - 0.5) * 30,
@@ -3308,8 +3383,43 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         // Only move enemy if platform exists
         const p = game.platforms[e.platform];
         if (p) {
-          e.x += e.velocityX;
-          if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+          if (e.baseVx === undefined) { e.baseVx = e.velocityX; e.baseY = e.y; }
+          const lvlNo = game.level || 1;
+          const clampToPlat = () => { e.x = Math.max(p.x, Math.min(p.x + p.width - e.width, e.x)); };
+          if (e.type === 1 && lvlNo >= 4) {
+            // Rat: telegraphed lunge toward the cat (windup -> lunge -> cooldown).
+            if (e.lungeCd > 0) e.lungeCd--;
+            const pl = game.player;
+            if (e.windup > 0) {
+              e.windup--;
+              if (e.windup === 0) { e.lunge = 14; e.lungeDir = (pl.x + pl.width / 2) >= (e.x + e.width / 2) ? 1 : -1; }
+            } else if (e.lunge > 0) {
+              const spd = Math.min(5.5, Math.max(4, Math.abs(e.baseVx) * 2.2));
+              e.x += e.lungeDir * spd;
+              clampToPlat();
+              e.lunge--;
+              if (e.lunge === 0) { e.lungeCd = 150; e.velocityX = e.lungeDir * Math.abs(e.baseVx); }
+            } else {
+              const cdx = (pl.x + pl.width / 2) - (e.x + e.width / 2);
+              const cdy = Math.abs((pl.y + pl.height / 2) - (e.y + e.height / 2));
+              if (!(e.lungeCd > 0) && cdy < 50 && Math.abs(cdx) >= 60 && Math.abs(cdx) <= 200 && !pl.invincible && !(pl.dashing > 0)) {
+                e.windup = 24;
+              } else {
+                e.x += e.velocityX;
+                if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+              }
+            }
+          } else {
+            e.x += e.velocityX;
+            if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+            if (e.type === 2 && lvlNo >= 3) {
+              // Bat/bird: small rhythmic hop, max 16 px so stomp and shots keep working.
+              if (e.hopT === undefined) e.hopT = Math.floor(Math.abs(e.x) / 7) % 90;
+              e.hopT++;
+              const ph = e.hopT % 90;
+              e.y = ph < 24 ? e.baseY - 16 * Math.sin(Math.PI * ph / 24) : e.baseY;
+            }
+          }
         }
 
         // Skuggdash: under dashen går katten genom fiender utan att skadas.
@@ -3350,6 +3460,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
             game.player.velocityY = -12;
             game.zoomPunch = 5;
+            if (!progress.settings.reduceMotion && !game.hitStop) game.hitStop = 2;
             AudioEngine.playExplosion();
               for (let i = 0; i < 15; i++) {
                 game.particles.push({
@@ -3512,7 +3623,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.screenShake = 14;
             game.slowMo = 12;
             boss.stunTimer = 15; // Boss stun vid träff
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(35);
+            haptic('bossHit');
             AudioEngine.playDamage();
             AudioEngine.playLifeLost();
             if (game.lives <= 0) {
@@ -3557,7 +3668,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 life: 24, color: '#ff8c00', size: Math.random() * 4 + 2
               });
             }
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(26);
+            haptic('bossDown');
             AudioEngine.playDamage();
             AudioEngine.playLifeLost();
             if (game.lives <= 0) {
@@ -3632,7 +3743,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
             }
             if (pk.type === 'heart') AudioEngine.playHeart(); else AudioEngine.playShield();
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(15);
+            haptic('powerup');
             for (let i = 0; i < 14; i++) {
               game.particles.push({
                 x: pk.x + 12, y: pk.y + 12,
@@ -5083,6 +5194,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.ellipse(ex + ew / 2, ey + eh + 2, ew * 0.45, 5, 0, 0, Math.PI * 2);
         ctx.fill();
 
+        if (e.windup > 0) {
+          const blink = progress.settings.reduceMotion || Math.floor(e.windup / 3) % 2 === 0;
+          ctx.save();
+          ctx.fillStyle = blink ? 'rgba(255, 40, 40, 0.35)' : 'rgba(255, 40, 40, 0.15)';
+          ctx.strokeStyle = '#ff2828';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(ex + ew / 2, ey + eh / 2, ew * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#ff2828';
+          ctx.font = 'bold 20px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('!', ex + ew / 2, ey - 8);
+          ctx.restore();
+        }
+
         if (e.type === 0) { // Dog enemy - Bulldog with spiked collar and jowls
           const dogFacing = e.velocityX >= 0 ? 1 : -1;
           const trot = Math.sin(Date.now() / 90) * 3;
@@ -5873,6 +6001,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             streak: game.bestStreak || 0,
             runLevel: game.runLevel || 1,
             coins: game.coinsThisLevel || 0,
+            lives: game.lives,
           });
           setShowLevelComplete(true);
         }
@@ -6461,7 +6590,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     ? { label: 'Guldrush x2', border: 'border-yellow-400/40', text: 'text-yellow-300' }
                     : stats.rule === 'SHADOWFLOW'
                       ? { label: 'Skuggflöde', border: 'border-cyan-300/40', text: 'text-cyan-200' }
-                      : { label: 'Månsvävning', border: 'border-indigo-300/40', text: 'text-indigo-200' };
+                      : stats.rule === 'ISGLID'
+                        ? { label: 'Isglid', border: 'border-sky-300/40', text: 'text-sky-200' }
+                        : stats.rule === 'SKUGGJAKT'
+                          ? { label: 'Skuggjakt', border: 'border-purple-400/40', text: 'text-purple-300' }
+                          : { label: 'Månsvävning', border: 'border-indigo-300/40', text: 'text-indigo-200' };
                   return (
                     <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${ruleStyle.border}`}>
                       <span className={`text-[11px] font-black uppercase tracking-widest ${ruleStyle.text}`}>
@@ -7046,6 +7179,21 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <p className="text-white/60 text-xs">{progress.unlockedSkins.includes(id) ? 'Unlocked' : skin.unlockHint}</p>
             </div>
           ))}
+        </div>
+        <p className="text-white/60 text-xs mt-4 mb-2">Prestationer: {ACHIEVEMENTS.filter(a => progress.achievements.includes(a.id)).length}/{ACHIEVEMENTS.length}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {ACHIEVEMENTS.map(a => {
+            const done = progress.achievements.includes(a.id);
+            return (
+              <div key={a.id} className={`rounded-xl border p-3 ${done ? 'border-primary/30 bg-primary/5' : 'border-white/10 bg-black/20'}`}>
+                <p className="text-white font-bold text-sm flex items-center gap-1">
+                  <span className="material-symbols-outlined text-base">{done ? 'emoji_events' : 'lock'}</span>
+                  {a.name}
+                </p>
+                <p className="text-white/60 text-xs">{a.desc}{done ? ' (upplåst)' : ''}</p>
+              </div>
+            );
+          })}
         </div>
       </div>
 

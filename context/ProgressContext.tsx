@@ -37,6 +37,7 @@ const createWeeklyQuests = (seedText: string) => {
   return [
     { id: 'w1', description: 'Vecko-jakt: samla fisk', target: 220 + Math.floor(seededRandom(seed + 7) * 180), current: 0, reward: 500, completed: false, claimed: false },
     { id: 'w2', description: 'Vecko-jakt: besegra fiender', target: 70 + Math.floor(seededRandom(seed + 11) * 60), current: 0, reward: 650, completed: false, claimed: false },
+    { id: 'w3', description: 'Vecko-jakt: skuggpassager', target: 25 + Math.floor(seededRandom(seed + 13) * 15), current: 0, reward: 450, completed: false, claimed: false },
   ];
 };
 
@@ -75,6 +76,7 @@ const defaultProgress: PlayerProgress = {
     perfectLevels: 0,
     bestCombo: 0,
     bossesDefeated: 0,
+    shadowPasses: 0,
   },
 };
 
@@ -102,6 +104,7 @@ interface ProgressContextType {
     bestCombo: number;
     bossDefeated: boolean;
     deaths: number;
+    shadowPasses?: number;
   }) => void;
   exportProgressCode: () => string;
   importProgressCode: (encoded: string) => boolean;
@@ -169,12 +172,17 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
     setProgress((p) => {
       const mustResetDaily = p.dailySeed !== today;
       const mustResetWeekly = p.weeklySeed !== week;
+      let weeklyQuests = mustResetWeekly ? createWeeklyQuests(week) : (p.weeklyQuests.some((q) => q.id.startsWith('w')) ? p.weeklyQuests : createWeeklyQuests(week));
+      if (!weeklyQuests.some((q) => q.id === 'w3')) {
+        const w3 = createWeeklyQuests(week).find((q) => q.id === 'w3');
+        if (w3) weeklyQuests = [...weeklyQuests, w3];
+      }
       return {
         ...p,
         dailySeed: today,
         weeklySeed: week,
         dailyQuests: mustResetDaily ? createDailyQuests(today) : (p.dailyQuests.some((q) => q.id.startsWith('d')) ? p.dailyQuests : createDailyQuests(today)),
-        weeklyQuests: mustResetWeekly ? createWeeklyQuests(week) : (p.weeklyQuests.some((q) => q.id.startsWith('w')) ? p.weeklyQuests : createWeeklyQuests(week)),
+        weeklyQuests,
       };
     });
   }, []);
@@ -308,6 +316,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
     bestCombo: number;
     bossDefeated: boolean;
     deaths: number;
+    shadowPasses?: number;
   }) => {
     setProgress((p) => {
       const daily = p.dailyQuests.map((q) => {
@@ -335,6 +344,10 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
           const current = Math.min(q.target, q.current + results.enemiesDefeated);
           return { ...q, current, completed: current >= q.target };
         }
+        if (q.id === 'w3') {
+          const current = Math.min(q.target, q.current + (results.shadowPasses || 0));
+          return { ...q, current, completed: current >= q.target };
+        }
         return q;
       });
 
@@ -350,6 +363,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
           perfectLevels: p.stats.perfectLevels + (results.perfectLevel ? 1 : 0),
           bestCombo: Math.max(p.stats.bestCombo, results.bestCombo),
           bossesDefeated: p.stats.bossesDefeated + (results.bossDefeated ? 1 : 0),
+          shadowPasses: (p.stats.shadowPasses || 0) + (results.shadowPasses || 0),
         },
       };
     });

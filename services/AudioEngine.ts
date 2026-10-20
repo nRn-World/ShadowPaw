@@ -108,9 +108,10 @@ export class AudioEngine {
     }
 
     /** Skuggpassage: lågt "sug" plus en hög klingande ton. */
-    public static playShadowPass() {
-        this.tone({ type: 'sine', from: 320, to: 90, duration: 0.2, gain: 0.16 });
-        this.tone({ type: 'triangle', from: 1500, to: 2200, duration: 0.18, gain: 0.09, delay: 0.03 });
+    public static playShadowPass(chain: number = 0) {
+        const k = Math.pow(1.06, Math.min(Math.max(0, chain), 6));
+        this.tone({ type: 'sine', from: 320 * k, to: 90 * k, duration: 0.2, gain: 0.16 });
+        this.tone({ type: 'triangle', from: 1500 * k, to: 2200 * k, duration: 0.18, gain: 0.09, delay: 0.03 });
     }
 
     /** Soft "whoosh" for grazing a hazard without dying. */
