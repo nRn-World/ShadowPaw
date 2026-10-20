@@ -820,13 +820,41 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   const [isSaved, setIsSaved] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
   const { progress, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
-  const lastRun = (() => {
+  // Read once: the summary is cleared from storage after it has been applied.
+  const [lastRun] = useState<any>(() => {
     try {
-      return JSON.parse(localStorage.getItem('shadow_paw_last_run') || '{}');
+      return JSON.parse(localStorage.getItem('shadow_paw_last_run') || '{}') || {};
     } catch {
       return {};
     }
-  })();
+  });
+  // Best saved score BEFORE this run is saved, for an honest "new record" check.
+  const [bestBefore] = useState<number>(() => {
+    try {
+      const list = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
+      if (!Array.isArray(list)) return 0;
+      return list.reduce((m: number, h: any) => (typeof h?.score === 'number' && h.score > m ? h.score : m), 0);
+    } catch {
+      return 0;
+    }
+  });
+  const isNewRecord = score > bestBefore;
+  const didFinishRef = useRef(false);
+
+  // R / Enter / Space restarts instantly, except while typing a name.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+      if (e.repeat) return;
+      if (e.key === 'r' || e.key === 'R' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onRestart();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onRestart]);
 
   // Coins are already awarded live during play, so this screen only tallies XP.
   const coinsEarned = lastRun.coins || 0;
@@ -834,6 +862,9 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
 
   useEffect(() => {
     getJerryTaunt(score).then(setTaunt);
+    // Guard against StrictMode's double effect run (would double XP and stats).
+    if (didFinishRef.current) return;
+    didFinishRef.current = true;
     addXP(Math.floor(score / 10));
     applyRunResults({
       fishesCollected,
@@ -870,12 +901,17 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     if ((lastRun.bestStreak || 0) >= 20) {
       unlockAchievement('streak_20');
     }
+    try { localStorage.removeItem('shadow_paw_last_run'); } catch { /* ignore */ }
   }, [score, fishesCollected, coinsEarned]);
 
   const handleSaveScore = () => {
     if (name.trim()) {
       setIsSaved(true);
-      const highScores = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
+      let highScores: any[] = [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
+        if (Array.isArray(parsed)) highScores = parsed;
+      } catch { /* start a fresh list */ }
       highScores.push({ name: name.trim(), score, date: new Date().toLocaleDateString() });
       localStorage.setItem('shadow_paw_scores', JSON.stringify(highScores));
     }
@@ -975,14 +1011,18 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       </div>
 
       {/* High Score Section */}
-      <div className="card-premium mb-8 p-6 md:p-8">
+      <div className={`card-premium mb-8 p-6 md:p-8${score <= 0 ? " opacity-60" : ""}`}>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center">
             <span className="text-[#112218] text-xl">🏆</span>
           </div>
           <div>
-            <h3 className="text-white font-black text-lg uppercase">Nytt rekord!</h3>
-            <p className="text-white/50 text-xs font-medium">Spara ditt resultat till topplistan</p>
+            <h3 className="text-white font-black text-lg uppercase">{isNewRecord ? 'Nytt rekord!' : 'Ditt resultat'}</h3>
+            <p className="text-white/50 text-xs font-medium">
+              {isNewRecord
+                ? 'Spara ditt resultat till topplistan'
+                : `${(bestBefore - score).toLocaleString()} poäng från ditt rekord (${bestBefore.toLocaleString()}). Du kan ändå spara resultatet.`}
+            </p>
           </div>
         </div>
 
@@ -1017,7 +1057,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
         </button>
         <button onClick={onRestart} className="btn-primary flex-1 py-4 text-lg">
           <span className="material-symbols-outlined text-xl">replay</span>
-          Spela igen
+          Spela igen (R)
         </button>
         <button onClick={onMenu} className="btn-ghost flex-1 py-4 text-lg uppercase">
           <span className="material-symbols-outlined">home</span>
