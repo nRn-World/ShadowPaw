@@ -1942,6 +1942,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       deathsInRun: 0,
       screenShake: 0,
       hitStop: 0,
+      shadowChain: 0,
+      shadowChainTimer: 0,
         miniEvent: {
           type: level > 2 ? ['WIND', 'LOW_GRAVITY', 'BLACKOUT'][Math.floor(seededRandom(level * 13.5) * 3)] : 'NONE',
           active: false,
