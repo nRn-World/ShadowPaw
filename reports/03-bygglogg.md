@@ -37,3 +37,6 @@ Branch: `agents/build-20261020-r6b`. Alla sex punkter byggda, en commit per punk
 - Filer: `components/Views.tsx`, `services/AudioEngine.ts`.
 - Build: OK.
 - Begränsningar: ej testat på mobil/ljud i webbläsare. Kedjetimern räknar ned i `simulate` (pausas under hit-stop).
+
+## Rättningsvarv 1: F-001
+- Typfel: `shadowChain` och `shadowChainTimer` initierade till 0 i game-objektet i `components/Views.tsx` (bredvid hitStop). tsc: 5 fel före, 3 efter (baslinjen). Build: OK.
