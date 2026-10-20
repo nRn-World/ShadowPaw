@@ -1773,6 +1773,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       return false;
     }
   })[0];
+  // Avvisbart tips om porträttläge på touchenheter (kom ihåg avvisning under sessionen).
+  const [showRotateHint, setShowRotateHint] = useState<boolean>(() => {
+    try { return sessionStorage.getItem('shadow_paw_hint_rotate') !== '1'; } catch { return true; }
+  });
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => {
+    try { return window.matchMedia?.('(orientation: portrait)').matches ?? false; } catch { return false; }
+  });
+  useEffect(() => {
+    if (!isTouchDevice || !window.matchMedia) return;
+    const mq = window.matchMedia('(orientation: portrait)');
+    const onChange = () => setIsPortrait(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, [isTouchDevice]);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
   const [combo, setCombo] = useState(0);
@@ -6267,7 +6281,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   return (
     <div
       className={`flex w-full flex-col items-center justify-center gap-3 overflow-hidden px-2 py-2 animate-fade-in-up md:gap-5 md:py-4 ${isFullscreen ? 'fixed inset-0 z-[100] bg-background-dark' : 'min-h-[calc(100dvh-4rem)]'}`}
-      style={{ fontSize: `${progress.settings.textScale}em`, transform: `scale(${progress.settings.uiScale})`, transformOrigin: 'top center' }}
+      style={{
+        fontSize: `${progress.settings.textScale}em`, transform: `scale(${progress.settings.uiScale})`, transformOrigin: 'top center',
+        paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
+        paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+        paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+      }}
     >
       {/* GAME AREA */}
       <div
@@ -6307,7 +6326,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {/* Center: level progress + XP bar */}
             <div className="flex-1 max-w-md flex flex-col items-center gap-1.5">
               <div className="w-full rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-3 py-1.5">
-                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1">
+                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1">
                   <span className="text-primary">NIVÅ {currentLevel}</span>
                   <span className="text-white/70">{stats.progress}%</span>
                 </div>
@@ -6317,7 +6336,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     style={{ width: `${stats.progress}%`, boxShadow: '0 0 10px rgba(43,238,121,0.7)' }}
                   />
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[9px] font-black uppercase tracking-wider">
+                <div className="mt-1 flex items-center justify-between text-[11px] font-black uppercase tracking-wider">
                   <span className="text-white/50">Runnivå {stats.runLevel}</span>
                   <span className="text-white/50">{stats.xp}/{stats.xpNeeded} XP</span>
                 </div>
@@ -6329,7 +6348,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 </div>
               </div>
               {currentLevel % 5 === 0 && (
-                <div className="flex items-center gap-1.5 rounded-full border border-orange-400/35 bg-black/70 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-orange-200 shadow-[0_0_18px_rgba(255,140,60,0.18)]">
+                <div className="flex items-center gap-1.5 rounded-full border border-orange-400/35 bg-black/70 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-orange-200 shadow-[0_0_18px_rgba(255,140,60,0.18)]">
                   <span aria-hidden="true">⚔</span>
                   <span>Bossarena · boss {Math.floor(currentLevel / 5)}</span>
                 </div>
@@ -6382,11 +6401,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     {stats.weather === 'SOLIGT' ? (stats.timeOfDay === 'DAY' ? 'sunny' : 'nightlight') : (stats.weather === 'REGNIGT' ? 'rainy' : (stats.weather === 'SNÖIGT' ? 'ac_unit' : (stats.weather === 'DIMMIGT' ? 'foggy' : 'thunderstorm')))}
                   </span>
                   {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
-                  {stats.nearMisses > 0 && <span className="text-[10px] font-black text-white/70">{stats.nearMisses}</span>}
+                  {stats.nearMisses > 0 && <span className="text-[11px] font-black text-white/70">{stats.nearMisses}</span>}
                 </div>
                 {stats.rule !== 'NONE' && (
                   <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.rule === 'GOLDRUSH' ? 'border-yellow-400/40' : 'border-indigo-300/40'}`}>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
+                    <span className={`text-[11px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
                       {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
                     </span>
                   </div>
@@ -6458,7 +6477,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         </div>
 
         {progress.settings.debugOverlay && (
-          <div className="absolute top-8 left-0 right-0 z-20 text-[10px] text-white/70 bg-black/40 px-3 py-1 pointer-events-none">
+          <div className="absolute top-8 left-0 right-0 z-20 text-[11px] text-white/70 bg-black/40 px-3 py-1 pointer-events-none">
             MODE {stats.levelType} | EVENT {stats.miniEvent} | COMBO x{combo} | WEATHER {stats.weather} | THEME {seasonTheme}
           </div>
         )}
@@ -6470,7 +6489,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               className="rounded-xl bg-black/80 backdrop-blur-md border border-red-500/40 px-3 py-2 text-center"
               style={{ boxShadow: '0 0 24px rgba(255,50,30,0.4)' }}
             >
-              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
+              <p className={`text-[11px] font-black uppercase tracking-widest mb-1 ${
                 stats.bossPhase >= 2 ? 'text-pink-400' : stats.bossPhase === 1 ? 'text-red-400' : 'text-orange-400'
               }`}>
                 ⚔️ {stats.bossName || 'BOSS'} – FAS {(stats.bossPhase || 0) + 1}
@@ -6491,7 +6510,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   }}
                 />
               </div>
-              <p className="text-[9px] text-white/50 font-bold mt-0.5 tabular-nums">
+              <p className="text-[11px] text-white/50 font-bold mt-0.5 tabular-nums">
                 {stats.bossHp} / {stats.bossMaxHp}
               </p>
             </div>
@@ -6533,23 +6552,23 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {levelSummary && (
               <div className="w-full max-w-md grid grid-cols-2 gap-2 mb-4 md:mb-6">
                 <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-3 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Poäng</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Poäng</p>
                   <p className="text-3xl md:text-4xl font-black text-primary tabular-nums">{levelSummary.score.toLocaleString()}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Mynt</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Mynt</p>
                   <p className="text-lg font-black text-yellow-400 tabular-nums">+{levelSummary.coins}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Runnivå</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Runnivå</p>
                   <p className="text-lg font-black text-cyan-300 tabular-nums">{levelSummary.runLevel}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Bästa streak</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Bästa streak</p>
                   <p className="text-lg font-black text-primary tabular-nums">{levelSummary.streak}</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Nästan-träffar</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Nästan-träffar</p>
                   <p className="text-lg font-black text-[#7ef7c2] tabular-nums">{levelSummary.nearMisses}</p>
                 </div>
                 <div className={`col-span-2 flex items-center justify-center gap-2 rounded-xl p-2.5 border ${levelSummary.noHit ? 'bg-primary/10 border-primary/40' : 'bg-white/5 border-white/10'}`}>
@@ -6566,18 +6585,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 <p className="mb-2 text-center text-xs font-black uppercase tracking-widest text-yellow-300">
                   Välj uppgradering{perksOwed > 1 ? ` (${perksOwed} val kvar)` : ''}
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   {perkOffer.map(pk => (
                     <button
                       key={pk.id}
                       data-perk-card
                       aria-label={`${pk.title}: ${pk.desc}`}
                       onClick={() => choosePerk(pk.id)}
-                      className="flex min-h-[48px] flex-col items-center gap-1 rounded-2xl border border-yellow-300/40 bg-white/5 p-3 text-center transition-transform hover:scale-105 hover:bg-white/10 active:scale-[0.98]"
+                      className="flex min-h-[48px] flex-col items-center gap-1 rounded-2xl border border-yellow-300/40 bg-white/5 p-1.5 sm:p-3 text-center transition-transform hover:scale-105 hover:bg-white/10 active:scale-[0.98]"
                     >
-                      <span className="material-symbols-outlined text-2xl text-yellow-300" aria-hidden="true">{pk.icon}</span>
-                      <span className="text-sm font-black text-white">{pk.title}</span>
-                      <span className="text-xs text-white/70">{pk.desc}</span>
+                      <span className="material-symbols-outlined text-xl sm:text-2xl text-yellow-300" aria-hidden="true">{pk.icon}</span>
+                      <span className="text-[11px] sm:text-sm font-black leading-tight text-white">{pk.title}</span>
+                      <span className="text-[11px] sm:text-xs leading-tight text-white/70">{pk.desc}</span>
                     </button>
                   ))}
                 </div>
@@ -6603,7 +6622,27 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
-        <div className={`flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto transition-opacity ${isPaused ? 'opacity-40' : ''}`}>
+        <>
+        {showRotateHint && isPortrait && (
+          <div className="flex w-full max-w-4xl items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/70 px-3 py-1 text-xs text-white/90" role="note">
+            <span>Vrid telefonen för större spelruta</span>
+            <button
+              onClick={() => { setShowRotateHint(false); try { sessionStorage.setItem('shadow_paw_hint_rotate', '1'); } catch { /* ignore */ } }}
+              aria-label="Stäng tipset"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-white/80 hover:bg-white/10"
+            >
+              <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+            </button>
+          </div>
+        )}
+        <div
+          className={`flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto transition-opacity ${isPaused ? 'opacity-40' : ''}`}
+          style={{
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+          }}
+        >
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
@@ -6627,34 +6666,35 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {/* Hopp-knapp */}
             <button
               aria-label="Hoppa" title="Hoppa"
-              className="size-16 md:size-20 bg-primary/20backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
+              className="size-16 md:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
               {...holdProps(() => requestJump(), () => releaseJump())}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">arrow_upward</span>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">HOPPA</span>
+              <span className="text-[11px] font-black uppercase tracking-widest opacity-90">HOPPA</span>
             </button>
 
             {/* Dash-knapp */}
             <button
               aria-label="Dash" title="Dash"
-              className="size-14 md:size-16 bg-cyan-400/20backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
+              className="size-14 md:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
               {...holdProps(() => triggerDash(), () => {})}
             >
               <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
-              <span className="text-[9px] font-black uppercase tracking-widest opacity-90">DASH</span>
+              <span className="text-[11px] font-black uppercase tracking-widest opacity-90">DASH</span>
             </button>
 
             {/* Shoot-knapp */}
             <button
               aria-label="Skjut" title="Skjut"
-              className="size-16 md:size-20 bg-primary-red/30backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
+              className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
               {...holdProps(() => fireBullet(), () => {})}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
+              <span className="text-[11px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
             </button>
           </div>
         </div>
+        </>
       )}
     </div>
   );
