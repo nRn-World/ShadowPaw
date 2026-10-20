@@ -1577,18 +1577,16 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     });
   };
 
+  // restartKey is the only new effect dependency: bumping it rebuilds the current
+  // level. levelStartRef keeps the score/lives the level started with so a
+  // restart does not carry over what was earned or lost mid-level.
+  const [restartKey, setRestartKey] = useState(0);
+  const levelStartRef = useRef<{ level: number; score: number; lives: number } | null>(null);
+
   const restartCurrentLevel = () => {
     setIsPaused(false);
     isPausedRef.current = false;
-    // Trigger re-setup of current level
-    setCurrentLevel(prev => prev);
-    if (gameRef.current) {
-      gameRef.current.running = false;
-    }
-    // Force re-render of level
-    setTimeout(() => {
-      setCurrentLevel(prev => prev);
-    }, 50);
+    setRestartKey(k => k + 1);
   };
 
   const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0 });
@@ -2395,6 +2393,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       togglePause();
       return;
     }
+    if (isPausedRef.current) return;
 
     if ([32, 38, 87].includes(code)) {
       if (active) requestJump();
@@ -2468,9 +2467,22 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     canvas.style.maxHeight = '100vh';
     canvas.style.objectFit = 'contain';
 
-    const game = setupLevel(currentLevel, totalScore, lives);
+    if (!levelStartRef.current || levelStartRef.current.level !== currentLevel) {
+      levelStartRef.current = { level: currentLevel, score: totalScore, lives };
+    }
+    const game = setupLevel(currentLevel, levelStartRef.current.score, levelStartRef.current.lives);
     if (!game) return;
     gameRef.current = game;
+
+    const autoPause = () => {
+      if (!game.running || isPausedRef.current) return;
+      Object.keys(game.keys).forEach(k => { game.keys[k] = false; });
+      setIsPaused(true);
+      isPausedRef.current = true;
+    };
+    const handleVisibility = () => { if (document.hidden) autoPause(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('blur', autoPause);
 
     const handleKeyDown = (e: KeyboardEvent) => setKeyState(e.keyCode, true);
     const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
@@ -5736,6 +5748,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
     const loop = (now: number) => {
       if (!game.running) return;
+      if (isPausedRef.current) {
+        previousFrameTime = now;
+        accumulatedTime = 0;
+        animationId = requestAnimationFrame(loop);
+        return;
+      }
       const elapsed = now - previousFrameTime;
       previousFrameTime = now;
       // Cap the debt at a few steps so a stalled frame or a backgrounded tab
@@ -5754,6 +5772,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('blur', autoPause);
       canvas.removeEventListener('mousedown', handleMouseDown);
 
       if (isTouchDevice) {
@@ -5767,7 +5787,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLevel, isTouchDevice]);
+  }, [currentLevel, isTouchDevice, restartKey]);
 
   return (
     <div
@@ -5962,6 +5982,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
           style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
         />
+
+        {isPaused && !showLevelComplete && (
+          <div role="dialog" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
+            <span className="material-symbols-outlined text-5xl text-primary" aria-hidden="true">pause_circle</span>
+            <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
+            <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
+              <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
+              <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
+              <button onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Huvudmeny</button>
+            </div>
+          </div>
+        )}
 
         {showLevelComplete && (
           <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
