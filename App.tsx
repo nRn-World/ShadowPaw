@@ -12,7 +12,8 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.START);
   const [lastScore, setLastScore] = useState(0);
   const [lastFishesCollected, setLastFishesCollected] = useState(0);
-  const menuMusicRef = useRef<HTMLAudioElement | null>(null);
+  const [lastQuit, setLastQuit] = useState(false);
+  const menuMusicRef =useRef<HTMLAudioElement | null>(null);
   const { progress } = useProgress();
   const { muted, musicVolume } = progress.settings;
 
@@ -78,7 +79,8 @@ const App: React.FC = () => {
     setCurrentView(view);
   }, []);
 
-  const handleGameEnd = useCallback((score: number, fishesCollected: number) => {
+  const handleGameEnd = useCallback((score: number, fishesCollected: number, opts?: { quit?: boolean }) => {
+    setLastQuit(!!opts?.quit);
     setLastScore(score);
     setLastFishesCollected(fishesCollected);
     setCurrentView(AppView.GAME_OVER);
@@ -97,7 +99,7 @@ const App: React.FC = () => {
       case AppView.PLAYING:
         return <PlayingView onEnd={handleGameEnd} />;
       case AppView.GAME_OVER:
-        return <GameOverView score={lastScore} fishesCollected={lastFishesCollected} onRestart={() => handleNavigate(AppView.PLAYING)} onMenu={() => handleNavigate(AppView.START)} />;
+        return <GameOverView score={lastScore} fishesCollected={lastFishesCollected} quit={lastQuit} onRestart={() => handleNavigate(AppView.PLAYING)} onMenu={() => handleNavigate(AppView.START)} />;
       case AppView.SHOP:
         return <ShopView onBack={() => handleNavigate(AppView.START)} />;
       case AppView.QUESTS:

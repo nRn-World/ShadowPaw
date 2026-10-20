@@ -228,8 +228,20 @@ const InjuredCatVisual: React.FC = () => (
 );
 
 /** START MENU **/
+/** Läser rekordet från den separata nyckeln shadow_paw_best (aldrig kraschande). */
+const readBestRecord = (): { level: number; score: number; runLevel: number } => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('shadow_paw_best') || '{}') || {};
+    const n = (v: any) => (typeof v === 'number' && isFinite(v) && v > 0 ? Math.floor(v) : 0);
+    return { level: n(raw.level), score: n(raw.score), runLevel: n(raw.runLevel) };
+  } catch {
+    return { level: 0, score: 0, runLevel: 0 };
+  }
+};
+
 export const StartMenuView: React.FC<{ onNavigate: (v: AppView) => void }> = ({ onNavigate }) => {
   const [tip, setTip] = useState<string>("");
+  const [bestRecord] = useState(readBestRecord);
   const { progress } = useProgress();
 
   const gameTips = [
@@ -267,6 +279,11 @@ export const StartMenuView: React.FC<{ onNavigate: (v: AppView) => void }> = ({ 
         <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-white/55 md:text-base">
           Snabba dig genom neonstaden. Rädda Jerry. Bygg din streak.
         </p>
+        {(bestRecord.level > 0 || bestRecord.score > 0) && (
+          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-primary/80">
+            Bästa nivå {bestRecord.level || 1} · Bästa poäng {bestRecord.score.toLocaleString()}
+          </p>
+        )}
 
         {/* Hero stats */}
         <div className="mt-6 grid grid-cols-3 gap-2.5">
@@ -814,7 +831,7 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
 };
 
 /** GAME OVER **/
-export const GameOverView: React.FC<{ score: number, fishesCollected?: number, onRestart: () => void, onMenu: () => void }> = ({ score, fishesCollected = 0, onRestart, onMenu }) => {
+export const GameOverView: React.FC<{ score: number, fishesCollected?: number, quit?: boolean, onRestart: () => void, onMenu: () => void }> = ({ score, fishesCollected = 0, quit = false, onRestart, onMenu }) => {
   const [taunt, setTaunt] = useState<string>("Bättre lycka nästa gång!");
   const [name, setName] = useState("");
   const [isSaved, setIsSaved] = useState(false);
@@ -839,6 +856,10 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     }
   });
   const isNewRecord = score > bestBefore;
+  // Bästa nivå före denna körning (separat nyckel, rör inte PlayerProgress).
+  const [bestRecordBefore] = useState(readBestRecord);
+  const reachedLevel = Math.max(1, Math.floor(Number(lastRun.level) || 1));
+  const isNewBestLevel = reachedLevel > bestRecordBefore.level;
   const didFinishRef = useRef(false);
 
   // R / Enter / Space restarts instantly, except while typing a name.
@@ -865,6 +886,14 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     // Guard against StrictMode's double effect run (would double XP and stats).
     if (didFinishRef.current) return;
     didFinishRef.current = true;
+    try {
+      const prev = readBestRecord();
+      localStorage.setItem('shadow_paw_best', JSON.stringify({
+        level: Math.max(prev.level, reachedLevel),
+        score: Math.max(prev.score, Math.floor(score) || 0),
+        runLevel: Math.max(prev.runLevel, Math.floor(Number(lastRun.runLevel) || 1)),
+      }));
+    } catch { /* ignore */ }
     addXP(Math.floor(score / 10));
     applyRunResults({
       fishesCollected,
@@ -873,7 +902,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       perfectLevel: !!lastRun.perfectLevel,
       bestCombo: lastRun.bestCombo || 0,
       bossDefeated: !!lastRun.bossDefeated,
-      deaths: 1,
+      deaths: quit ? 0 : 1,
     });
 
     if ((lastRun.bestCombo || 0) >= 10) {
@@ -967,7 +996,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
               <span className="material-symbols-outlined text-white/60 text-base">warning</span>
               <div className="min-w-0">
                 <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest">Status</p>
-                <p className="text-white font-black uppercase tracking-wide truncate">Uppdraget misslyckades</p>
+                <p className="text-white font-black uppercase tracking-wide truncate">{quit ? 'Körning avslutad' : 'Uppdraget misslyckades'}</p>
               </div>
             </div>
           </div>
@@ -976,13 +1005,19 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
         <div className="text-center md:text-left">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-red/10 border border-primary-red/20 mb-4">
             <span className="material-symbols-outlined text-primary-red text-lg">sentiment_dissatisfied</span>
-            <span className="text-white text-xs font-bold uppercase tracking-widest">Uppdraget misslyckades</span>
+            <span className="text-white text-xs font-bold uppercase tracking-widest">{quit ? 'Körning avslutad' : 'Uppdraget misslyckades'}</span>
           </div>
           <h1 className="text-white text-5xl md:text-7xl font-black uppercase tracking-tight">
             Spelet <span className="text-primary-red">över</span>
           </h1>
           <p className="mt-4 text-white text-base md:text-lg max-w-lg mx-auto">
             {taunt}
+          </p>
+          <p className="mt-3 text-sm font-black uppercase tracking-widest text-primary">
+            Nådde nivå {reachedLevel}
+            {isNewBestLevel && bestRecordBefore.level > 0
+              ? ` · Ny bästa nivå! (Bästa: ${bestRecordBefore.level}, +${reachedLevel - bestRecordBefore.level})`
+              : isNewBestLevel ? ' · Ny bästa nivå!' : bestRecordBefore.level > 0 ? ` · Bästa: ${bestRecordBefore.level}` : ''}
           </p>
         </div>
       </div>
@@ -1593,7 +1628,7 @@ const drawCloud = (
 };
 
 /** ADVANCED 50-LEVEL PLAYABLE GAME VIEW **/
-export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: number) => void }> = ({ onEnd }) => {
+export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: number, opts?: { quit?: boolean }) => void }> = ({ onEnd }) => {
   // The game loop is started once per level. Reading onEnd through a ref keeps a
   // parent re-render (e.g. the coin counter updating after every fish) from
   // changing the loop's dependencies and restarting the whole level.
@@ -1657,7 +1692,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     setRestartKey(k => k + 1);
   };
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', rule: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
   // Computed synchronously so the level is not rebuilt after mount.
   const isTouchDevice = useState<boolean>(() => {
     try {
@@ -1746,7 +1781,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       lives: existingLives,
       // Boss stages get enough extra shots for missed shots and a few regular
       // enemies, without turning their required fight into an ammo soft-lock.
-      ammo: progress.upgrades.maxAmmo + (progress.level >= 10 ? 2 : 0) + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0),
+      ammo: progress.upgrades.maxAmmo + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0),
       levelLength: levelLength,
       weather: weather,
       intensity: intensity,
@@ -1825,6 +1860,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       platforms: [],
       holes: [],
       fishes: [],
+      pickups: [] as any[],
       enemies: [],
       bullets: [],
       particles: [],
@@ -1841,7 +1877,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     // Passive perks from skill tree milestones.
     if (progress.level >= 5) game.player.speed += 0.6;
     if (progress.level >= 10) game.ammo += 2;
-    if (progress.level >= 15) game.player.invincibleTimer = 20;
+    if (progress.level >= 15) { game.player.invincible = true; game.player.invincibleTimer = 120; }
 
     // Generate background elements
     game.backgroundElements = generateBackgroundElements(theme);
@@ -2213,6 +2249,28 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
     }
 
+    // Pickups (B-010): placed AFTER all random generation, with seededRandom only,
+    // so the Math.random() sequence of existing generation is untouched.
+    if (level % 5 !== 0 && levelMode !== 'Boss Battle') {
+      const pickupTypes: string[] = [];
+      if (level % 3 === 0) pickupTypes.push('heart');
+      if (level >= 4) pickupTypes.push('shield');
+      const candidates = game.platforms.filter((pl: any) =>
+        !pl.isGround && !pl.bossArena && pl.width >= 80 && pl.x > 500 && pl.x + pl.width < levelLength - 500);
+      const usedPlatforms = new Set<any>();
+      pickupTypes.forEach((type, n) => {
+        if (candidates.length === 0) return;
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const plat = candidates[Math.floor(seededRandom(level * 31.7 + n * 7.3 + attempt * 3.1) * candidates.length)];
+          if (usedPlatforms.has(plat)) continue;
+          usedPlatforms.add(plat);
+          const px = plat.x + plat.width / 2 - 12;
+          game.pickups.push({ type, x: px, y: plat.y - 36, baseY: plat.y - 36, width: 24, height: 24, collected: false, phase: n * 1.7 });
+          break;
+        }
+      });
+    }
+
     // Add fun hazards to keep levels unique and less repetitive.
     const hazardCount = levelMode === 'Boss Battle'
       ? 0
@@ -2285,6 +2343,21 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
     }
 
+    // Banregel (B-011): deterministisk per bana, rör inte Math.random()-sekvensen.
+    (game as any).rule = 'NONE';
+    if (level >= 3 && level % 5 !== 0) {
+      const roll = seededRandom(level * 29.3);
+      if (roll >= 0.73 && levelMode !== 'Speed Run' && game.miniEvent.type !== 'LOW_GRAVITY') {
+        (game as any).rule = 'MOON';
+        game.gravity *= 0.82;
+        pushToast(game, 'MÅNSVÄVNING: svävande hopp', '#a5b4fc');
+      } else if (roll >= 0.45 && roll < 0.73) {
+        (game as any).rule = 'GOLDRUSH';
+        game.enemies.forEach((e: any) => { e.velocityX *= 1.15; });
+        pushToast(game, 'GULDRUSH: x2 fiskpoäng, snabbare fiender', '#ffd166');
+      }
+    }
+
     return game;
   };
 
@@ -2292,7 +2365,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   // still fires the moment the cat touches ground. Coyote time covers the
   // opposite case: walking off a ledge right before pressing still jumps.
   const requestJump = () => {
-    if (!gameRef.current) return;
+    if (!gameRef.current || isPausedRef.current) return;
     gameRef.current.player.jumpBuffer = 8;
     gameRef.current.player.jumpHeld = true;
   };
@@ -2336,7 +2409,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   const triggerDash = () => {
     const game = gameRef.current;
-    if (!game || !game.running) return;
+    if (!game || !game.running || isPausedRef.current) return;
     const p = game.player;
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
@@ -2422,6 +2495,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     addCoins(amount);
   };
 
+  // Frivilligt avslut från paus/banresultat: spara körningens statistik (vid
+  // banresultat är den redan sparad) och markera att det inte var en död.
+  const quitRun = () => {
+    const game = gameRef.current;
+    if (game && !showLevelComplete) {
+      persistRunSummary(game, false);
+      game.running = false;
+      onEndRef.current(game.score, runFishTotal(game), { quit: true });
+      return;
+    }
+    onEndRef.current(totalScore, runFishTotal(), { quit: true });
+  };
+
   const persistRunSummary = (game: any, perfectLevel: boolean) => {
     localStorage.setItem('shadow_paw_last_run', JSON.stringify({
       enemiesDefeated: game.enemiesDefeatedInRun || 0,
@@ -2433,6 +2519,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       nearMisses: runStatsRef.current.nearMisses + (game.nearMisses || 0),
       noHit: !!game.noHit,
       runLevel: game.runLevel || 1,
+      level: game.level || 1,
       coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
     }));
   };
@@ -2481,14 +2568,20 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const setKeyState = (code: number, active: boolean) => {
     if (!gameRef.current) return;
     const game = gameRef.current;
-    game.keys[code] = active;
+    if (!game.running && [27, 80].includes(code)) return;
 
     // Paus med Escape (27) eller P (80)
     if (active && [27, 80].includes(code)) {
+      game.keys[code] = active;
       togglePause();
       return;
     }
-    if (isPausedRef.current) return;
+    // Under paus ignoreras nedtryckningar, men uppsläpp rensar alltid tangenten
+    if (isPausedRef.current) {
+      if (!active) game.keys[code] = false;
+      return;
+    }
+    game.keys[code] = active;
 
     if ([32, 38, 87].includes(code)) {
       if (active) requestJump();
@@ -2504,7 +2597,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   const fireBullet = (targetX: number | null = null, targetY: number | null = null) => {
-    if (!gameRef.current || !gameRef.current.running) return;
+    if (!gameRef.current || !gameRef.current.running || isPausedRef.current) return;
     const game = gameRef.current;
     if (game.ammo <= 0) return;
     const playerCenterX = game.player.x + game.player.width / 2;
@@ -2568,6 +2661,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const game = setupLevel(currentLevel, levelStartRef.current.score, levelStartRef.current.lives);
     if (!game) return;
     gameRef.current = game;
+    // Ny bana ska aldrig börja pausad (t.ex. Esc/P på banresultatet)
+    setIsPaused(false);
+    isPausedRef.current = false;
 
     const autoPause = () => {
       if (!game.running || isPausedRef.current) return;
@@ -2579,7 +2675,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('blur', autoPause);
 
-    const handleKeyDown = (e: KeyboardEvent) => setKeyState(e.keyCode, true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Håll-nere ska inte toggla paus eller tömma ammo
+      if (e.repeat && [27, 80, 70, 74, 90, 17].includes(e.keyCode)) return;
+      setKeyState(e.keyCode, true);
+    };
     const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
     const handleMouseDown = (e: MouseEvent) => {
       e.preventDefault();
@@ -3239,6 +3339,38 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
       game.scrollX = Math.max(0, Math.min(game.scrollX, maxScroll));
 
+      // Pickups: heart (+1 life, max 5) and shield (5 s invincibility)
+      if (game.pickups) {
+        game.pickups.forEach((pk: any) => {
+          if (pk.collected) return;
+          pk.phase += 0.06;
+          pk.y = pk.baseY + Math.sin(pk.phase) * 4;
+          const pl = game.player;
+          if (pl.x < pk.x + pk.width && pl.x + pl.width > pk.x && pl.y < pk.y + pk.height && pl.y + pl.height > pk.y) {
+            pk.collected = true;
+            if (pk.type === 'heart') {
+              game.lives = Math.min(5, game.lives + 1);
+              setLives(game.lives);
+              pushToast(game, '+1 LIV', '#ff5c7a');
+            } else {
+              pl.invincible = true;
+              pl.invincibleTimer = 300;
+              pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
+            }
+            AudioEngine.playLevelUp();
+            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(15);
+            for (let i = 0; i < 14; i++) {
+              game.particles.push({
+                x: pk.x + 12, y: pk.y + 12,
+                vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4 - 1,
+                life: 26, color: pk.type === 'heart' ? '#ff5c7a' : '#7dd3fc', size: Math.random() * 3 + 1.5
+              });
+            }
+            if (!progress.settings.reduceMotion) game.screenShake = Math.max(game.screenShake || 0, 3);
+          }
+        });
+      }
+
       // Update coin positions and check collection
       game.fishes.forEach((f: any) => {
         if (!f.collected) {
@@ -3256,6 +3388,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x &&
             game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {            f.collected = true;
             registerCombo(game, 50, f.x, f.y);
+            if (game.rule === 'GOLDRUSH') game.score += 50;
             grantXp(game, 10);
             awardCoins(game, 1);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
@@ -5320,6 +5453,40 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.fillText(`${boss.hp}/${boss.maxHp}`, hpBarX + hpBarW/2, hpBarY + 10);
       }
 
+      // Draw pickups (heart / shield) with a pulsing glow
+      if (game.pickups) {
+        game.pickups.forEach((pk: any) => {
+          if (pk.collected) return;
+          const pxs = pk.x - game.scrollX;
+          if (pxs < -50 || pxs > canvas.width + 50) return;
+          const cx = pxs + pk.width / 2;
+          const cy = pk.y + pk.height / 2;
+          const pulse = 1 + Math.sin(pk.phase * 1.5) * 0.08;
+          const color = pk.type === 'heart' ? '#ff5c7a' : '#7dd3fc';
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(pulse, pulse);
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 16;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          if (pk.type === 'heart') {
+            ctx.moveTo(0, 9);
+            ctx.bezierCurveTo(-16, -2, -8, -14, 0, -6);
+            ctx.bezierCurveTo(8, -14, 16, -2, 0, 9);
+          } else {
+            ctx.moveTo(0, -11);
+            ctx.lineTo(10, -7);
+            ctx.lineTo(8, 4);
+            ctx.quadraticCurveTo(0, 12, -8, 4);
+            ctx.lineTo(-10, -7);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        });
+      }
+
       // Draw Fishes (Yellow/Gold Fish) - Now drawn after background and platforms
       game.fishes.forEach((f: any) => {
         if (f.collected) return;
@@ -5390,7 +5557,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       if (overlapsGoal) {
         if (allFishesCollected && bossCleared) {
           game.running = false;
-          const perfectLevel = game.lives === (levelStartRef.current?.lives ?? lives);
+          const perfectLevel = game.lives >= (levelStartRef.current?.lives ?? lives);
           const perfectBonus = perfectLevel ? 500 : 0;
           const noHitBonus = game.noHit ? 750 : 0;
           const nearMissBonus = (game.nearMisses || 0) * 25;
@@ -5776,6 +5943,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           levelType: game.levelType,
           timer: game.levelTimer || 0,
           miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
+          rule: game.rule || 'NONE',
           xp: game.xp || 0,
           runLevel: game.runLevel || 1,
           xpNeeded: game.xpNeeded || 120,
@@ -5955,11 +6123,28 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
                   {stats.nearMisses > 0 && <span className="text-[10px] font-black text-white/70">{stats.nearMisses}</span>}
                 </div>
+                {stats.rule !== 'NONE' && (
+                  <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.rule === 'GOLDRUSH' ? 'border-yellow-400/40' : 'border-indigo-300/40'}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${stats.rule === 'GOLDRUSH' ? 'text-yellow-300' : 'text-indigo-200'}`}>
+                      {stats.rule === 'GOLDRUSH' ? 'Guldrush x2' : 'Månsvävning'}
+                    </span>
+                  </div>
+                )}
                 {stats.levelType === 'Speed Run' && (
                   <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-orange-400/30 px-2.5 py-1.5">
                     <span className="material-symbols-outlined text-orange-300 text-base">timer</span>
                     <span className="text-sm font-black text-orange-300">{Math.ceil(stats.timer)}s</span>
                   </div>
+                )}
+                {!showLevelComplete && (
+                  <button
+                    onClick={togglePause}
+                    aria-label="Pausa"
+                    title="Pausa"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
+                  >
+                    <span className="material-symbols-outlined text-base text-white/70">pause</span>
+                  </button>
                 )}
                 <button
                   onClick={toggleMuted}
@@ -6041,7 +6226,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             <div className="flex w-full max-w-xs flex-col gap-2 md:max-w-sm">
               <button onClick={togglePause} className="w-full rounded-full border-2 border-primary/80 bg-primary px-8 py-3 text-base font-black text-[#112218] transition-transform hover:scale-105 active:scale-[0.98]">Fortsätt</button>
               <button onClick={restartCurrentLevel} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Starta om bana</button>
-              <button onClick={() => onEnd(totalScore, runFishTotal())} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Huvudmeny</button>
+              <button onClick={quitRun} className="w-full rounded-full border border-white/20 bg-white/10 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-white/20 md:text-base">Avsluta körning</button>
             </div>
           </div>
         )}
@@ -6090,7 +6275,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                   ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
                   : `NÄSTA NIVÅ (${currentLevel + 1})`}
               </button>
-              <button onClick={() => onEnd(totalScore, runFishTotal())} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
+              <button onClick={quitRun} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
             </div>
           </div>
         )}
@@ -6098,7 +6283,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
-        <div className="flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto">
+        <div className={`flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto transition-opacity ${isPaused ? 'opacity-40' : ''}`}>
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
@@ -6206,7 +6391,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
           <div className={`rounded-lg p-3 border ${progress.level >= 5 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 5: Smidiga tassar (+fart)</div>
           <div className={`rounded-lg p-3 border ${progress.level >= 10 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 10: Ammoeffektiv</div>
-          <div className={`rounded-lg p-3 border ${progress.level >= 15 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 15: Vaksintinkt</div>
+          <div className={`rounded-lg p-3 border ${progress.level >= 15 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 15: Vaksintinkt (2 s startskydd)</div>
         </div>
       </div>
 
