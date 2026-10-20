@@ -2471,6 +2471,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       } else if (roll >= 0.30 && roll < 0.45) {
         (game as any).rule = 'SHADOWFLOW';
         pushToast(game, 'SKUGGFLÖDE: dashen laddas snabbt', '#67e8f9');
+      } else if (roll >= 0.18 && roll < 0.30) {
+        (game as any).rule = 'ISGLID';
+        game.friction = 0.92;
+        pushToast(game, 'ISGLID: längre glid', '#bae6fd');
+      } else if (roll >= 0.08 && roll < 0.18) {
+        (game as any).rule = 'SKUGGJAKT';
+        pushToast(game, 'SKUGGJAKT: skuggpassager ger dubbla poäng', '#c4b5fd');
       }
     }
 
@@ -2556,7 +2563,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   /** Skuggpassage: belöning när dashen går genom en fiende eller laser som annars skadat. */
   const shadowPass = (game: any, x: number, y: number) => {
     const hunter = !!game.perks?.includes('SHADOW_HUNTER');
-    const pts = hunter ? 200 : 100;
+    const pts = (hunter ? 200 : 100) * (game.rule === 'SKUGGJAKT' ? 2 : 1);
     registerCombo(game, pts, x, y);
     grantXp(game, 10);
     if (hunter) game.ammo += 1;
@@ -6515,7 +6522,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                     ? { label: 'Guldrush x2', border: 'border-yellow-400/40', text: 'text-yellow-300' }
                     : stats.rule === 'SHADOWFLOW'
                       ? { label: 'Skuggflöde', border: 'border-cyan-300/40', text: 'text-cyan-200' }
-                      : { label: 'Månsvävning', border: 'border-indigo-300/40', text: 'text-indigo-200' };
+                      : stats.rule === 'ISGLID'
+                        ? { label: 'Isglid', border: 'border-sky-300/40', text: 'text-sky-200' }
+                        : stats.rule === 'SKUGGJAKT'
+                          ? { label: 'Skuggjakt', border: 'border-purple-400/40', text: 'text-purple-300' }
+                          : { label: 'Månsvävning', border: 'border-indigo-300/40', text: 'text-indigo-200' };
                   return (
                     <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${ruleStyle.border}`}>
                       <span className={`text-[11px] font-black uppercase tracking-widest ${ruleStyle.text}`}>
