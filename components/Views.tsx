@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppView, ScoreEntry } from '../types';
-import { getJerryTaunt } from '../services/geminiService';
+import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
 
@@ -918,7 +918,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
   const totalCoins = progress.coins;
 
   useEffect(() => {
-    getJerryTaunt(score).then(setTaunt);
+    setTaunt(getJerryTaunt(score));
     // Guard against StrictMode's double effect run (would double XP and stats).
     if (didFinishRef.current) return;
     didFinishRef.current = true;
