@@ -21,6 +21,19 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Beat 3 bosses' },
 };
 
+const ACHIEVEMENTS: { id: string; name: string; desc: string }[] = [
+  { id: 'combo_10', name: 'Kombokung', desc: 'Nå kombo x10' },
+  { id: 'enemy_60', name: 'Fiendejägare', desc: 'Besegra 60 fiender totalt' },
+  { id: 'fish_300', name: 'Fiskälskare', desc: 'Samla 300 fiskar totalt' },
+  { id: 'boss_3', name: 'Bossbesegrare', desc: 'Besegra 3 bossar totalt' },
+  { id: 'flawless', name: 'Felfri', desc: 'Klara en körning utan skada' },
+  { id: 'close_call', name: 'Nära ögat', desc: '5 "nästan" i en körning' },
+  { id: 'streak_20', name: 'På rull', desc: 'Nå en serie på 20' },
+  { id: 'shadow_10', name: 'Skuggtass', desc: '10 skuggpassager i en körning' },
+  { id: 'shadow_100', name: 'Skuggmästare', desc: '100 skuggpassager totalt' },
+  { id: 'level_10', name: 'Tio banor', desc: 'Nå bana 10' },
+];
+
 /** Hero cat mark. Inline SVG keeps it crisp at any size and matches the
     in-game character (blue body, green eyes, pink nose) without clip-path hacks. */
 const CatMenuIcon: React.FC = () => {
@@ -943,6 +956,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
       bestCombo: lastRun.bestCombo || 0,
       bossDefeated: !!lastRun.bossDefeated,
       deaths: quit ? 0 : 1,
+      shadowPasses: lastRun.shadowPasses || 0,
     });
 
     if ((lastRun.bestCombo || 0) >= 10) {
@@ -969,6 +983,15 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, q
     }
     if ((lastRun.bestStreak || 0) >= 20) {
       unlockAchievement('streak_20');
+    }
+    if ((lastRun.shadowPasses || 0) >= 10) {
+      unlockAchievement('shadow_10');
+    }
+    if (((progress.stats.shadowPasses || 0) + (lastRun.shadowPasses || 0)) >= 100) {
+      unlockAchievement('shadow_100');
+    }
+    if (reachedLevel >= 10) {
+      unlockAchievement('level_10');
     }
     try { localStorage.removeItem('shadow_paw_last_run'); } catch { /* ignore */ }
   }, [score, fishesCollected, coinsEarned]);
@@ -1727,7 +1750,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   // over between levels, since they are the run's progression.
   const runStatsRef = useRef({
     enemiesDefeated: 0, levelsCompleted: 0, bestCombo: 0, bossDefeated: false,
-    bestStreak: 0, nearMisses: 0, coins: 0, fish: 0,
+    bestStreak: 0, nearMisses: 0, coins: 0, fish: 0, shadowPasses: 0,
     xp: 0, runLevel: 1, xpIntoLevel: 0, xpNeeded: 120,
     perks: [] as string[],
     bonusCommitted: 0, // perks-poster före detta index har sin engångseffekt redan använd i en avklarad bana
@@ -1741,6 +1764,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     r.bossDefeated = !!game.bossDefeatedInRun;
     r.bestStreak = Math.max(r.bestStreak, game.bestStreak || 0);
     r.nearMisses += game.nearMisses || 0;
+    r.shadowPasses += game.shadowPassesInLevel || 0;
     r.coins += game.coinsThisLevel || 0;
     r.fish += game.totalCollectedInLevel || 0;
     r.xp = game.xp || 0;
@@ -2562,6 +2586,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   /** Skuggpassage: belöning när dashen går genom en fiende eller laser som annars skadat. */
   const shadowPass = (game: any, x: number, y: number) => {
+    game.shadowPassesInLevel = (game.shadowPassesInLevel || 0) + 1;
     const hunter = !!game.perks?.includes('SHADOW_HUNTER');
     const pts = (hunter ? 200 : 100) * (game.rule === 'SKUGGJAKT' ? 2 : 1);
     registerCombo(game, pts, x, y);
@@ -2682,6 +2707,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       runLevel: game.runLevel || 1,
       level: game.level || 1,
       coins: runStatsRef.current.coins + (game.coinsThisLevel || 0),
+      shadowPasses: runStatsRef.current.shadowPasses + (game.shadowPassesInLevel || 0),
       deathCause: lastDeathCauseRef.current,
     }));
   };
@@ -7111,6 +7137,21 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <p className="text-white/60 text-xs">{progress.unlockedSkins.includes(id) ? 'Unlocked' : skin.unlockHint}</p>
             </div>
           ))}
+        </div>
+        <p className="text-white/60 text-xs mt-4 mb-2">Prestationer: {ACHIEVEMENTS.filter(a => progress.achievements.includes(a.id)).length}/{ACHIEVEMENTS.length}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {ACHIEVEMENTS.map(a => {
+            const done = progress.achievements.includes(a.id);
+            return (
+              <div key={a.id} className={`rounded-xl border p-3 ${done ? 'border-primary/30 bg-primary/5' : 'border-white/10 bg-black/20'}`}>
+                <p className="text-white font-bold text-sm flex items-center gap-1">
+                  <span className="material-symbols-outlined text-base">{done ? 'emoji_events' : 'lock'}</span>
+                  {a.name}
+                </p>
+                <p className="text-white/60 text-xs">{a.desc}{done ? ' (upplåst)' : ''}</p>
+              </div>
+            );
+          })}
         </div>
       </div>
 
