@@ -2530,7 +2530,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (p.dashCooldown > 0 || p.dashing > 0) return;
     p.dashing = 12;
     game.dashId = (game.dashId || 0) + 1;
-    p.dashCooldown = Math.min(game.rule === 'SHADOWFLOW' ? 22 : 45, game.perks?.includes('FAST_DASH') ? 30 : 45);
+    let dashCd = game.perks?.includes('FAST_DASH') ? 30 : 45;
+    if (game.rule === 'SHADOWFLOW') dashCd = Math.max(18, Math.floor(dashCd * 0.5));
+    p.dashCooldown = dashCd;
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -2703,7 +2705,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const perkOffer = useMemo(() => {
     let left = RUN_PERKS.filter(pk => !chosenPerks.includes(pk.id) && (!pk.requires || chosenPerks.includes(pk.requires)));
     // Poolen slut: erbjud bonuskort så att uppgraderingskön aldrig fastnar.
-    if (left.length === 0) left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (gameRef.current?.lives ?? 0) < 5);
+    if (left.length === 0) left = BONUS_PERKS.filter(pk => pk.id !== 'BONUS_LIFE' || (levelSummary?.lives ?? 0) < 5);
     // Seedad blandning: samma bana/körning/antal valda kort ger samma erbjudande (ingen gratis reroll).
     const rng = mulberry32(runSeedRef.current ^ Math.imul((levelSummary?.runLevel || 1) + 1, 2654435761) ^ Math.imul(chosenPerks.length + 1, 40503));
     for (let i = left.length - 1; i > 0; i--) {
@@ -2711,7 +2713,6 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       [left[i], left[j]] = [left[j], left[i]];
     }
     return left.slice(0, 3);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelSummary, chosenPerks]);
   const perkPending = perksOwed > 0 && perkOffer.length > 0;
 
@@ -5873,6 +5874,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             streak: game.bestStreak || 0,
             runLevel: game.runLevel || 1,
             coins: game.coinsThisLevel || 0,
+            lives: game.lives,
           });
           setShowLevelComplete(true);
         }
