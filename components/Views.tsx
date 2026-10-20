@@ -634,7 +634,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
           <h3 className="text-white font-bold text-lg uppercase mb-2">Streak &amp; Multiplikator</h3>
           <p className="text-white/60 text-sm leading-relaxed mb-2">
-            Varje fisk, fiender och bonus bygger din streak. Var 4:e i streak stiger multiplikatorn (upp till x8) och ger extra poäng p\u00e5 allt du g\u00f6r. Streaken tapas om du tar skada eller om den g\u00e5r ut.
+            Varje fisk, fiender och bonus bygger din streak. Var 4:e i streak stiger multiplikatorn (upp till x8) och ger extra poäng på allt du gör. Streaken tapas om du tar skada eller om den går ut.
           </p>
           <ul className="text-white/60 text-sm space-y-1.5">
             <li className="flex items-start gap-2">
@@ -643,11 +643,11 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary">•</span>
-              <span>\u00c5k f\u00f6rbi fiender utan att r\u00f6ra dem = <strong className="text-white/80">N\u00c4STAN! +75</strong></span>
+              <span>Åk förbi fiender utan att röra dem = <strong className="text-white/80">NÄSTAN! +75</strong></span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary">•</span>
-              <span>XP fyller din runniv\u00e5 – varje niv\u00e5 ger +2 skott</span>
+              <span>XP fyller din runnivå – varje nivå ger +2 skott</span>
             </li>
           </ul>
         </div>
@@ -664,11 +664,11 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary">•</span>
-              <span>Skjut fiender p\u00e5 avst\u00e5nd \u2014 du sparar n\u00e4ra skott</span>
+              <span>Skjut fiender på avstånd — du sparar nära skott</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary">•</span>
-              <span>Samla alla fiskar innan du n\u00e5r Jerry</span>
+              <span>Samla alla fiskar innan du når Jerry</span>
             </li>
           </ul>
         </div>
@@ -1726,7 +1726,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       player: {
         x: 100, y: 150, width: 50, height: 70,
         velocityX: 0, velocityY: 0,
-        speed: (4.6 + (level * 0.08)) * (progress.settings.uiScale < 0.95 ? 0.98 : 1),
+        speed: (4.6 + (level * 0.08) + Math.min(1.5, Math.max(0, (progress.upgrades.speed - 5) * 0.4))) * (progress.settings.uiScale < 0.95 ? 0.98 : 1),
         jumpPower: progress.upgrades.jumpPower,
         doubleJumpPower: progress.upgrades.jumpPower + 3,
         isJumping: false, canDoubleJump: true, hasDoubleJumped: false,
@@ -6180,7 +6180,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <div className="flex-1">
               <h3 className="text-white font-bold uppercase">Fart</h3>
               <p className="text-white/50 text-xs">Snabbare rörelse</p>
-              <p className="tabular mt-1 text-sm font-bold text-white/85">Nuvarande: {progress.upgrades.speed.toFixed(1)}</p>
+              <p className="tabular mt-1 text-sm font-bold text-white/85">Nuvarande: {progress.upgrades.speed.toFixed(1)} (+{Math.min(1.5, Math.max(0, (progress.upgrades.speed - 5) * 0.4)).toFixed(1)} fart, max +1.5)</p>
               <button
                 onClick={() => handleBuy('speed', 1000)}
                 disabled={progress.coins < 1000}
