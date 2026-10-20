@@ -2726,6 +2726,32 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (!root) return;
     (root.querySelector<HTMLElement>('[data-perk-card]') ?? root.querySelector<HTMLElement>('[data-next-level]'))?.focus();
   }, [showLevelComplete, perkPending, chosenPerks]);
+  // Fokusfälla: Tab/Shift+Tab loopar inom dialogen.
+  const trapTab = (e: React.KeyboardEvent<HTMLElement>, root: HTMLElement | null) => {
+    if (e.key !== 'Tab' || !root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && (active === first || !root.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+  // Återställ fokus till det som hade fokus innan dialogen öppnades.
+  const dialogOpen = (isPaused && !showLevelComplete) || showLevelComplete;
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const prev = document.activeElement as HTMLElement | null;
+    return () => {
+      if (prev && prev !== document.body && document.contains(prev)) prev.focus();
+      else document.body.focus?.();
+    };
+  }, [dialogOpen]);
   const srStatus = `${stats.shield > 0 ? 'Sköld aktiv. ' : ''}${perkPending ? 'Välj en uppgradering.' : ''}`;
 
   const choosePerk = (cardId: string) => {
@@ -6531,7 +6557,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         />
 
         {isPaused && !showLevelComplete && (
-          <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-label="Pausad" className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
+          <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-label="Pausad" onKeyDown={e => trapTab(e, pauseDialogRef.current)} className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 animate-fade-in-up">
             <span className="material-symbols-outlined text-5xl text-primary" aria-hidden="true">pause_circle</span>
             <h2 className="display-title mb-2 text-center font-sans text-2xl leading-tight tracking-normal md:text-4xl">Pausad</h2>
             {chosenPerks.length > 0 && (
@@ -6549,7 +6575,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         )}
 
         {showLevelComplete && (
-          <div ref={levelDialogRef} role="dialog" aria-modal="true" aria-label="Nivå klar" className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
+          <div ref={levelDialogRef} role="dialog" aria-modal="true" aria-label="Nivå klar" onKeyDown={e => trapTab(e, levelDialogRef.current)} className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
             <span className="material-symbols-outlined text-4xl md:text-7xl text-primary mb-1 md:mb-3" style={{ filter: 'drop-shadow(0 0 20px rgba(43,238,121,0.6))' }}>stars</span>
             {/* Inter, not Outfit: Outfit draws the ring of "Å" so small it reads as "Ä".
                 tracking-normal + leading-tight need the space between the words. */}
