@@ -1630,7 +1630,14 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, comboFrac: 0 });
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  // Computed synchronously so the level is not rebuilt after mount.
+  const isTouchDevice = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+    } catch {
+      return false;
+    }
+  })[0];
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
   const [combo, setCombo] = useState(0);
@@ -1673,7 +1680,6 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   useEffect(() => {
-    setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
     setIsMobile(window.innerWidth < 768);
   }, []);
 
@@ -2430,6 +2436,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     setCurrentLevel(prev => prev + 1);
   };
 
+  // Pointer Events with capture: multitouch works and a cancelled or dragged-off
+  // press always releases the key.
+  const holdProps = (down: () => void, up: () => void) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      down();
+    },
+    onPointerUp: () => up(),
+    onPointerCancel: () => up(),
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  });
+
   const setKeyState = (code: number, active: boolean) => {
     if (!gameRef.current) return;
     const game = gameRef.current;
@@ -2541,58 +2560,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       fireBullet(mouseX, mouseY);
     };
 
-    // Touch controls for mobile
-    const handleTouchStart = (e: TouchEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const touchX = (touch.clientX - rect.left) * (canvas.width / rect.width);
-      const touchY = (touch.clientY - rect.top) * (canvas.height / rect.height);
-
-      // Jump on left half of screen
-      if (touchX < canvas.width / 2) {
-        triggerJump();
-      } else {
-        // Shoot on right half of screen
-        fireBullet(touchX, touchY);
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const touchX = (touch.clientX - rect.left) * (canvas.width / rect.width);
-
-      // Move left/right based on touch position
-      if (touchX < canvas.width * 0.3) {
-        setKeyState(65, true); // A
-        setKeyState(68, false); // D
-      } else if (touchX > canvas.width * 0.7) {
-        setKeyState(68, true); // D
-        setKeyState(65, false); // A
-      } else {
-        setKeyState(65, false);
-        setKeyState(68, false);
-      }
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      e.preventDefault();
-      setKeyState(65, false);
-      setKeyState(68, false);
-    };
-
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     canvas.addEventListener('mousedown', handleMouseDown);
-
-    // Add touch events for mobile
-    if (isTouchDevice) {
-      canvas.addEventListener('touchstart', handleTouchStart);
-      canvas.addEventListener('touchmove', handleTouchMove);
-      canvas.addEventListener('touchend', handleTouchEnd);
-    }
 
     let animationId: number;
     let previousFrameTime = performance.now();
@@ -5828,12 +5798,6 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       window.removeEventListener('blur', autoPause);
       canvas.removeEventListener('mousedown', handleMouseDown);
 
-      if (isTouchDevice) {
-        canvas.removeEventListener('touchstart', handleTouchStart);
-        canvas.removeEventListener('touchmove', handleTouchMove);
-        canvas.removeEventListener('touchend', handleTouchEnd);
-      }
-
       if (animationId) {
         cancelAnimationFrame(animationId);
       }
@@ -6034,22 +5998,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           </div>
         )}
 
-        {/* Mobile Touch Controls Overlay */}
-        {isTouchDevice && (
-          <div className="absolute inset-0 pointer-events-none z-10">
-            <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center pointer-events-auto">
-              <div className="bg-black/50 backdrop-blur-sm rounded-2xl px-4 py-2 border border-white/20">
-                <p className="text-white/80 text-xs font-medium">Vänster: Jump</p>
-                <p className="text-white/80 text-xs font-medium">Höger: Shoota</p>
-                <p className="text-white/80 text-xs font-medium">Svep: Rörelse</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         <canvas
           ref={canvasRef}
-          className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
+          className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217] touch-none select-none"
           style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
         />
 
@@ -6117,20 +6068,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
-        <div className="flex w-full max-w-4xl justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto">
+        <div className="flex w-full max-w-4xl touch-none justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto">
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
               className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); setKeyState(65, true); }}
-              onTouchEnd={(e) => { e.preventDefault(); setKeyState(65, false); }}
+              {...holdProps(() => setKeyState(65, true), () => setKeyState(65, false))}
             >
               <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_back</span>
             </button>
             <button
               className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); setKeyState(68, true); }}
-              onTouchEnd={(e) => { e.preventDefault(); setKeyState(68, false); }}
+              {...holdProps(() => setKeyState(68, true), () => setKeyState(68, false))}
             >
               <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_forward</span>
             </button>
@@ -6141,8 +6090,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {/* Hopp-knapp */}
             <button
               className="size-16 md:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); requestJump(); }}
-              onTouchEnd={(e) => { e.preventDefault(); releaseJump(); }}
+              {...holdProps(() => requestJump(), () => releaseJump())}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">arrow_upward</span>
               <span className="text-[10px] font-black uppercase tracking-widest opacity-90">HOPPA</span>
@@ -6151,7 +6099,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {/* Dash-knapp */}
             <button
               className="size-14 md:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); triggerDash(); }}
+              {...holdProps(() => triggerDash(), () => {})}
             >
               <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
               <span className="text-[9px] font-black uppercase tracking-widest opacity-90">DASH</span>
@@ -6160,7 +6108,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             {/* Shoot-knapp */}
             <button
               className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); fireBullet(); }}
+              {...holdProps(() => fireBullet(), () => {})}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
               <span className="text-[10px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
