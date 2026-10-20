@@ -2549,6 +2549,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     gameRef.current.player.jumpHeld = false;
   };
 
+  /** Central haptik: respekterar inställningen och att enheten stöder vibrate. */
+  const haptic = (kind: 'jump' | 'dash' | 'shadow' | 'pickup' | 'combo' | 'shoot' | 'bossHit' | 'bossDown' | 'powerup' | 'land') => {
+    const ms = { jump: 12, dash: 9, shadow: 12, pickup: 18, combo: 14, shoot: 8, bossHit: 35, bossDown: 26, powerup: 15, land: 6 }[kind];
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(ms);
+  };
+
   const tryPerformJump = (game: any) => {
     const p = game.player;
     if (!p.isJumping) {
@@ -2557,7 +2563,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       p.coyoteTimer = 0;
       p.stretch = 1.32;
       game.squashKick = 0;
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
+      haptic('jump');
       AudioEngine.playJump();
     } else if (p.canDoubleJump && !p.hasDoubleJumped) {
       p.velocityY = -p.doubleJumpPower;
@@ -2572,7 +2578,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           life: 22, color: p.accent, size: Math.random() * 3 + 1.5
         });
       }
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(9);
+      haptic('dash');
       AudioEngine.playJump();
     }
   };
@@ -2607,7 +2613,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         life: 26, color: '#2bee79', size: Math.random() * 4 + 2
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(18);
+    haptic('pickup');
     AudioEngine.playDash();
   };
 
@@ -2621,6 +2627,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     if (hunter) game.ammo += 1;
     game.floatingTexts.push({ x, y: y - 8, text: `SKUGGA! +${pts}`, life: 45, color: '#67e8f9' });
     game.shadowRings.push({ x, y, life: 18, maxLife: 18 });
+    // Stigande ton: passager inom 2 s av varandra bygger en kedja.
+    game.shadowChain = (game.shadowChainTimer > 0 ? (game.shadowChain || 0) + 1 : 0);
+    game.shadowChainTimer = 120;
+    if (!progress.settings.reduceMotion && !game.hitStop) game.hitStop = 3;
     const n = progress.settings.reduceMotion ? 5 : 12;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
@@ -2629,8 +2639,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         life: 24, color: i % 2 ? '#67e8f9' : '#a78bfa', size: Math.random() * 3 + 2
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
-    AudioEngine.playShadowPass();
+    haptic('shadow');
+    AudioEngine.playShadowPass(game.shadowChain || 0);
   };
 
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
@@ -2667,7 +2677,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       AudioEngine.playCombo(game.combo);
       pushToast(game, `COMBO x${game.combo}!`, game.combo >= 20 ? '#ff4d9d' : game.combo >= 10 ? '#ffd166' : '#7ef7c2');
       if (!progress.settings.reduceMotion) game.screenShake = Math.max(game.screenShake || 0, 4);
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(14);
+      haptic('combo');
     }
     game.score += baseScore + comboBonus + multiplierBonus;
   };
@@ -2920,7 +2930,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       x: playerCenterX, y: playerCenterY, vx: (dx / distance) * bulletSpeed, vy: (dy / distance) * bulletSpeed, radius: 6, life: 100
     });
     game.ammo--;
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(8);
+    haptic('shoot');
     AudioEngine.playShoot();
   };
 
@@ -3055,6 +3065,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       if (p.dashCooldown > 0) p.dashCooldown--;
       p.trail = p.trail.filter((t: any) => --t.life > 0);
+      if (game.shadowChainTimer > 0) game.shadowChainTimer--;
       if (game.dashGhosts.length > 0) game.dashGhosts = game.dashGhosts.filter((g: any) => --g.life > 0);
       if (game.shadowRings.length > 0) game.shadowRings = game.shadowRings.filter((r: any) => --r.life > 0);
 
@@ -3331,6 +3342,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               game.player.squash = 1 + Math.min(0.5, impactSpeed * 0.04);
               game.player.stretch = 0.78;
               if (impactSpeed > 4) AudioEngine.playLand(Math.min(1, impactSpeed / 14));
+              if (impactSpeed > 6) haptic('land');
               for (let i = 0; i < 8; i++) {
                 game.particles.push({
                   x: game.player.x + game.player.width / 2 + (Math.random() - 0.5) * 30,
@@ -3446,6 +3458,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
             game.player.velocityY = -12;
             game.zoomPunch = 5;
+            if (!progress.settings.reduceMotion && !game.hitStop) game.hitStop = 2;
             AudioEngine.playExplosion();
               for (let i = 0; i < 15; i++) {
                 game.particles.push({
@@ -3608,7 +3621,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.screenShake = 14;
             game.slowMo = 12;
             boss.stunTimer = 15; // Boss stun vid träff
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(35);
+            haptic('bossHit');
             AudioEngine.playDamage();
             AudioEngine.playLifeLost();
             if (game.lives <= 0) {
@@ -3653,7 +3666,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
                 life: 24, color: '#ff8c00', size: Math.random() * 4 + 2
               });
             }
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(26);
+            haptic('bossDown');
             AudioEngine.playDamage();
             AudioEngine.playLifeLost();
             if (game.lives <= 0) {
@@ -3728,7 +3741,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               pushToast(game, 'SKÖLD 5 S', '#7dd3fc');
             }
             if (pk.type === 'heart') AudioEngine.playHeart(); else AudioEngine.playShield();
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(15);
+            haptic('powerup');
             for (let i = 0; i < 14; i++) {
               game.particles.push({
                 x: pk.x + 12, y: pk.y + 12,
