@@ -236,6 +236,19 @@ export class AudioEngine {
         this.noise({ duration: 0.8, gain: 0.12, from: 600, to: 90 });
     }
 
+    /**
+     * Thunder for rainy stages. A close strike cracks first and then rolls;
+     * a far one is just a low rumble that arrives a beat late. Both are one
+     * noise burst plus a sub-bass tail, so the whole storm stays cheap.
+     */
+    public static playThunder(power = 1, delay = 0) {
+        const p = Math.max(0.15, Math.min(1, power));
+        this.noise({ duration: 0.12, gain: 0.22 * p, delay, from: 7000, to: 1800, type: 'highpass' });
+        this.noise({ duration: 1.5, gain: 0.16 * p, delay: delay + 0.03, from: 1400, to: 70 });
+        this.noise({ duration: 1.1, gain: 0.1 * p, delay: delay + 0.42, from: 900, to: 60 });
+        this.tone({ type: 'sine', from: 62, to: 28, duration: 1.35, gain: 0.16 * p, delay: delay + 0.02 });
+    }
+
     /** Grade stamp: snappy hit + sparkle. */
     public static playGrade() {
         this.tone({ type: 'triangle', from: 1046, to: 1046, duration: 0.12, gain: 0.12 });

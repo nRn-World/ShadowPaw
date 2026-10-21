@@ -1901,6 +1901,399 @@ const seededRandom = (seed: number) => {
   return x - Math.floor(x);
 };
 
+// ---------------------------------------------------------------------------
+// LIGHTNING
+// ---------------------------------------------------------------------------
+// Rainy stages get real strikes: a forked bolt walks down from the sky, hits a
+// spot on the course, scorches it and lights the whole frame. The cat is never
+// a target - a strike aimed inside the safety radius is cancelled before it
+// fires, and the same rule is checked again on the exact landing frame.
+
+type BoltPath = { dx: number[]; y: number[] };
+
+type LightningStrike = {
+  targetX: number;
+  targetY: number;
+  life: number;
+  /** The jagged shape never changes after the strike lands, so it is rasterised
+      once and blitted with an alpha each frame. Redrawing the multi-pass glow
+      every frame would cost more than the rest of the scene together. */
+  sprite: HTMLCanvasElement;
+  spriteOffsetX: number;
+  spriteOffsetY: number;
+};
+
+type LightningScorch = { x: number; y: number; life: number; maxLife: number; size: number };
+
+type LightningState = {
+  nextStrike: number;
+  pending: { x: number; y: number; charge: number; total: number } | null;
+  strikes: LightningStrike[];
+  scorches: LightningScorch[];
+  flash: number;
+  lastX: number;
+};
+
+const BOLT_LIFE = 16;
+// Hand-tuned strobe: lightning never fades out, it restrikes two or three times
+// before it dies. Index 0 is the landing frame.
+const BOLT_FLICKER = [1, 0.85, 1, 0.3, 0.95, 0.55, 0.18, 0.9, 0.45, 0.1, 0.7, 0.22, 0, 0.4, 0, 0];
+const BOLT_SAFE_RADIUS = 175;
+
+/** Recursive midpoint displacement. Straight-ish at the top, noisier towards
+    the ground, and the perpendicular offset is what gives a bolt its kinks
+    instead of shortening the segment. */
+const boltSubdivide = (
+  x1: number, y1: number, x2: number, y2: number,
+  displacement: number, depth: number, originX: number,
+  dxs: number[], ys: number[],
+) => {
+  if (depth <= 0 || dxs.length > 400) {
+    dxs.push(x2 - originX);
+    ys.push(y2);
+    return;
+  }
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const offset = (Math.random() * 2 - 1) * displacement;
+  const px = mx + (-(y2 - y1) / len) * offset;
+  const py = my + ((x2 - x1) / len) * offset;
+  boltSubdivide(x1, y1, px, py, displacement * 0.54, depth - 1, originX, dxs, ys);
+  boltSubdivide(px, py, x2, y2, displacement * 0.54, depth - 1, originX, dxs, ys);
+};
+
+/** Strokes a bolt path segment by segment so it can taper towards the tip. */
+const strokeBoltPath = (
+  ctx: CanvasRenderingContext2D,
+  path: BoltPath,
+  originScreenX: number,
+  width: number,
+) => {
+  const count = Math.min(path.dx.length, path.y.length);
+  for (let i = 0; i < count - 1; i++) {
+    const t = i / Math.max(1, count - 1);
+    ctx.lineWidth = Math.max(0.5, width * (1 - t * 0.45));
+    ctx.beginPath();
+    ctx.moveTo(originScreenX + path.dx[i], path.y[i]);
+    ctx.lineTo(originScreenX + path.dx[i + 1], path.y[i + 1]);
+    ctx.stroke();
+  }
+};
+
+/** Rasterises a strike into a small canvas: wide bloom, mid halo, white-hot
+    core. Done once per bolt, then blitted with a flicker alpha each frame. */
+const rasteriseBolt = (main: BoltPath, branches: BoltPath[], brightSky = false) => {
+  const paths = [main, ...branches];
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  paths.forEach((path) => {
+    for (let i = 0; i < path.dx.length; i++) {
+      minX = Math.min(minX, path.dx[i]);
+      maxX = Math.max(maxX, path.dx[i]);
+      minY = Math.min(minY, path.y[i]);
+      maxY = Math.max(maxY, path.y[i]);
+    }
+  });
+  const pad = 48;
+  const width = Math.ceil(maxX - minX) + pad * 2;
+  const height = Math.ceil(maxY - minY) + pad * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
+  const ctx = canvas.getContext('2d');
+
+  if (ctx) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const originX = pad - minX;
+
+    // Daytime skies are nearly as bright as the bolt, so a white channel on
+    // pale blue disappears. A dark violet rim under the light gives the shape
+    // its edge back, exactly like a real strike against grey daylight clouds.
+    if (brightSky) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(44, 32, 88, 0.62)';
+      strokeBoltPath(ctx, main, originX, 9);
+      branches.forEach((b) => strokeBoltPath(ctx, b, originX, 4.5));
+    }
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Bloom is built from stacked wide strokes instead of shadowBlur: a blurred
+    // shadow per segment costs ~40 ms to rasterise, and this reads the same.
+    // A bright day sky needs a tighter halo, or the whole channel smears into
+    // one white ribbon and the fork disappears.
+    const layers: Array<{ width: number; branchWidth: number; style: string }> = brightSky
+      ? [
+          { width: 40, branchWidth: 16, style: 'rgba(150, 120, 255, 0.16)' },
+          { width: 24, branchWidth: 9, style: 'rgba(176, 198, 255, 0.3)' },
+          { width: 11, branchWidth: 4.6, style: 'rgba(238, 242, 255, 0.9)' },
+          { width: 4, branchWidth: 1.8, style: '#ffffff' },
+        ]
+      : [
+          { width: 52, branchWidth: 20, style: 'rgba(92, 146, 255, 0.13)' },
+          { width: 34, branchWidth: 13, style: 'rgba(130, 180, 255, 0.18)' },
+          { width: 21, branchWidth: 8.5, style: 'rgba(178, 210, 255, 0.32)' },
+          { width: 10.5, branchWidth: 4.8, style: 'rgba(224, 238, 255, 0.72)' },
+          { width: 4.2, branchWidth: 1.8, style: '#ffffff' },
+        ];
+    layers.forEach((layer) => {
+      ctx.strokeStyle = layer.style;
+      strokeBoltPath(ctx, main, originX, layer.width);
+      branches.forEach((b) => strokeBoltPath(ctx, b, originX, layer.branchWidth));
+    });
+  }
+
+  return { canvas, offsetX: minX - pad, offsetY: minY - pad };
+};
+
+/** A full strike: one thick forked trunk plus a few shorter forks that die out
+    in the air. Stored relative to the landing point so it stays welded to the
+    world while the camera scrolls. */
+const createLightningStrike = (targetX: number, targetY: number, brightSky = false): LightningStrike => {
+  const topX = targetX + (Math.random() - 0.5) * 260;
+  const main: BoltPath = { dx: [topX - targetX], y: [-70] };
+  boltSubdivide(topX, -70, targetX, targetY, 46, 6, targetX, main.dx, main.y);
+  // The trunk has to end exactly on the surface it hits, not a pixel above it.
+  main.dx[main.dx.length - 1] = 0;
+  main.y[main.y.length - 1] = targetY;
+
+  const branches: BoltPath[] = [];
+  const branchCount = 2 + Math.floor(Math.random() * 3);
+  for (let b = 0; b < branchCount; b++) {
+    // Forks leave the trunk from its upper two thirds and wander off sideways.
+    const idx = Math.max(1, Math.floor(main.dx.length * (0.1 + Math.random() * 0.6)));
+    const sx = targetX + main.dx[idx];
+    const sy = main.y[idx];
+    const dir = Math.random() > 0.5 ? 1 : -1;
+    const reach = 50 + Math.random() * 150;
+    const ex = sx + dir * reach;
+    const ey = sy + reach * (0.5 + Math.random() * 0.9);
+    const path: BoltPath = { dx: [sx - targetX], y: [sy] };
+    boltSubdivide(sx, sy, ex, ey, 22, 4, targetX, path.dx, path.y);
+    branches.push(path);
+  }
+
+  const sprite = rasteriseBolt(main, branches, brightSky);
+
+  return {
+    targetX,
+    targetY,
+    life: BOLT_LIFE,
+    sprite: sprite.canvas,
+    spriteOffsetX: sprite.offsetX,
+    spriteOffsetY: sprite.offsetY,
+  };
+};
+
+/** Picks a solid spot on screen: a platform interior (never over a pit), on
+    screen, off the cat and not right where the last bolt landed. */
+const pickLightningSpot = (game: any, canvasWidth: number) => {
+  const catX = game.player.x + game.player.width / 2;
+  const catY = game.player.y + game.player.height / 2;
+  const preferred: Array<{ x: number; y: number }> = [];
+  const fallback: Array<{ x: number; y: number }> = [];
+  const lastX = game.lightning?.lastX ?? -9999;
+
+  game.platforms.forEach((plat: any) => {
+    if (!plat || plat.bossWalkway) return;
+    const left = plat.x - game.scrollX;
+    if (left + plat.width < 80 || left > canvasWidth - 80) return;
+    const x0 = Math.max(plat.x + 30, game.scrollX + 96);
+    const x1 = Math.min(plat.x + plat.width - 30, game.scrollX + canvasWidth - 96);
+    if (x1 - x0 < 46) return;
+    for (let i = 0; i < 2; i++) {
+      const x = x0 + Math.random() * (x1 - x0);
+      if (Math.hypot(x - catX, plat.y - catY) < BOLT_SAFE_RADIUS) continue;
+      (Math.abs(x - lastX) < 90 ? fallback : preferred).push({ x, y: plat.y });
+    }
+  });
+
+  const pool = preferred.length ? preferred : fallback;
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+const nextLightningDelay = (game: any) => {
+  if (game.weather === 'STORMIGT') return 130 + Math.random() * 170;
+  return game.intensity === 'HEAVY' ? 240 + Math.random() * 280 : 520 + Math.random() * 460;
+};
+
+const fireLightning = (game: any, x: number, y: number, canvasWidth: number, catX: number) => {
+  const L: LightningState = game.lightning;
+  // Final gate, evaluated on the frame the bolt actually lands.
+  if (Math.abs(x - catX) < BOLT_SAFE_RADIUS) return;
+
+  L.strikes.push(createLightningStrike(x, y, game.timeOfDay === 'DAY'));
+  L.lastX = x;
+  L.flash = 1;
+  L.scorches.push({ x, y, life: 170, maxLife: 170, size: 22 + Math.random() * 16 });
+  if (L.scorches.length > 6) L.scorches.shift();
+
+  // Sparks are thrown up from the impact and fall back through the global
+  // particle system, so they inherit gravity and the additive glow for free.
+  for (let i = 0; i < 14; i++) {
+    game.particles.push({
+      x: x + (Math.random() - 0.5) * 26,
+      y: y - Math.random() * 10,
+      vx: (Math.random() - 0.5) * 9,
+      vy: -2 - Math.random() * 8,
+      life: 26 + Math.random() * 20,
+      color: ['#ffffff', '#cfe4ff', '#9dc4ff', '#e8f2ff'][Math.floor(Math.random() * 4)],
+      size: 1.5 + Math.random() * 2.5,
+    });
+  }
+
+  // Thunder arrives late, and quieter the further from the cat it landed.
+  const distance = Math.min(1, Math.abs(x - catX) / Math.max(240, canvasWidth * 0.55));
+  AudioEngine.playThunder(1 - distance * 0.55, distance * 0.85);
+  game.screenShake = Math.max(game.screenShake || 0, 4 + Math.round((1 - distance) * 5));
+};
+
+const updateLightning = (game: any, canvasWidth: number) => {
+  const L: LightningState | undefined = game.lightning;
+  if (!L) return;
+  const stormy = game.weather === 'STORMIGT';
+  const rainy = game.weather === 'REGNIGT';
+  if (!stormy && !rainy) return;
+
+  const catX = game.player.x + game.player.width / 2;
+
+  if (L.strikes.length) {
+    L.strikes.forEach((s) => { s.life--; });
+    L.strikes = L.strikes.filter((s) => s.life > 0);
+  }
+  if (L.scorches.length) {
+    L.scorches.forEach((s) => { s.life--; });
+    L.scorches = L.scorches.filter((s) => s.life > 0);
+  }
+  // Bright punch on the landing frames, then a slower afterglow: a lightning
+  // flash is not a linear fade.
+  if (L.flash > 0) L.flash = Math.max(0, L.flash - (L.flash > 0.62 ? 0.052 : 0.024));
+
+  if (!L.pending) {
+    if (L.nextStrike > 0) L.nextStrike--;
+    if (L.nextStrike <= 0) {
+      const spot = pickLightningSpot(game, canvasWidth);
+      if (spot) L.pending = { x: spot.x, y: spot.y, charge: 0, total: 18 };
+      else L.nextStrike = 90;
+    }
+    return;
+  }
+
+  L.pending.charge++;
+  // The cat walked into the strike zone during the charge: drop it and re-aim.
+  if (Math.abs(L.pending.x - catX) < BOLT_SAFE_RADIUS) {
+    L.pending = null;
+    L.nextStrike = 140 + Math.random() * 180;
+    return;
+  }
+  if (L.pending.charge >= L.pending.total) {
+    fireLightning(game, L.pending.x, L.pending.y, canvasWidth, catX);
+    L.pending = null;
+    L.nextStrike = nextLightningDelay(game);
+  }
+};
+
+const drawLightning = (ctx: CanvasRenderingContext2D, game: any, softStrobe = false) => {
+  const L: LightningState | undefined = game.lightning;
+  if (!L) return;
+
+  // Scorch marks stay on the surface after the strike has gone.
+  L.scorches.forEach((s) => {
+    const sx = s.x - game.scrollX;
+    const fade = Math.max(0, s.life / s.maxLife);
+    ctx.save();
+    ctx.fillStyle = `rgba(10, 8, 16, ${0.5 * fade})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, s.y + 2, s.size, s.size * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Embers along the rim, brightest right after the hit.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(150, 200, 255, ${0.4 * fade * fade})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(sx, s.y + 2, s.size * 0.9, s.size * 0.24, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // Charge-up: static gathers on the spot before the bolt arrives, so the
+  // player can read where the strike is going to land.
+  if (L.pending) {
+    const p = L.pending;
+    const sx = p.x - game.scrollX;
+    const t = p.charge / p.total;
+    const pulse = 0.35 + 0.65 * Math.abs(Math.sin(p.charge * 0.9));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(sx, p.y, 0, sx, p.y, 26 + t * 54);
+    glow.addColorStop(0, `rgba(198, 224, 255, ${0.42 * pulse * (0.3 + t)})`);
+    glow.addColorStop(0.5, `rgba(120, 170, 255, ${0.16 * pulse})`);
+    glow.addColorStop(1, 'rgba(90, 140, 255, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(sx, p.y, 26 + t * 54, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + p.charge * 0.2;
+      const r = 10 + t * 34;
+      ctx.fillStyle = `rgba(220, 238, 255, ${0.55 * pulse})`;
+      ctx.beginPath();
+      ctx.arc(sx + Math.cos(a) * r, p.y - Math.abs(Math.sin(a)) * r * 0.55, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  L.strikes.forEach((strike) => {
+    const frame = Math.max(0, Math.min(BOLT_FLICKER.length - 1, BOLT_LIFE - strike.life));
+    // Reduce-motion users still get the bolt, just without the hard on/off
+    // strobing that can be uncomfortable.
+    const alpha = softStrobe ? Math.max(0.55, BOLT_FLICKER[frame]) : BOLT_FLICKER[frame];
+    if (alpha <= 0) return;
+    const sx = strike.targetX - game.scrollX;
+    const age = (BOLT_LIFE - strike.life) / BOLT_LIFE;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // The whole forked channel, pre-rasterised, flickering as one image.
+    ctx.drawImage(strike.sprite, sx + strike.spriteOffsetX, strike.spriteOffsetY);
+
+    // Impact bloom on the surface: a hot core plus a wide spill of light
+    const bloomRadius = 54 + age * 110;
+    const bloom = ctx.createRadialGradient(sx, strike.targetY, 0, sx, strike.targetY, bloomRadius);
+    bloom.addColorStop(0, `rgba(255, 255, 255, ${0.92 * alpha})`);
+    bloom.addColorStop(0.28, `rgba(200, 224, 255, ${0.55 * alpha})`);
+    bloom.addColorStop(0.62, `rgba(130, 175, 255, ${0.22 * alpha})`);
+    bloom.addColorStop(1, 'rgba(110, 160, 255, 0)');
+    ctx.fillStyle = bloom;
+    ctx.beginPath();
+    ctx.arc(sx, strike.targetY, bloomRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ground shock ring
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(205, 228, 255, ${0.6 * (1 - age)})`;
+    ctx.lineWidth = 2.5 * (1 - age) + 0.5;
+    ctx.beginPath();
+    ctx.ellipse(sx, strike.targetY + 2, 12 + age * 96, 6 + age * 26, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Column of light lifting off the ground
+    const column = ctx.createLinearGradient(0, strike.targetY, 0, strike.targetY - 230);
+    column.addColorStop(0, `rgba(210, 232, 255, ${0.34 * alpha})`);
+    column.addColorStop(1, 'rgba(160, 200, 255, 0)');
+    ctx.fillStyle = column;
+    ctx.fillRect(sx - 20, strike.targetY - 230, 40, 230);
+
+    ctx.restore();
+  });
+};
+
 const getWeatherForLevel = (level: number) => {
   if (level === 1) {
     return { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY' };
@@ -2413,10 +2806,15 @@ export const PlayingView: React.FC<{
           timer: 540,
           duration: 260,
         },
-      flashTimer: 0,
       groundY: canvas.height - 96,
-      lightningBolts: [],
-      bolts: [], // Current active lightning bolts
+      lightning: {
+        nextStrike: 150,
+        pending: null,
+        strikes: [],
+        scorches: [],
+        flash: 0,
+        lastX: -9999,
+      } as LightningState,
       weatherParticles: [] as any[],
       // --- Run progression (feeds the reward loop) ---
       xp: 0,
@@ -3296,20 +3694,6 @@ export const PlayingView: React.FC<{
     AudioEngine.playShoot();
   };
 
-  // Helper function to generate a lightning bolt structure
-  const createLightningBolt = (startX: number, canvasHeight: number) => {
-    const points = [];
-    let curX = startX;
-    let curY = 0;
-    points.push({ x: curX, y: curY });
-    while (curY < canvasHeight * 0.8) {
-      curX += (Math.random() - 0.5) * 60;
-      curY += Math.random() * 40 + 10;
-      points.push({ x: curX, y: curY });
-    }
-    return points;
-  };
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -3662,24 +4046,8 @@ export const PlayingView: React.FC<{
         }
       });
 
-      if (game.weather === 'STORMIGT') {
-        if (game.flashTimer > 0) game.flashTimer--;
-        else game.bolts = []; // Clear bolts when flash ends
-
-        if (Math.random() < 0.005) {
-          game.flashTimer = 8;
-          // Generate 1-2 bolts for the visual
-          const boltCount = Math.floor(Math.random() * 2) + 1;
-          game.bolts = [];
-          for (let i = 0; i < boltCount; i++) {
-            game.bolts.push(createLightningBolt(Math.random() * canvas.width, canvas.height));
-          }
-        }
-      } else if (game.weather === 'REGNIGT' && game.intensity === 'HEAVY') {
-        // Subtle thunder for heavy rain
-        if (game.flashTimer > 0) game.flashTimer--;
-        if (Math.random() < 0.002) game.flashTimer = 4;
-      }
+      // Thunderstorms: aimed strikes on solid ground, never on the cat.
+      updateLightning(game, canvas.width);
 
       // Hazard Logic
       game.hazards.forEach((h: any) => {
@@ -7201,6 +7569,10 @@ export const PlayingView: React.FC<{
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      // Lightning is drawn in world space, underneath the rain, so the drops
+      // read as falling in front of a strike behind them.
+      drawLightning(ctx, game, progress.settings.reduceMotion);
+
       // Weather Particles Rendering
       if (game.weather === 'REGNIGT' || game.weather === 'STORMIGT') {
         ctx.strokeStyle = game.timeOfDay === 'DAY' ? 'rgba(100, 100, 150, 0.4)' : 'rgba(174, 194, 224, 0.5)';
@@ -7231,6 +7603,21 @@ export const PlayingView: React.FC<{
         });
         // Extra overlay for haze
         ctx.fillStyle = game.timeOfDay === 'DAY' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.05)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // The strike lights the whole frame, rain included, then falls away.
+      if (game.lightning && game.lightning.flash > 0) {
+        const f = game.lightning.flash;
+        // A day sky is already near white, so it takes a much lighter wash to
+        // read as a flash instead of fogging the whole frame.
+        const wash = (game.timeOfDay === 'DAY' ? 0.13 : 0.26) * (progress.settings.reduceMotion ? 0.4 : 1);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = `rgba(150, 185, 255, ${0.12 * f})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+        ctx.fillStyle = `rgba(232, 242, 255, ${wash * f})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
