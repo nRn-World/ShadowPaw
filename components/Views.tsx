@@ -2617,7 +2617,7 @@ export const PlayingView: React.FC<{
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -7480,6 +7480,12 @@ export const PlayingView: React.FC<{
           rapid: game.buffs?.rapid || 0,
           coinsRun: game.coinsThisLevel || 0,
           goalDist: Math.max(0, Math.round((game.jerry.x - game.player.x) / 40)),
+          // Side of the nearest uncollected fish (-1 behind, 1 ahead, 0 none), so a missed fish is findable.
+          fishDir: (() => {
+            let best: any = null;
+            for (const f of game.fishes) if (!f.collected && (!best || Math.abs(f.x - game.player.x) < Math.abs(best.x - game.player.x))) best = f;
+            return best ? (best.x < game.player.x - 40 ? -1 : best.x > game.player.x + 40 ? 1 : 0) : 0;
+          })(),
         });
         setLives(game.lives);
         setTotalScore(game.score);
@@ -7917,7 +7923,7 @@ export const PlayingView: React.FC<{
           <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center px-2">
             <div className="hud-panel flex items-center gap-2 px-3 py-1.5">
               <span className="material-symbols-outlined text-[15px] text-primary">
-                {stats.bossHp > 0 ? 'swords' : stats.collectedCount >= stats.fishGoal ? 'near_me' : 'set_meal'}
+                {stats.bossHp > 0 ? 'swords' : stats.collectedCount >= stats.fishGoal ? 'near_me' : stats.fishDir < 0 ? 'keyboard_backspace' : 'set_meal'}
               </span>
               <span className="max-w-[60vw] truncate text-[10px] font-black uppercase tracking-[0.14em] text-white/80">
                 {stats.bossHp > 0
