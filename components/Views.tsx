@@ -8107,7 +8107,11 @@ export const PlayingView: React.FC<{
           // Portalled to the body: the stage box is transform-scaled and clips
           // its children, so a phone's small letterboxed canvas would cut the
           // pause card in half.
-          <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
+          // Scroll container + centred wrapper: a landscape phone has less
+          // height than the card, and centring a child inside an overflowing
+          // flex box makes its top unreachable.
+          <div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
+            <div className="flex min-h-full items-center justify-center">
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-6 shadow-[0_30px_90px_-30px_rgba(0,0,0,0.9)]">
               <p className="eyebrow text-primary">Spelet pausat</p>
               <h2 className="mt-1 font-display text-3xl font-black uppercase tracking-tight text-white">Andhämtning</h2>
@@ -8155,6 +8159,7 @@ export const PlayingView: React.FC<{
               <p className="mt-4 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-white/25">
                 {isTouchDevice ? 'Pausknappen sitter i hörnet' : 'Esc eller P för att fortsätta'}
               </p>
+            </div>
             </div>
           </div>,
           document.body,
@@ -8246,7 +8251,8 @@ export const PlayingView: React.FC<{
                 ? { ring: '#7ee7ff', text: '#c9f6ff', glow: 'rgba(126,231,255,0.45)' }
                 : { ring: '#a8b3c7', text: '#e2e8f0', glow: 'rgba(168,179,199,0.35)' };
           const stars = grade === 'S' || grade === 'A' ? 3 : grade === 'B' ? 2 : 1;
-          return createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
+          return createPortal(<div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
+            <div className="flex min-h-full items-center justify-center">
               <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#101a2c] to-[#060b16] p-5 shadow-[0_40px_120px_-40px_rgba(0,0,0,1)] md:p-7">
                 {/* Accent light behind the grade */}
                 <div
@@ -8324,6 +8330,7 @@ export const PlayingView: React.FC<{
                   </button>
                 </div>
               </div>
+            </div>
             </div>,
             document.body,
           );
