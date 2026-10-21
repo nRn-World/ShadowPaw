@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry } from '../types';
+import LiveRunDemo from './LiveRunDemo';
 import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
@@ -53,97 +54,6 @@ const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: strin
   { id: 'close_call', label: 'Nära ögat', desc: '5 nästan-träffar i en runda', icon: 'warning' },
 ];
 
-/** Hero cat mark. Inline SVG keeps it crisp at any size and matches the
-    in-game character (blue body, green eyes, pink nose) without clip-path hacks. */
-const CatMenuIcon: React.FC = () => {
-  const [isBlinking, setIsBlinking] = useState(false);
-
-  useEffect(() => {
-    let timeoutId: number;
-
-    const scheduleBlink = () => {
-      const nextBlinkDelay = Math.random() * 5000 + 2000;
-      timeoutId = window.setTimeout(() => {
-        setIsBlinking(true);
-        window.setTimeout(() => {
-          setIsBlinking(false);
-          scheduleBlink();
-        }, 150);
-      }, nextBlinkDelay);
-    };
-
-    scheduleBlink();
-    return () => clearTimeout(timeoutId);
-  }, []);
-
-  return (
-    <svg
-      viewBox="0 0 120 120"
-      className="h-24 w-24 md:h-32 md:w-32"
-      role="img"
-      aria-label="Shadow Paw"
-    >
-      <defs>
-        <radialGradient id="catBody" cx="38%" cy="30%" r="78%">
-          <stop offset="0%" stopColor="#6d92ff" />
-          <stop offset="60%" stopColor="#4169E1" />
-          <stop offset="100%" stopColor="#2743a8" />
-        </radialGradient>
-      </defs>
-
-      {/* Ears */}
-      <path d="M28 34 L36 8 L56 26 Z" fill="#2743a8" />
-      <path d="M92 34 L84 8 L64 26 Z" fill="#2743a8" />
-      <path d="M33 32 L38 16 L49 27 Z" fill="#8f6bb8" />
-      <path d="M87 32 L82 16 L71 27 Z" fill="#8f6bb8" />
-
-      {/* Head */}
-      <circle cx="60" cy="64" r="36" fill="url(#catBody)" stroke="#1b2f7a" strokeWidth="1.5" />
-
-      {/* Eyes */}
-      {isBlinking ? (
-        <>
-          <path d="M38 60 Q45 66 52 60" stroke="#0b1a3a" strokeWidth="3" fill="none" strokeLinecap="round" />
-          <path d="M68 60 Q75 66 82 60" stroke="#0b1a3a" strokeWidth="3" fill="none" strokeLinecap="round" />
-        </>
-      ) : (
-        <>
-          <circle cx="45" cy="59" r="9" fill="#f8fafc" />
-          <circle cx="75" cy="59" r="9" fill="#f8fafc" />
-          <circle cx="45" cy="60" r="5" fill="#22c55e" />
-          <circle cx="75" cy="60" r="5" fill="#22c55e" />
-          <circle cx="45" cy="60" r="2.2" fill="#05240f" />
-          <circle cx="75" cy="60" r="2.2" fill="#05240f" />
-          <circle cx="47" cy="56.5" r="1.6" fill="#ffffff" />
-          <circle cx="77" cy="56.5" r="1.6" fill="#ffffff" />
-        </>
-      )}
-
-      {/* Nose */}
-      <path d="M60 70 L66 76 L54 76 Z" fill="#f472b6" />
-
-      {/* Mouth */}
-      <path
-        d="M60 76 L60 80 M60 80 Q55 85 50 80 M60 80 Q65 85 70 80"
-        stroke="#0b1a3a"
-        strokeWidth="2.4"
-        fill="none"
-        strokeLinecap="round"
-      />
-
-      {/* Whiskers - grow from the muzzle beside the nose and fan out level to
-          downwards, kept clear of the eyes above them. */}
-      <g stroke="#cbd5f5" strokeWidth="2" strokeLinecap="round" opacity="0.9" fill="none">
-        <path d="M52 74 Q34 72 20 70" />
-        <path d="M51 79 Q32 79 16 79" />
-        <path d="M52 84 Q34 86 20 90" />
-        <path d="M68 74 Q86 72 100 70" />
-        <path d="M69 79 Q88 79 104 79" />
-        <path d="M68 84 Q86 86 100 90" />
-      </g>
-    </svg>
-  );
-};
 
 /** Compact stat tile used across the menus. */
 const StatTile: React.FC<{ icon: string; label: string; value: React.ReactNode; tone: string; glow: string }> = ({
@@ -360,76 +270,28 @@ export const StartMenuView: React.FC<{
         {/* ----------------------------------------------------- hero panel */}
         <div className="relative">
           <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
-            {/* Neon diorama: sky, moon, two skyline planes, a glowing floor and
-                the cast. Three receding layers are what make the card read as a
-                little world instead of an empty panel. */}
-            <div className="relative h-52 overflow-hidden bg-[linear-gradient(180deg,#06101f_0%,#0e2340_52%,#0a1728_100%)] md:h-60">
-              {/* Moon + halo */}
-              <div className="absolute right-3 top-4 size-9 rounded-full bg-[radial-gradient(circle_at_35%_30%,#ffffff_0%,#dfe9ff_55%,#93a9d0_100%)] shadow-[0_0_50px_14px_rgba(140,180,255,0.18)] md:right-9 md:top-6 md:size-14" />
-              {/* Far skyline */}
-              <div className="absolute inset-x-0 bottom-16 flex items-end gap-1 px-1 opacity-40">
-                {[38, 62, 30, 74, 44, 88, 36, 58, 26, 66, 42, 54].map((h, i) => (
-                  <div key={i} className="flex-1 rounded-t-[2px] bg-[#0b1c30]" style={{ height: h }} />
-                ))}
+            {/* Attract mode: a looping slice of real play. The cat sprints
+                through the park, hops a crate, shoots a drone, crosses the
+                rainy night and takes down a boss, so the first screen shows
+                what the game *is* before the visitor presses anything. */}
+            <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
+              <div className="absolute inset-0">
+                <LiveRunDemo />
               </div>
-              {/* Near skyline with lit windows */}
-              <div className="absolute inset-x-0 bottom-14 flex items-end gap-1.5 px-3 opacity-90">
-                {[52, 86, 40, 110, 64, 96, 48].map((h, i) => (
-                  <div
-                    key={i}
-                    className="relative flex-1 overflow-hidden rounded-t-[3px] border-t border-white/[0.06] bg-[#0a1626]"
-                    style={{ height: h }}
-                  >
-                    <div className="absolute inset-x-1 top-2 grid grid-cols-2 gap-1">
-                      {Array.from({ length: Math.max(2, Math.round(h / 24)) }).map((_, w) => (
-                        <span
-                          key={w}
-                          className="h-1 rounded-[1px]"
-                          style={{ background: (i + w) % 3 === 0 ? 'rgba(255,214,120,0.55)' : 'rgba(120,200,255,0.16)' }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Horizon glow, a solid stage floor and the neon grid on top of it
-                  so the cast visibly stands somewhere. */}
-              <div className="pointer-events-none absolute inset-x-0 bottom-10 h-20 bg-[radial-gradient(60%_100%_at_50%_100%,rgba(43,238,121,0.32),transparent_72%)]" />
-              <div className="absolute inset-x-0 bottom-0 h-14 bg-[linear-gradient(180deg,#0a1524_0%,#050b14_100%)]" />
-              <div className="absolute inset-x-0 bottom-14 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent shadow-[0_0_14px_rgba(43,238,121,0.8)]" />
-              <div className="neon-grid absolute inset-x-0 bottom-0 h-14 opacity-70" />
-              <div className="relative flex h-full items-end justify-center gap-6 pb-12">
-                <div className="relative animate-float">
-                  <CatMenuIcon />
-                  <div className="absolute -bottom-2 left-1/2 h-1.5 w-20 -translate-x-1/2 rounded-full bg-primary/60 blur-[3px]" />
-                </div>
-                <div className="mb-1 flex flex-col items-center gap-2">
-                  <span className="whitespace-nowrap rounded-full border border-yellow-300/30 bg-yellow-300/10 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-yellow-200 md:px-2 md:py-1 md:text-[8px] md:tracking-[0.18em]">
-                    Rädda Jerry
-                  </span>
-                  <svg viewBox="0 0 80 80" className="h-14 w-14 md:h-16 md:w-16" role="img" aria-label="Jerry">
-                    <ellipse cx="40" cy="68" rx="20" ry="4" fill="rgba(0,0,0,0.35)" />
-                    <circle cx="34" cy="26" r="9" fill="#c47a2a" />
-                    <circle cx="52" cy="26" r="9" fill="#c47a2a" />
-                    <circle cx="34" cy="26" r="5" fill="#e89080" />
-                    <circle cx="52" cy="26" r="5" fill="#e89080" />
-                    <ellipse cx="43" cy="46" rx="18" ry="21" fill="#c47a2a" />
-                    <ellipse cx="43" cy="50" rx="11" ry="13" fill="#e8a060" />
-                    <circle cx="36" cy="40" r="4.6" fill="#fff" />
-                    <circle cx="50" cy="40" r="4.6" fill="#fff" />
-                    <circle cx="37" cy="40.5" r="2.6" fill="#222244" />
-                    <circle cx="51" cy="40.5" r="2.6" fill="#222244" />
-                    <circle cx="38" cy="39" r="1.2" fill="#fff" />
-                    <circle cx="52" cy="39" r="1.2" fill="#fff" />
-                    <circle cx="43" cy="48" r="2.6" fill="#cc7799" />
-                    <path d="M43 50 Q40 55 36 52 M43 50 Q46 55 50 52" stroke="#6b4526" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-                  </svg>
-                </div>
-              </div>
-              <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/45 px-2.5 py-1 backdrop-blur-md">
+              <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
                 <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/60">Live run</span>
+                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">Live run</span>
               </div>
+              <button
+                onClick={() => onStart(1)}
+                className="absolute inset-0 z-10 flex items-end justify-end p-3"
+                aria-label="Spela Shadow Paw"
+              >
+                <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
+                  <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
+                  Spela själv
+                </span>
+              </button>
             </div>
 
             <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
