@@ -1442,42 +1442,455 @@ const getLevelDesign = (level: number) => {
 };
 
 const getDifficultyProfile = (level: number, playerRank: number) => {
-  const normalizedLevel = Math.min(1, Math.max(0, (level - 1) / 49));
-  // Keep early levels truly welcoming; late-game rank adds only a modest
-  // challenge so upgrades never make the opening impossible for new players.
-  const levelRamp = Math.pow(normalizedLevel, 1.55);
-  const adjustedPlayerRank = Math.max(1, playerRank - Math.floor((level - 1) / 3));
-  const normalizedRank = Math.min(1, Math.max(0, (adjustedPlayerRank - 1) / 49));
-
-  // A curved ramp preserves easy onboarding and steadily expands challenge.
-  const ramp = levelRamp;
-  const rankBonus = Math.pow(normalizedRank, 1.2);
+  // t runs 0 -> 1 across the 50-stage campaign. The curve is deliberately
+  // gentle for the first stages: level 1 is a tutorial walk, level 2 is still
+  // calm, and real pressure only starts once every mechanic has been taught.
+  const t = Math.min(1, Math.max(0, (level - 1) / 49));
+  const ramp = Math.pow(t, 1.25);
+  // Account level gives a little relief, but never turns the late game into a
+  // walkover: it is capped at roughly a tenth of the total ramp.
+  const rankRelief = Math.min(0.1, Math.max(0, (Math.max(1, playerRank) - 1) / 49) * 0.1);
+  const effectiveRamp = Math.max(0, ramp - rankRelief);
   const variant = (level - 1) % 6;
   const variantLengthBonus = [300, 800, 1400, 500, 1000, 1800][variant];
 
   return {
-    levelLength: Math.floor(2400 + level * 320 + ramp * 2600 + variantLengthBonus),
+    levelLength: Math.floor(2600 + level * 150 + effectiveRamp * 1900 + variantLengthBonus),
     // Base width of one ground segment; the generator varies this per segment.
-    segmentWidth: Math.max(118, 195 - level * 1.15 - ramp * 58),
+    segmentWidth: Math.max(120, 200 - effectiveRamp * 62),
     // How much harder the level gets between its start and its goal.
-    inLevelRamp: 0.25 + ramp * 0.95 + rankBonus * 0.1,
-    holeChance: Math.min(0.4, 0.005 + ramp * 0.3 + rankBonus * 0.06),
-    holeSize: Math.min(0.44, 0.11 + ramp * 0.31),
-    platformCount: Math.floor(9 + level * 0.8 + ramp * 7),
-    enemyCount: Math.floor(1 + level * 0.58 + ramp * 5),
-    enemySpeed: 1.15 + level * 0.065 + ramp * 1.0,
-    fishCount: Math.floor(12 + level * 0.8 + ramp * 4),
-    hazardCount: Math.floor(Math.max(0, level - 3) * 0.38 + ramp * 5),
+    inLevelRamp: 0.2 + effectiveRamp * 1.0,
+    // Level 1-2 have no pits at all, so the opening stages can never kill a
+    // first-time player by accident. From level 3 the gaps grow steadily.
+    holeChance: level <= 2 ? 0 : Math.min(0.36, 0.04 + effectiveRamp * 0.34),
+    holeSize: Math.min(0.42, 0.1 + effectiveRamp * 0.3),
+    platformCount: Math.floor(8 + level * 0.55 + effectiveRamp * 8),
+    enemyCount: Math.floor(1 + Math.max(0, level - 1) * 0.6 + effectiveRamp * 4),
+    enemySpeed: 1.1 + Math.max(0, level - 1) * 0.07 + effectiveRamp * 0.8,
+    fishCount: Math.floor(10 + level * 0.55 + effectiveRamp * 3),
+    hazardCount: level <= 3 ? 0 : Math.floor((level - 3) * 0.4 + effectiveRamp * 4),
     variant,
   };
 };
 
-const BOSS_ATTACK_PROFILES: Record<string, { cooldown: number; speed: number; radius: number; fan: boolean; color: string }> = {
-  rat_king: { cooldown: 120, speed: 4.3, radius: 9, fan: false, color: '#ff6b35' },
-  cyber_dog: { cooldown: 88, speed: 6.2, radius: 7, fan: false, color: '#00e1ff' },
-  storm_eagle: { cooldown: 148, speed: 4.8, radius: 8, fan: true, color: '#ffe600' },
-  void_dragon: { cooldown: 164, speed: 3.8, radius: 12, fan: false, color: '#a855f7' },
-  shadow_titan: { cooldown: 186, speed: 3.2, radius: 14, fan: false, color: '#ff4d6d' },
+/* ============================ LEVEL BLUEPRINTS ============================
+   Every stage gets a structural archetype, not just a new backdrop. Two
+   neighbouring levels therefore never share a silhouette: one climbs stairs,
+   the next hops islands, the third balances over bridges. Level 1 is always
+   the flat tutorial meadow and every fifth level is a boss arena. */
+
+type LevelLayoutId = 'meadow' | 'stairs' | 'islands' | 'canyon' | 'bridges' | 'towers' | 'ruins' | 'gauntlet' | 'arena';
+
+const LEVEL_LAYOUTS: LevelLayoutId[] = ['meadow', 'stairs', 'islands', 'canyon', 'bridges', 'towers', 'ruins', 'gauntlet'];
+
+const LEVEL_LAYOUT_META: Record<LevelLayoutId, { name: string; tagline: string }> = {
+  meadow: { name: 'Ängsstart', tagline: 'Breda gräsytor och låga avsatser. Lär känna katten.' },
+  stairs: { name: 'Trappstaden', tagline: 'Klättra trappor, fall inte i glappen.' },
+  islands: { name: 'Övärlden', tagline: 'Flytande öar över ett svart djup.' },
+  canyon: { name: 'Kanjonsprickan', tagline: 'Breda klyftor som kräver dubbelhopp.' },
+  bridges: { name: 'Broarna', tagline: 'Smal balansgång över avgrunden.' },
+  towers: { name: 'Tornen', tagline: 'Klättra mot skyn för att nå fiskarna.' },
+  ruins: { name: 'Ruinerna', tagline: 'Krossade pelare i oregelbunden rytm.' },
+  gauntlet: { name: 'Prövningen', tagline: 'Tätt mellan plattformar, fiender och fällor.' },
+  arena: { name: 'Bossarenan', tagline: 'En öppen arena. Bara du och bossen.' },
+};
+
+/** Structural archetype for a level. Boss stages own a flat arena, level 1
+    stays a plain meadow, and everything else cycles through the eight shapes
+    so the course reads differently every single stage. */
+const getLevelLayout = (level: number): LevelLayoutId => {
+  if (level % 5 === 0) return 'arena';
+  if (level <= 1) return 'meadow';
+  return LEVEL_LAYOUTS[(level - 1) % LEVEL_LAYOUTS.length];
+};
+
+/** Small deterministic PRNG so a level is rebuilt identically after a restart:
+    the player can learn a course instead of re-rolling the dice. */
+const makeRng = (seed: number) => {
+  let s = Math.floor(Math.abs(seed)) % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => (s = (s * 16807) % 2147483647) / 2147483647;
+};
+
+const GROUND_COLOR = '#1c3a2a';
+const LEDGE_COLOR = '#234832';
+
+interface LayoutBuildArgs {
+  level: number;
+  layout: LevelLayoutId;
+  levelLength: number;
+  groundY: number;
+  profile: { inLevelRamp: number; holeChance: number; holeSize: number };
+  bossLevel: boolean;
+}
+
+/** Builds the solid geometry of a level: ground slabs, floating platforms and
+    the pits between them. Fish, enemies and pickups are placed on top of this
+    afterwards, so every layout only has to answer "where can the cat stand?". */
+const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLevel }: LayoutBuildArgs) => {
+  const rng = makeRng(level * 7919 + 17);
+  const platforms: any[] = [];
+  const holes: any[] = [];
+
+  const ground = (x: number, width: number) => {
+    if (width <= 4) return;
+    platforms.push({ x, y: groundY, width, height: 44 + Math.round(rng() * 46), color: GROUND_COLOR, isGround: true });
+  };
+  const ledge = (x: number, y: number, width: number, height = 20, color = LEDGE_COLOR) => {
+    if (width <= 4) return;
+    platforms.push({ x, y, width, height, color });
+  };
+  const pit = (x: number, width: number) => {
+    if (width <= 0) return;
+    holes.push({ x, y: groundY, width });
+  };
+  // How much of each end is guaranteed safe: the cat spawns in the first
+  // stretch and Jerry waits in the last one, so neither may be a death trap.
+  const startSafe = bossLevel ? 820 : 760;
+  const endSafe = bossLevel ? 1080 : 940;
+  const end = Math.max(startSafe + 400, levelLength - endSafe);
+  // Difficulty inside the level also widens pits a little as you approach Jerry.
+  const pitBonus = Math.min(46, Math.floor(level * 0.6));
+
+  // Any stretch without ground is a bottomless pit. Registering it as a hole
+  // lets the renderer draw depth and a warning lip, instead of a hard black band
+  // where the floor simply stops.
+  const finish = () => {
+    const groundGaps = () => {
+      const covered = platforms
+        .filter((pl) => pl.isGround)
+        .map((pl) => [pl.x, pl.x + pl.width] as [number, number])
+        .sort((l, r) => l[0] - r[0]);
+      const gaps: Array<[number, number]> = [];
+      let cursor = 0;
+      for (const [start, stop] of covered) {
+        if (start > cursor + 4) gaps.push([cursor, start]);
+        cursor = Math.max(cursor, stop);
+      }
+      if (cursor < levelLength - 4) gaps.push([cursor, levelLength]);
+      return gaps;
+    };
+
+    // A leap wider than the cat can clear would make the stage impossible, so
+    // any leftover gap that is not already bridged by stairs, beams or floating
+    // platforms gets stepping stones. Designed gaps are left untouched.
+    for (const [start, stop] of groundGaps()) {
+      const width = stop - start;
+      if (width <= 200) continue;
+      const bridged = platforms.some(
+        (pl) => !pl.isGround && pl.x + pl.width > start && pl.x < stop && pl.y >= groundY - 270,
+      );
+      if (bridged) continue;
+      for (let stoneX = start + 90; stoneX < stop - 70; stoneX += 172) {
+        ledge(stoneX, groundY - 46, 96, 18);
+      }
+    }
+
+    // Everything still uncovered reads as a bottomless pit: register it as a
+    // hole so the renderer draws depth and a warning lip instead of a hard
+    // black band where the floor simply stops.
+    for (const [start, stop] of groundGaps()) {
+      holes.push({ x: start, y: groundY, width: stop - start });
+    }
+    return { platforms, holes };
+  };
+
+  ground(0, startSafe);
+  ground(levelLength - endSafe, endSafe);
+
+  if (layout === 'arena') {
+    // The boss arena is carved out later; keep the run-up flat and readable.
+    ground(startSafe, end - startSafe);
+    for (let x = startSafe + 300; x < end - 200; x += 560) {
+      ledge(x, groundY - 96, 120);
+    }
+    return finish();
+  }
+
+  if (layout === 'meadow') {
+    ground(startSafe, end - startSafe);
+    for (let x = startSafe + 220; x < end - 220; x += 480) {
+      const y = groundY - 64 - Math.round(rng() * 42);
+      ledge(x, y, 140 + Math.round(rng() * 60));
+      if (rng() > 0.55) ledge(x + 250, y - 58, 96);
+    }
+    return finish();
+  }
+
+  if (layout === 'stairs') {
+    let x = startSafe;
+    let climb = true;
+    while (x < end - 420) {
+      const steps = 3 + Math.floor(rng() * 3);
+      let y = groundY - 20;
+      for (let s = 0; s < steps; s++) {
+        y -= 54;
+        ledge(x + s * 146, y, 146, 22);
+      }
+      const topWidth = 170 + Math.round(rng() * 120);
+      ledge(x + steps * 146, y, topWidth, 22);
+      x += steps * 146 + topWidth;
+      // A real pit between staircases: the stairs are the only way across.
+      const gap = 84 + Math.round(rng() * 46) + Math.min(40, pitBonus);
+      pit(x - 4, gap + 8);
+      x += gap;
+      if (climb && rng() > 0.6) {
+        // Optional high reward ledge above the gap.
+        ledge(x - 40, y - 92, 104);
+      }
+      climb = !climb;
+    }
+    return finish();
+  }
+
+  if (layout === 'islands') {
+    let x = startSafe;
+    while (x < end - 160) {
+      const w = 150 + Math.round(rng() * 110);
+      ground(x, Math.min(w, Math.max(80, end - x)));
+      if (rng() > 0.35) {
+        ledge(x + w * 0.2, groundY - 118 - Math.round(rng() * 70), 84 + Math.round(rng() * 60));
+      }
+      x += w;
+      const gap = 88 + Math.round(rng() * 54) + Math.min(40, pitBonus);
+      if (x + gap > end - 80) break;
+      pit(x, gap);
+      x += gap;
+    }
+    return finish();
+  }
+
+  if (layout === 'canyon') {
+    let x = startSafe;
+    while (x < end - 220) {
+      const w = 240 + Math.round(rng() * 190);
+      ground(x, Math.min(w, Math.max(120, end - x)));
+      if (rng() > 0.55) ledge(x + 60, groundY - 108 - Math.round(rng() * 52), 104);
+      x += w;
+      const gap = 104 + Math.round(rng() * 44) + Math.min(46, pitBonus);
+      if (x + gap > end - 80) break;
+      pit(x, gap);
+      x += gap;
+    }
+    return finish();
+  }
+
+  if (layout === 'bridges') {
+    // Beams replace the floor in the middle: fall and the run is over.
+    let x = startSafe;
+    let y = groundY - 44;
+    while (x < end - 80) {
+      const w = 112 + Math.round(rng() * 52);
+      ledge(x, y, Math.min(w, end - x), 18);
+      x += w;
+      const gap = 66 + Math.round(rng() * 44);
+      if (x + gap > end - 60) break;
+      pit(x - 3, gap + 6);
+      x += gap;
+      if (rng() > 0.5) {
+        const step = rng() > 0.5 ? -58 : 58;
+        y = Math.max(groundY - 250, Math.min(groundY - 30, y + step));
+      }
+    }
+    return finish();
+  }
+
+  if (layout === 'towers') {
+    ground(startSafe, end - startSafe);
+    let x = startSafe + 220;
+    while (x < end - 280) {
+      const towerH = 110 + Math.round(rng() * 130);
+      const towerW = 66 + Math.round(rng() * 26);
+      // Solid pillar: the cat lands on top and hops from ledge to ledge.
+      platforms.push({ x, y: groundY - towerH, width: towerW, height: towerH, color: LEDGE_COLOR });
+      ledge(x - 78, groundY - 74, 68);
+      ledge(x + towerW + 12, groundY - 140, 68);
+      if (rng() > 0.4) ledge(x + towerW + 96, groundY - towerH + 10, 84);
+      x += 260 + Math.round(rng() * 70);
+      if (rng() > 0.6) {
+        const gap = 96 + Math.round(rng() * 40);
+        pit(x - 150, gap);
+      }
+    }
+    return finish();
+  }
+
+  if (layout === 'ruins') {
+    ground(startSafe, end - startSafe);
+    let x = startSafe + 180;
+    while (x < end - 200) {
+      const h = 50 + Math.round(rng() * 130);
+      const w = 60 + Math.round(rng() * 60);
+      ledge(x, groundY - h, w, h);
+      if (rng() > 0.5) ledge(x + w + 70, groundY - Math.max(70, h - 70), 74);
+      x += 190 + Math.round(rng() * 90);
+      if (rng() > 0.66) {
+        const gap = 92 + Math.round(rng() * 36);
+        pit(x - 120, gap);
+      }
+    }
+    return finish();
+  }
+
+  // gauntlet: flat ground with a dense, tight ceiling of small platforms.
+  ground(startSafe, end - startSafe);
+  let gx = startSafe + 120;
+  while (gx < end - 160) {
+    const w = 72 + Math.round(rng() * 46);
+    const y = groundY - 110 - Math.round(rng() * 120);
+    ledge(gx, y, w, 18);
+    if (rng() > 0.6) ledge(gx + 46, y - 62, w * 0.8, 18);
+    gx += 118 + Math.round(rng() * 54);
+    if (rng() > 0.75) {
+      const gap = 88 + Math.round(rng() * 34);
+      pit(gx - 60, gap);
+    }
+  }
+  return finish();
+};
+
+/* ---------------------------- BOSS PROFILES ----------------------------- */
+
+type BossPattern = 'orb' | 'burst' | 'fan' | 'sweep' | 'summon' | 'slam';
+
+const BOSS_ATTACK_PROFILES: Record<string, {
+  cooldown: number;
+  speed: number;
+  radius: number;
+  color: string;
+  /** Rotation of signature attacks per phase; higher phases add pressure. */
+  moves: BossPattern[][];
+}> = {
+  // Rått-kungen: slow heavy orbs early, then a burst plus summoned rats.
+  rat_king: {
+    cooldown: 116, speed: 4.3, radius: 9, color: '#ff6b35',
+    moves: [['orb'], ['orb', 'burst'], ['burst', 'summon']],
+  },
+  // Cyber-hunden: fast, aggressive, sweeps the floor in the last phase.
+  cyber_dog: {
+    cooldown: 86, speed: 6.2, radius: 7, color: '#00e1ff',
+    moves: [['burst'], ['burst', 'sweep'], ['burst', 'sweep', 'summon']],
+  },
+  // Storm-örnen: wide fans that punish standing still.
+  storm_eagle: {
+    cooldown: 140, speed: 4.8, radius: 8, color: '#ffe600',
+    moves: [['fan'], ['fan', 'sweep'], ['fan', 'fan', 'summon']],
+  },
+  // Tomrums-draken: area denial and adds.
+  void_dragon: {
+    cooldown: 150, speed: 3.8, radius: 12, color: '#a855f7',
+    moves: [['fan', 'orb'], ['fan', 'summon'], ['fan', 'summon', 'sweep']],
+  },
+  // Skugg-titanen: ground slams and orbs, the hardest final boss.
+  shadow_titan: {
+    cooldown: 164, speed: 3.2, radius: 14, color: '#ff4d6d',
+    moves: [['slam', 'orb'], ['slam', 'summon'], ['slam', 'summon', 'orb']],
+  },
+};
+
+/* Applies one boss signature move. Kept outside the game loop so the pattern
+   logic stays readable and every boss shares the same telegraph rules. */
+const fireBossAttack = (
+  game: any,
+  boss: any,
+  move: BossPattern,
+  profile: { speed: number; radius: number; color: string },
+) => {
+  const px = game.player.x + game.player.width / 2;
+  const py = game.player.y + game.player.height / 2;
+  const bx = boss.x + boss.width / 2;
+  const by = boss.y + boss.height / 2;
+  const baseAngle = Math.atan2(py - by, px - bx);
+  const tier = boss.tier || 1;
+  const speedBase = profile.speed + (boss.phase || 0) * 0.7 + tier * 0.18;
+  const color = boss.phase === 2 ? '#ff00ff' : profile.color;
+
+  const shoot = (angle: number, speed: number, radius: number, kind = 'orb', originY = by) => {
+    boss.projectiles.push({
+      x: bx,
+      y: originY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius,
+      life: 200,
+      color,
+      kind,
+    });
+  };
+
+  switch (move) {
+    case 'orb':
+      shoot(baseAngle, speedBase * 0.85, profile.radius * 1.5);
+      break;
+    case 'burst':
+      // Three shots in a tight stream: punish standing still, reward a sidestep.
+      for (let i = 0; i < 3; i++) {
+        shoot(baseAngle + (i - 1) * 0.1, speedBase * (1 + i * 0.12), profile.radius);
+      }
+      break;
+    case 'fan': {
+      const count = 5 + (boss.phase || 0);
+      const spread = 0.5;
+      for (let i = 0; i < count; i++) {
+        shoot(baseAngle + (i - (count - 1) / 2) * spread, speedBase, profile.radius * 0.9);
+      }
+      break;
+    }
+    case 'sweep': {
+      // Two low shots hugging the arena floor. Jump, do not duck.
+      const dir = px > bx ? 1 : -1;
+      const floorY = boss.groundY + boss.height * 0.78;
+      for (let i = 0; i < 2; i++) {
+        shoot(dir > 0 ? 0 : Math.PI, speedBase * 1.2, profile.radius * 0.95, 'sweep', floorY + i * 8);
+      }
+      game.screenShake = Math.max(game.screenShake, 6);
+      break;
+    }
+    case 'slam': {
+      game.screenShake = Math.max(game.screenShake, 16);
+      game.zoomPunch = 10;
+      // Debris fountains up and out from the impact point.
+      for (let i = 0; i < 6; i++) {
+        const angle = -Math.PI + (i / 5) * Math.PI;
+        shoot(angle, speedBase * 0.9, profile.radius * 0.8, 'slam');
+      }
+      AudioEngine.playExplosion();
+      break;
+    }
+    case 'summon': {
+      const bossPlat = game.platforms.find((p: any) => p.bossArena);
+      const platIndex = bossPlat ? game.platforms.indexOf(bossPlat) : -1;
+      if (platIndex >= 0) {
+        const alive = game.enemies.filter(
+          (e: any) => e.x > bossPlat.x - 80 && e.x < bossPlat.x + bossPlat.width + 80,
+        ).length;
+        for (let i = 0; i < 2 && alive + i < 4; i++) {
+          const ex = bossPlat.x + 30 + Math.random() * Math.max(30, bossPlat.width - 100);
+          game.enemies.push({
+            x: ex,
+            y: bossPlat.y - 40,
+            width: 40,
+            height: 40,
+            velocityX: (1.3 + tier * 0.15) * (i === 0 ? -1 : 1),
+            direction: 1,
+            platform: platIndex,
+            // Rat and hopper minions keep the arena busy without adding turrets.
+            type: i === 0 ? 0 : 2,
+            shootTimer: 90,
+            baseY: bossPlat.y - 40,
+            chargeTimer: 0,
+            summoned: true,
+          });
+        }
+      }
+      game.toasts.push({ text: 'BOSS TILLKALLAR HJÄLP!', color: '#ff9f43', life: 90, maxLife: 90 });
+      if (game.toasts.length > 3) game.toasts.shift();
+      AudioEngine.playBossRoar();
+      break;
+    }
+    default:
+      shoot(baseAngle, speedBase, profile.radius);
+  }
 };
 
 const seededRandom = (seed: number) => {
@@ -1875,7 +2288,7 @@ export const PlayingView: React.FC<{
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -2073,6 +2486,8 @@ export const PlayingView: React.FC<{
       totalCollectedInLevel: 0,
       backgroundElements: [],
       theme: theme,
+      layout: getLevelLayout(level),
+      fishGoal: 0,
       lastStatUpdate: 0
     };
 
@@ -2115,139 +2530,24 @@ export const PlayingView: React.FC<{
       }
     }
 
-    // Ground is assembled from slabs of visibly different sizes: wide safe runs,
-    // narrow pillars and, deeper in the level, real chasms that have to be
-    // jumped. Both the sizes and the danger ramp up the further you get, so the
-    // course visibly tightens the closer Jerry is.
     const groundY = canvas.height - 96;
     // Parallax scenery and the boss platform follow the same ground line.
     game.groundY = groundY;
-    const baseSegment = difficultyProfile.segmentWidth;
-    type GroundSeg = { x: number; width: number; along: number; chasm: boolean };
-    const groundSegments: GroundSeg[] = [];
-    let groundX = 0;
-    let guard = 0;
-    while (groundX < levelLength && guard < 400) {
-      guard++;
-      const along = groundX / Math.max(1, levelLength);
-      // Later in the level the slabs get tighter overall.
-      const ramp = along * difficultyProfile.inLevelRamp;
-      const narrowest = Math.max(66, baseSegment * (0.44 + ramp * 0.22));
-      const widest = Math.max(narrowest + 30, baseSegment * (1.95 - ramp * 0.6));
-
-      const roll = Math.random();
-      const width = roll < 0.28
-        ? narrowest + Math.random() * narrowest * 0.3                                   // narrow pillar
-        : roll < 0.82
-          ? narrowest + Math.random() * (widest - narrowest)                            // medium
-          : widest - Math.random() * (widest - narrowest) * 0.28;                      // wide safe run
-
-      // A chasm replaces the slab entirely. Its width is capped to what a jump
-      // (or a dash) can realistically clear, so it stays fair but scary.
-      const chasmChance = Math.max(0, ramp - 0.35) * 0.3;
-      const chasm = width > 92 && Math.random() < chasmChance;
-
-      groundSegments.push({ x: groundX, width, along, chasm });
-      groundX += width;
-    }
-
-    groundSegments.forEach((seg) => {
-      const ramp = seg.along * difficultyProfile.inLevelRamp;
-      // The first and last stretch stay readable so the level never opens or
-      // ends on an unfair trap.
-      const safeZone = seg.x < 620 || seg.x > levelLength - 900;
-      // Slabs are drawn with different depths so the size variation is readable.
-      const depth = 38 + Math.round(Math.random() * 54);
-
-      if (!safeZone && seg.chasm) {
-        const chasmWidth = Math.min(seg.width * 0.72, 62 + ramp * 78);
-        game.holes.push({ x: seg.x + (seg.width - chasmWidth) / 2, width: chasmWidth, y: groundY });
-        // Ledges on both sides so the chasm can be jumped from and landed on.
-        const sideWidth = (seg.width - chasmWidth) / 2;
-        if (sideWidth > 1) {
-          game.platforms.push({ x: seg.x, y: groundY, width: sideWidth, height: depth, color: '#1c3a2a', isGround: true });
-          game.platforms.push({ x: seg.x + sideWidth + chasmWidth, y: groundY, width: sideWidth, height: depth, color: '#1c3a2a', isGround: true });
-        }
-        return;
-      }
-
-      const holeChance = difficultyProfile.holeChance * (0.45 + ramp * 1.6);
-      // A slab needs enough width left over for two standable ledges.
-      const canSplit = seg.width > 110;
-
-      if (!safeZone && canSplit && Math.random() < holeChance) {
-        const holeWidth = Math.min(
-          seg.width * 0.72,
-          seg.width * (difficultyProfile.holeSize + ramp * 0.18)
-        );
-        const holeOffset = (seg.width - holeWidth) / 2;
-
-        game.holes.push({ x: seg.x + holeOffset, width: holeWidth, y: groundY });
-        if (holeOffset > 1) {
-          game.platforms.push({ x: seg.x, y: groundY, width: holeOffset, height: depth, color: '#1c3a2a', isGround: true });
-        }
-        const rightWidth = seg.width - holeOffset - holeWidth;
-        if (rightWidth > 1) {
-          game.platforms.push({ x: seg.x + holeOffset + holeWidth, y: groundY, width: rightWidth, height: depth, color: '#1c3a2a', isGround: true });
-        }
-        return;
-      }
-
-      game.platforms.push({ x: seg.x, y: groundY, width: seg.width, height: depth, color: '#1c3a2a', isGround: true });
+    // Each level owns a structural archetype (stairs, islands, bridges, ...)
+    // so no two stages are laid out the same way, while level 1 always opens on
+    // the flat tutorial meadow.
+    const layout = getLevelLayout(level);
+    const layoutBuild = buildLevelLayout({
+      level,
+      layout,
+      levelLength,
+      groundY,
+      profile: difficultyProfile,
+      bossLevel: level % 5 === 0,
     });
-
-    // MANY MORE platforms - but ALL reachable with double jump!
-    const platCount = difficultyProfile.platformCount;
-    // Maximum height player can reach with double jump is about 250px
-    const maxJumpHeight = 250;
-    const minGap = Math.max(55, 130 - (level * 0.8));
-
-    for (let i = 0; i < platCount; i++) {
-      let attempts = 0;
-      let validPos = false;
-      let px = 0;
-      let py = 0;
-      // Later platforms in the level are placed in tighter clusters.
-      const ramp = (i / Math.max(1, platCount)) * difficultyProfile.inLevelRamp;
-      // Vary platform widths for more interesting gameplay
-      const widthVariation = Math.random();
-      // Three clearly distinct sizes so the skyline reads at a glance.
-      let pw = widthVariation > 0.78 ? 70 : (widthVariation > 0.42 ? 112 : 168);
-      // Platforms shrink as the game gets harder, so landing gets tighter.
-      pw = Math.max(44, pw - (level * 0.8) - ramp * 16);
-      // Heights vary too, which makes gaps between platforms easier to read.
-      const ph = widthVariation > 0.78 ? 16 : 22;
-
-      while (!validPos && attempts < 50) {
-        attempts++;
-        // Spread platforms throughout the ENTIRE level, weighted to the back half.
-        const platBias = 1 - Math.pow(Math.random(), 1 + difficultyProfile.inLevelRamp * 0.8);
-        const platformEndBuffer = level % 5 === 0 ? 1400 : 700;
-        px = 300 + platBias * Math.max(100, levelLength - platformEndBuffer);
-
-        // ALL platforms must be reachable - not too high!
-        // Keep platforms in the lower section of screen so double jump can reach
-        const minPy = Math.max(50, canvas.height - 280);
-        py = minPy + Math.random() * (canvas.height - 100 - minPy);
-
-        // Ensure vertical variation - but always reachable!
-        if (i > 0 && Math.random() < 0.4) {
-          // Only go up by max jump height
-          const prevY = game.platforms[game.platforms.length - 1].y;
-          py = Math.max(minPy, Math.min(prevY - 50 - Math.random() * 100, canvas.height - 100));
-        }
-
-        const bufferX = minGap;
-        const bufferY = 50;
-        const hasCollision = game.platforms.some(oldP => {
-          return (px < oldP.x + oldP.width + bufferX && px + pw + bufferX > oldP.x && py < oldP.y + oldP.height + bufferY && py + ph + bufferY > oldP.y);
-        });
-        if (!hasCollision) validPos = true;
-      }
-      if (validPos) {
-        game.platforms.push({ x: px, y: py, width: pw, height: ph, color: '#234832' });
-      }
-    }
+    game.platforms.push(...layoutBuild.platforms);
+    game.holes.push(...layoutBuild.holes);
+    game.layout = layout;
 
     // Regular platforms stop short of the boss arena; place a few clear
     // stepping stones in the approach so it is reachable without clutter.
@@ -2332,28 +2632,46 @@ export const PlayingView: React.FC<{
         x: levelLength - 720,
         y: groundY,
         width: 360,
-        height: 18,
-        color: '#234832',
-        isGround: false,          bossArena: true,
-          bossWalkway: true,
-
+        height: 46,
+        color: GROUND_COLOR,
+        isGround: true,
+        bossArena: true,
+        bossWalkway: true,
       };
-      game.platforms.push(bossPlatform);
+      // The arena floor replaces the random ground slabs, so it is added after
+      // they are filtered out. The approach reaches 120px further back than the
+      // arena itself: without that overlap a sliver of empty sky would show
+      // between the last ground slab and the arena.
+      const approachStart = Math.max(0, bossArenaStart - 120);
       const bossApproach = {
-        x: bossArenaStart,
+        x: approachStart,
         y: groundY,
-        width: bossPlatform.x - bossArenaStart,
-        height: 28,
-        color: '#1c3a2a',
+        width: bossPlatform.x - approachStart,
+        height: 46,
+        color: GROUND_COLOR,
         isGround: true,
         bossWalkway: true,
       };
       game.platforms = game.platforms.filter((platform: any) =>
-        !platform.isGround || platform.x + platform.width <= bossArenaStart || platform.x >= bossPlatform.x + bossPlatform.width
+        !platform.isGround || platform.x + platform.width <= approachStart || platform.x >= bossPlatform.x + bossPlatform.width
       );
+      game.platforms.push(bossPlatform);
       game.platforms.push(bossApproach);
+      // Jerry waits on the far side of the arena, so the ground behind the boss
+      // platform must be solid too - otherwise the goal floats over a void.
+      game.platforms.push({
+        x: bossPlatform.x + bossPlatform.width,
+        y: groundY,
+        width: Math.max(0, levelLength - (bossPlatform.x + bossPlatform.width)),
+        height: 46,
+        color: GROUND_COLOR,
+        isGround: true,
+      });
       {
-        const totalHp = 10 + Math.floor(level * 0.6);
+        // Boss tier rises every fifth level: the same five characters come back
+        // tougher, faster and with a tighter attack rhythm each time.
+        const bossTier = Math.max(1, Math.floor(level / 5));
+        const totalHp = 10 + bossTier * 3 + Math.floor(level * 0.2);
         game.enemies = game.enemies.filter((enemy: any) => enemy.x < bossArenaStart || enemy.x > levelLength - 280);
         game.boss = {
           x: bossPlatform.x + (bossPlatform.width - 100) / 2,
@@ -2362,7 +2680,7 @@ export const PlayingView: React.FC<{
           height: 90,
           hp: totalHp,
           maxHp: totalHp,
-          velocityX: 2.0 + level * 0.04,
+          velocityX: 1.8 + bossTier * 0.26,
           velocityY: 0,
           platformX: bossPlatform.x,
           platformW: bossPlatform.width,
@@ -2372,6 +2690,11 @@ export const PlayingView: React.FC<{
           name: bossNames[bossType] || 'BOSS',
           attackTimer: BOSS_ATTACK_PROFILES[bossType].cooldown,
           attackCooldown: BOSS_ATTACK_PROFILES[bossType].cooldown,
+          tier: bossTier,
+          moveIndex: 0,
+          telegraph: 0,
+          pendingMove: null as string | null,
+          summonCooldown: 0,
           projectiles: [] as any[],
           isJumping: false,
           jumpTimer: 0,
@@ -2459,6 +2782,12 @@ export const PlayingView: React.FC<{
         placedFish++;
       }
     }
+
+    // The level goal is a quota, not a full sweep: hunting the last three fish
+    // across a long course is busywork, and a fish that lands somewhere awkward
+    // used to make a stage outright unwinnable. Collecting everything still pays
+    // a perfect-catch bonus, so completionists are rewarded either way.
+    game.fishGoal = Math.max(5, Math.min(game.fishes.length, Math.ceil(game.fishes.length * (level <= 2 ? 0.6 : 0.72))));
 
     // Add fun hazards to keep levels unique and less repetitive.
     const hazardCount = levelMode === 'Boss Battle'
@@ -3572,38 +3901,32 @@ export const PlayingView: React.FC<{
             boss.y = boss.groundY + Math.sin(boss.auraAngle) * (8 + boss.phase * 6);
           }
           
-          // Attacklogik
-          boss.attackTimer--;
-          if (boss.attackTimer <= 0) {
-            boss.attackTimer = boss.attackCooldown;
-            const px = game.player.x + game.player.width / 2;
-            const py = game.player.y + game.player.height / 2;
-            const bx = boss.x + boss.width / 2;
-            const by = boss.y + boss.height / 2;
-            const dx = px - bx;
-            const dy = py - by;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            
-            // Skjut projektiler mot spelaren
-            // Every boss has a readable signature: the eagle fans shots, the
-            // cyber hound fires quickly, and heavier bosses launch slower orbs.
-            const projCount = attackProfile.fan ? 3 : boss.phase + 1;
-            const spread = projCount > 1 ? (boss.type === 'storm_eagle' ? 0.38 : 0.24) : 0;
-            for (let pi = 0; pi < projCount; pi++) {
-              const angle = Math.atan2(dy, dx) + (pi - (projCount - 1) / 2) * spread;
-              const speed = attackProfile.speed + boss.phase * 0.8;
-              boss.projectiles.push({
-                x: bx, y: by,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                radius: attackProfile.radius, life: 180,
-                color: boss.phase === 2 ? '#ff00ff' : attackProfile.color
-              });
+          // Attack logic. Every signature move is telegraphed for a beat first,
+          // so a charge-up reads clearly and can be dodged instead of guessed.
+          if (boss.telegraph > 0) {
+            boss.telegraph--;
+            if (boss.telegraph === 0) {
+              const move = (boss.pendingMove || 'orb') as BossPattern;
+              boss.pendingMove = null;
+              fireBossAttack(game, boss, move, attackProfile);
+              boss.attackCooldown = Math.max(42, attackProfile.cooldown - boss.phase * 22 - (boss.tier || 1) * 3);
+              boss.attackTimer = boss.attackCooldown;
+            }
+          } else {
+            boss.attackTimer--;
+            if (boss.attackTimer <= 0) {
+              const moves = attackProfile.moves[boss.phase] || attackProfile.moves[0];
+              const move = moves[(boss.moveIndex || 0) % moves.length] as BossPattern;
+              boss.moveIndex = (boss.moveIndex || 0) + 1;
+              boss.pendingMove = move;
+              // Later tiers wind up faster, which is what makes the same boss
+              // genuinely harder without changing its silhouette.
+              boss.telegraph = Math.max(12, 26 - (boss.tier || 1) * 2);
+              AudioEngine.playBossRoar();
             }
           }
         }
-        
-        // Uppdatera boss-projektiler
+                // Uppdatera boss-projektiler
         boss.projectiles = boss.projectiles.filter((p: any) => p.life > 0);
         boss.projectiles.forEach((p: any) => {
           p.x += p.vx; p.y += p.vy;
@@ -5186,27 +5509,47 @@ export const PlayingView: React.FC<{
         }
       });
 
-      // Draw holes (black gaps)
+      // Draw holes (chasms)
       game.holes.forEach(hole => {
         const hx = hole.x - game.scrollX;
         if (hx + hole.width <= 0 || hx >= canvas.width) return;
         const holeDepth = canvas.height - hole.y;
-        ctx.fillStyle = '#000308';
+        // A deep blue-black wall instead of flat black, so a pit reads as depth
+        // rather than as a cut-out where the ground simply stops.
+        const pitGrad = ctx.createLinearGradient(0, hole.y, 0, hole.y + holeDepth);
+        pitGrad.addColorStop(0, '#22344d');
+        pitGrad.addColorStop(0.28, '#142033');
+        pitGrad.addColorStop(0.68, '#0a1220');
+        pitGrad.addColorStop(1, '#05080f');
+        ctx.fillStyle = pitGrad;
         ctx.fillRect(hx, hole.y, hole.width, holeDepth);
-        // Soft inner shading so the gap reads as depth rather than a flat hole.
-        const holeGrad = ctx.createLinearGradient(0, hole.y, 0, hole.y + holeDepth);
-        holeGrad.addColorStop(0, 'rgba(0,0,0,0)');
-        holeGrad.addColorStop(0.35, 'rgba(20,30,45,0.55)');
-        holeGrad.addColorStop(1, 'rgba(0,0,0,0.9)');
-        ctx.fillStyle = holeGrad;
+        // Rock strata on the back wall: a few faint bands stop the chasm from
+        // reading as an empty rectangle.
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.strokeStyle = '#7f9fc4';
+        ctx.lineWidth = 1;
+        for (let band = 1; band <= 3; band++) {
+          const bandY = hole.y + (holeDepth * band) / 4;
+          ctx.beginPath();
+          ctx.moveTo(hx, bandY);
+          ctx.lineTo(hx + hole.width, bandY + 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // Fog pooling at the bottom hides the hard edge of the canvas.
+        const pitFog = ctx.createLinearGradient(0, hole.y + holeDepth * 0.45, 0, hole.y + holeDepth);
+        pitFog.addColorStop(0, 'rgba(130,180,255,0)');
+        pitFog.addColorStop(1, 'rgba(130,180,255,0.28)');
+        ctx.fillStyle = pitFog;
         ctx.fillRect(hx, hole.y, hole.width, holeDepth);
-        // Warning glow on the lips of the gap.
+        // Rim light on both lips so the ledge is readable before the drop.
         ctx.save();
         ctx.shadowColor = 'rgba(255, 90, 90, 0.9)';
-        ctx.shadowBlur = 12;
-        ctx.fillStyle = 'rgba(255,120,120,0.55)';
-        ctx.fillRect(hx, hole.y, 2, 10);
-        ctx.fillRect(hx + hole.width - 2, hole.y, 2, 10);
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = 'rgba(255,140,120,0.8)';
+        ctx.fillRect(hx - 1, hole.y - 2, 4, 12);
+        ctx.fillRect(hx + hole.width - 3, hole.y - 2, 4, 12);
         ctx.restore();
       });
 
@@ -5713,6 +6056,22 @@ export const PlayingView: React.FC<{
         ctx.fill();
         ctx.restore();
         
+        // Telegraph: an expanding warning ring tells the player a signature move
+        // is about to fire, so damage always feels earned.
+        if (boss.telegraph > 0) {
+          ctx.save();
+          const t = 1 - boss.telegraph / Math.max(1, Math.round(26 - (boss.tier || 1) * 2));
+          ctx.globalAlpha = 0.25 + 0.45 * t;
+          ctx.strokeStyle = boss.phase === 2 ? '#ff00ff' : '#ffd166';
+          ctx.lineWidth = 3;
+          ctx.shadowColor = ctx.strokeStyle;
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(bx + bw / 2, by + bh / 2, bw * (0.5 + t * 0.55), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
         // Boss-kropp baserat på typ
         ctx.save();
         if (boss.stunTimer > 0) {
@@ -6361,10 +6720,11 @@ export const PlayingView: React.FC<{
 
       // Goal Logic - check if player can complete level
       const allFishesCollected = collectedCountInFrame === game.fishes.length;
+      const fishGoalMet = collectedCountInFrame >= (game.fishGoal ?? game.fishes.length);
       const bossCleared = !game.boss || game.boss.hp <= 0;
       const overlapsGoal = game.player.x < game.jerry.x + game.jerry.width && game.player.x + game.player.width > game.jerry.x && game.player.y < game.jerry.y + game.jerry.height && game.player.y + game.player.height > game.jerry.y;
       if (overlapsGoal) {
-        if (allFishesCollected && bossCleared) {
+        if (fishGoalMet && bossCleared) {
           game.running = false;
           // Compared against the lives this level started with, not the React
           // copy captured when the loop was created (which never updated).
@@ -6372,8 +6732,12 @@ export const PlayingView: React.FC<{
           const perfectBonus = perfectLevel ? 500 : 0;
           const noHitBonus = game.noHit ? 750 : 0;
           const nearMissBonus = (game.nearMisses || 0) * 25;
+          // Every fish on the board is worth reaching for even after the quota
+          // is met, so a clean sweep still feels like a win.
+          const fullCatchBonus = allFishesCollected ? 400 : 0;
           game.levelsCompletedInRun = (game.levelsCompletedInRun || 0) + 1;
-          game.score += 1000 + perfectBonus + noHitBonus + nearMissBonus;
+          game.score += 1000 + perfectBonus + noHitBonus + nearMissBonus + fullCatchBonus;
+          if (fullCatchBonus > 0) pushToast(game, `ALLA FISKAR! +${fullCatchBonus}`, '#ffd166');
           if (noHitBonus > 0) pushToast(game, 'OHIT! +750', '#2bee79');
           if (nearMissBonus > 0) pushToast(game, `${game.nearMisses} NÄSTAN! +${nearMissBonus}`, '#7ef7c2');
           awardCoins(game, 25 + (perfectLevel ? 15 : 0) + (game.noHit ? 15 : 0));
@@ -6504,7 +6868,8 @@ export const PlayingView: React.FC<{
       if (game.showFishWarning) {
         ctx.fillStyle = '#ee2b2b'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
         const needBoss = game.boss && game.boss.hp > 0;
-        ctx.fillText(needBoss ? 'BESEGRA BOSS + SAMLA FISK!' : 'SAMLA ALLA FISKAR FÖRST!', jx + jw / 2, jy - 15);
+        const missingFish = Math.max(0, (game.fishGoal ?? game.fishes.length) - collectedCountInFrame);
+        ctx.fillText(needBoss ? `BESEGRA BOSS · ${missingFish} FISKAR KVAR` : `SAMLA ${missingFish} FISKAR TILL!`, jx + jw / 2, jy - 15);
       }
 
       // Player
@@ -6877,7 +7242,7 @@ export const PlayingView: React.FC<{
       if (Date.now() - game.lastStatUpdate > 250) {
         setStats({
           score: game.score, progress: Math.min(100, Math.floor((game.player.x / game.levelLength) * 100)),
-          collectedCount: collectedCountInFrame, totalFish: game.fishes.length, ammo: game.ammo,
+          collectedCount: collectedCountInFrame, totalFish: game.fishes.length, fishGoal: game.fishGoal ?? game.fishes.length, ammo: game.ammo,
           weather: game.weather,
           intensity: game.intensity,
           timeOfDay: game.timeOfDay,
@@ -7098,12 +7463,17 @@ export const PlayingView: React.FC<{
               <div className="flex items-center gap-1.5">
                 <div
                   className={`hud-chip ${
-                    stats.collectedCount === stats.totalFish ? 'border-primary/60 bg-primary/10 text-primary' : 'text-white'
+                    stats.collectedCount >= stats.fishGoal ? 'border-primary/60 bg-primary/10 text-primary' : 'text-white'
                   }`}
-                  title="Fiskar insamlade"
+                  title={`Fiskar: ${stats.collectedCount} av ${stats.totalFish} (m\u00e5l ${stats.fishGoal})`}
                 >
                   <span className="material-symbols-outlined text-[15px] text-primary">set_meal</span>
-                  <span className="tabular text-xs font-black">{stats.collectedCount}/{stats.totalFish}</span>
+                  <span className="tabular text-xs font-black">
+                    {Math.min(stats.collectedCount, stats.fishGoal)}/{stats.fishGoal}
+                    {stats.collectedCount >= stats.fishGoal && stats.collectedCount < stats.totalFish && (
+                      <span className="ml-1 text-[9px] text-primary/70">{stats.collectedCount}/{stats.totalFish}</span>
+                    )}
+                  </span>
                 </div>
                 <div className="hud-chip hidden border-yellow-500/25 bg-yellow-500/10 sm:inline-flex">
                   <span className="material-symbols-outlined text-[15px] text-yellow-400">monetization_on</span>
@@ -7195,6 +7565,9 @@ export const PlayingView: React.FC<{
               </div>
               <p className="mt-2 text-xs font-medium text-white/50">
                 {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).goal}
+              </p>
+              <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+                {LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name}
               </p>
             </div>
           </div>
@@ -7301,16 +7674,16 @@ export const PlayingView: React.FC<{
           <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center px-2">
             <div className="hud-panel flex items-center gap-2 px-3 py-1.5">
               <span className="material-symbols-outlined text-[15px] text-primary">
-                {stats.bossHp > 0 ? 'swords' : stats.collectedCount >= stats.totalFish ? 'near_me' : 'set_meal'}
+                {stats.bossHp > 0 ? 'swords' : stats.collectedCount >= stats.fishGoal ? 'near_me' : 'set_meal'}
               </span>
               <span className="max-w-[60vw] truncate text-[10px] font-black uppercase tracking-[0.14em] text-white/80">
                 {stats.bossHp > 0
                   ? `Besegra ${stats.bossName || 'bossen'}`
-                  : stats.collectedCount >= stats.totalFish
+                  : stats.collectedCount >= stats.fishGoal
                     ? `Spring till Jerry · ${stats.goalDist} m`
-                    : `Samla ${Math.max(0, stats.totalFish - stats.collectedCount)} fiskar`}
+                    : `Samla ${Math.max(0, stats.fishGoal - stats.collectedCount)} fiskar till`}
               </span>
-              {stats.collectedCount >= stats.totalFish && (
+              {stats.collectedCount >= stats.fishGoal && (
                 <span className="tabular rounded-md bg-primary/15 px-1.5 py-0.5 text-[9px] font-black text-primary">MÅL</span>
               )}
             </div>
