@@ -308,9 +308,7 @@ export const StartMenuView: React.FC<{
 
           <h1 className="mt-5 font-display text-[3.4rem] font-black uppercase leading-[0.86] tracking-tight md:text-[5.2rem]">
             <span className="block display-title">Shadow</span>
-            <span className="mt-1 block text-primary" style={{ textShadow: '0 0 48px rgba(43,238,121,0.4)' }}>
-              Paw
-            </span>
+            <span className="mt-1 block paw-title">Paw</span>
           </h1>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
@@ -319,7 +317,7 @@ export const StartMenuView: React.FC<{
           </p>
 
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
-            <button onClick={() => onStart(1)} className="btn-primary group flex-1 px-7 py-4 text-base">
+            <button onClick={() => onStart(1)} className="btn-primary cta-breathe group flex-1 px-7 py-4 text-base">
               <span className="material-symbols-outlined text-2xl transition-transform duration-200 group-hover:translate-x-0.5">
                 play_arrow
               </span>
@@ -362,17 +360,51 @@ export const StartMenuView: React.FC<{
         {/* ----------------------------------------------------- hero panel */}
         <div className="relative">
           <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
-            {/* Neon diorama */}
-            <div className="relative h-52 overflow-hidden md:h-60">
-              <div className="absolute inset-0 bg-[radial-gradient(120%_100%_at_50%_120%,rgba(43,238,121,0.22)_0%,rgba(10,18,38,0)_58%)]" />
-              <div className="neon-grid absolute inset-x-0 bottom-0 h-32 opacity-60" />
-              <div className="absolute -top-10 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
-              <div className="relative flex h-full items-end justify-center gap-5 pb-8">
-                <div className="animate-float">
+            {/* Neon diorama: sky, moon, two skyline planes, a glowing floor and
+                the cast. Three receding layers are what make the card read as a
+                little world instead of an empty panel. */}
+            <div className="relative h-52 overflow-hidden bg-[linear-gradient(180deg,#06101f_0%,#0e2340_52%,#0a1728_100%)] md:h-60">
+              {/* Moon + halo */}
+              <div className="absolute right-3 top-4 size-9 rounded-full bg-[radial-gradient(circle_at_35%_30%,#ffffff_0%,#dfe9ff_55%,#93a9d0_100%)] shadow-[0_0_50px_14px_rgba(140,180,255,0.18)] md:right-9 md:top-6 md:size-14" />
+              {/* Far skyline */}
+              <div className="absolute inset-x-0 bottom-16 flex items-end gap-1 px-1 opacity-40">
+                {[38, 62, 30, 74, 44, 88, 36, 58, 26, 66, 42, 54].map((h, i) => (
+                  <div key={i} className="flex-1 rounded-t-[2px] bg-[#0b1c30]" style={{ height: h }} />
+                ))}
+              </div>
+              {/* Near skyline with lit windows */}
+              <div className="absolute inset-x-0 bottom-14 flex items-end gap-1.5 px-3 opacity-90">
+                {[52, 86, 40, 110, 64, 96, 48].map((h, i) => (
+                  <div
+                    key={i}
+                    className="relative flex-1 overflow-hidden rounded-t-[3px] border-t border-white/[0.06] bg-[#0a1626]"
+                    style={{ height: h }}
+                  >
+                    <div className="absolute inset-x-1 top-2 grid grid-cols-2 gap-1">
+                      {Array.from({ length: Math.max(2, Math.round(h / 24)) }).map((_, w) => (
+                        <span
+                          key={w}
+                          className="h-1 rounded-[1px]"
+                          style={{ background: (i + w) % 3 === 0 ? 'rgba(255,214,120,0.55)' : 'rgba(120,200,255,0.16)' }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Horizon glow, a solid stage floor and the neon grid on top of it
+                  so the cast visibly stands somewhere. */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-10 h-20 bg-[radial-gradient(60%_100%_at_50%_100%,rgba(43,238,121,0.32),transparent_72%)]" />
+              <div className="absolute inset-x-0 bottom-0 h-14 bg-[linear-gradient(180deg,#0a1524_0%,#050b14_100%)]" />
+              <div className="absolute inset-x-0 bottom-14 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent shadow-[0_0_14px_rgba(43,238,121,0.8)]" />
+              <div className="neon-grid absolute inset-x-0 bottom-0 h-14 opacity-70" />
+              <div className="relative flex h-full items-end justify-center gap-6 pb-12">
+                <div className="relative animate-float">
                   <CatMenuIcon />
+                  <div className="absolute -bottom-2 left-1/2 h-1.5 w-20 -translate-x-1/2 rounded-full bg-primary/60 blur-[3px]" />
                 </div>
                 <div className="mb-1 flex flex-col items-center gap-2">
-                  <span className="rounded-full border border-yellow-300/30 bg-yellow-300/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-yellow-200">
+                  <span className="whitespace-nowrap rounded-full border border-yellow-300/30 bg-yellow-300/10 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-yellow-200 md:px-2 md:py-1 md:text-[8px] md:tracking-[0.18em]">
                     Rädda Jerry
                   </span>
                   <svg viewBox="0 0 80 80" className="h-14 w-14 md:h-16 md:w-16" role="img" aria-label="Jerry">
@@ -4539,11 +4571,13 @@ export const PlayingView: React.FC<{
       const isNight = game.timeOfDay === 'NIGHT';
       // Night keeps its moody seasonal mood; every daylight sky is a bright,
       // cheerful blue so sunny levels never read as a drab orange wash.
+      // Daylight keeps a saturated blue at the top and only softens near the
+      // horizon; a uniformly pale sky was what made the sunny stages look foggy.
       const seasonPalette: Record<string, { night: [string, string, string]; day: [string, string, string] }> = {
-        winter: { night: ['#0b1a3a', '#1b2f5c', '#3a6ea5'], day: ['#9ad4ee', '#bfe4f6', '#e2f3fc'] },
-        spring: { night: ['#0d2b2a', '#134a3f', '#2b8a6f'], day: ['#5cc2f0', '#96dcf6', '#cdeefe'] },
-        summer: { night: ['#0a1f3d', '#123a6b', '#2f7fb8'], day: ['#33b4ef', '#7dd0f4', '#bde7fb'] },
-        autumn: { night: ['#2b1430', '#4a1f3d', '#8a3b4a'], day: ['#5cc0ec', '#8ed4f3', '#c2e9fa'] },
+        winter: { night: ['#0b1a3a', '#1b2f5c', '#3a6ea5'], day: ['#57b2e0', '#9ed6f2', '#dceffb'] },
+        spring: { night: ['#0d2b2a', '#134a3f', '#2b8a6f'], day: ['#2ba3e6', '#74c9f2', '#bce7fb'] },
+        summer: { night: ['#0a1f3d', '#123a6b', '#2f7fb8'], day: ['#1596dd', '#5fc2f0', '#b2e2fa'] },
+        autumn: { night: ['#2b1430', '#4a1f3d', '#8a3b4a'], day: ['#2fa5e0', '#79cbf1', '#bfe9fb'] },
       };
       const palette = seasonPalette[seasonTheme] || seasonPalette.summer;
       const base = isNight ? palette.night : palette.day;
@@ -4635,11 +4669,13 @@ export const PlayingView: React.FC<{
       // night. Fewer, larger formations with varied profiles and clear depth;
       // their gentle wind drift is time-based, never tied to the player's camera.
       const cloudSpan = canvas.width + 440;
+      // Smaller, softer clouds: at full scale three of them filled the whole
+      // sky and made the level look like a screensaver.
       const clouds = [
-        { scale: 0.68, y: 180, alpha: isNight ? 0.66 : 0.94 },
-        { scale: 0.48, y: 112, alpha: isNight ? 0.5 : 0.82 },
-        { scale: 0.78, y: 154, alpha: isNight ? 0.7 : 0.95 },
-        { scale: 0.56, y: 118, alpha: isNight ? 0.53 : 0.86 },
+        { scale: 0.5, y: 176, alpha: isNight ? 0.6 : 0.9 },
+        { scale: 0.34, y: 104, alpha: isNight ? 0.44 : 0.72 },
+        { scale: 0.58, y: 148, alpha: isNight ? 0.64 : 0.92 },
+        { scale: 0.4, y: 112, alpha: isNight ? 0.48 : 0.78 },
       ];
       clouds.forEach((cloud, i) => {
         const drift = timeSec * 8;
@@ -4673,8 +4709,8 @@ export const PlayingView: React.FC<{
       // Atmospheric haze so the ridgelines fade into the sky rather than
       // reading as solid cut-outs.
       const haze = ctx.createLinearGradient(0, ridgeBase - 230, 0, ridgeBase - 20);
-      haze.addColorStop(0, isNight ? 'rgba(20,40,70,0)' : 'rgba(220,245,255,0)');
-      haze.addColorStop(1, isNight ? 'rgba(30,60,95,0.5)' : 'rgba(205,240,252,0.55)');
+      haze.addColorStop(0, isNight ? 'rgba(20,40,70,0)' : 'rgba(255,255,255,0)');
+      haze.addColorStop(1, isNight ? 'rgba(30,60,95,0.5)' : 'rgba(236,250,255,0.3)');
       ctx.globalAlpha = 1;
       ctx.fillStyle = haze;
       ctx.fillRect(0, ridgeBase - 230, canvas.width, 210);
@@ -4695,7 +4731,7 @@ export const PlayingView: React.FC<{
             const r1 = skyHash(seedBase + i * 3.7);
             const r2 = skyHash(seedBase + i * 7.1 + 5);
             const w = 46 + r1 * 84;
-            const h = baseH * (0.42 + r2 * 0.75);
+            const h = baseH * (0.3 + r2 * 0.55);
             const x = i * span - offset + r1 * 60;
             const y = ridgeBase - h;
             if (urbanTheme) {
@@ -4703,13 +4739,23 @@ export const PlayingView: React.FC<{
               if (r2 > 0.65) ctx.fillRect(x + w * 0.2, y - 14, 3, 14);
               if (r1 > 0.55) ctx.fillRect(x + w * 0.55, y - 22, w * 0.25, 22);
             } else {
-              ctx.fillRect(x + w * 0.46, y + h * 0.25, Math.max(2, w * 0.08), h * 0.75);
-              ctx.beginPath();
-              ctx.moveTo(x + w / 2, y - h * 0.45);
-              ctx.lineTo(x + w, y + h * 0.6);
-              ctx.lineTo(x, y + h * 0.6);
-              ctx.closePath();
-              ctx.fill();
+              // Distant pines stand ON the horizon: a trunk plus three stacked
+              // canopy tiers. The old single triangle floated above the ridge
+              // and read as a pale ghost shape behind the playfield.
+              const baseY = ridgeBase - 2;
+              const treeH = h * 0.86;
+              ctx.fillRect(x + w * 0.5 - Math.max(1.5, w * 0.03), baseY - treeH * 0.22, Math.max(3, w * 0.06), treeH * 0.22);
+              for (let tier = 0; tier < 3; tier++) {
+                const tierTop = baseY - treeH * (1 - tier * 0.3);
+                const tierBase = baseY - treeH * (0.38 - tier * 0.13);
+                const tierW = w * (0.52 + tier * 0.26);
+                ctx.beginPath();
+                ctx.moveTo(x + w * 0.5, tierTop);
+                ctx.lineTo(x + w * 0.5 + tierW / 2, tierBase);
+                ctx.lineTo(x + w * 0.5 - tierW / 2, tierBase);
+                ctx.closePath();
+                ctx.fill();
+              }
             }
           }
           ctx.globalAlpha = 1;
@@ -5803,10 +5849,21 @@ export const PlayingView: React.FC<{
       // Solid earth below the ground line, so the area under the slabs reads as
       // ground instead of leaking the bright sky through the gaps.
       const earthGrad = ctx.createLinearGradient(0, game.groundY, 0, canvas.height);
-      earthGrad.addColorStop(0, '#101d2e');
-      earthGrad.addColorStop(1, '#05080f');
+      // Soil, not sky-blue: the band under the turf used to read as a black void
+      // with a green stripe above it.
+      earthGrad.addColorStop(0, '#2b1d13');
+      earthGrad.addColorStop(0.45, '#1a1109');
+      earthGrad.addColorStop(1, '#080506');
       ctx.fillStyle = earthGrad;
       ctx.fillRect(0, game.groundY, canvas.width, canvas.height - game.groundY);
+      // Faint horizontal strata give the soil some scale.
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#000000';
+      for (let sy = game.groundY + 18; sy < canvas.height; sy += 26) {
+        ctx.fillRect(0, sy, canvas.width, 1.5);
+      }
+      ctx.restore();
 
       // Platforms - dark neon slabs with a glowing top edge
       game.platforms.forEach(plat => {
@@ -5827,10 +5884,10 @@ export const PlayingView: React.FC<{
               gGrad.addColorStop(0.2, '#1a3422'); // Mörk yta
               gGrad.addColorStop(1, '#0a1a10');   // Djup jord
             } else {
-              gGrad.addColorStop(0, '#4a8a3a');   // Ljust gräs
-              gGrad.addColorStop(0.18, '#2a5a22'); // Gräs
-              gGrad.addColorStop(0.35, '#3a2a15'); // Jord
-              gGrad.addColorStop(1, '#1a100a');   // Djup jord
+              gGrad.addColorStop(0, '#6cc44f');   // Ljust gräs
+              gGrad.addColorStop(0.16, '#3a7a2c'); // Gräs
+              gGrad.addColorStop(0.34, '#4a3418'); // Jord
+              gGrad.addColorStop(1, '#241608');   // Djup jord
             }
             ctx.fillStyle = gGrad;
           } else if (!plat.bossArena) {
@@ -5849,7 +5906,39 @@ export const PlayingView: React.FC<{
           }
           ctx.beginPath();
           ctx.roundRect(platX, platY, plat.width, plat.height, plat.isGround ? 0 : 4);
-          ctx.fill();
+          ctx.fill();            // Turf detail: lit rim, a shadow just beneath it, and deterministic
+          // speckles/flowers. A flat green band was the least finished-looking
+          // part of the scene.
+          if (plat.isGround && !plat.bossWalkway && !plat.bossArena) {
+            const groundNight = game.timeOfDay === 'NIGHT';
+            const groundSnow = game.weather === 'SNÖIGT';
+            ctx.fillStyle = groundSnow
+              ? 'rgba(255,255,255,0.9)'
+              : groundNight ? 'rgba(96,196,132,0.6)' : 'rgba(196,255,150,0.8)';
+            ctx.fillRect(platX, platY, plat.width, 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(platX, platY + 2, plat.width, 5);
+            const startX = Math.max(platX, -30);
+            const endX = Math.min(platX + plat.width, canvas.width + 30);
+            for (let gx = Math.floor(startX / 22) * 22; gx < endX; gx += 22) {
+              const r = skyHash(gx * 0.37 + 11);
+              if (groundSnow) {
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillRect(gx + r * 10, platY + 8 + r * 10, 2, 2);
+              } else if (groundNight) {
+                ctx.fillStyle = 'rgba(120,220,160,0.35)';
+                ctx.fillRect(gx + r * 10, platY + 9 + r * 14, 2, 2);
+              } else if (r > 0.8) {
+                ctx.fillStyle = r > 0.93 ? '#ffe08a' : r > 0.86 ? '#ffa8d4' : '#fff6f6';
+                ctx.beginPath();
+                ctx.arc(gx + r * 10, platY + 9 + r * 5, 1.9, 0, Math.PI * 2);
+                ctx.fill();
+              } else {
+                ctx.fillStyle = 'rgba(0,0,0,0.14)';
+                ctx.fillRect(gx + r * 12, platY + 12 + r * 18, 2.5, 1.5);
+              }
+            }
+          }
 
           // Grass fringe on solid ground. Deterministic sine-based blades keep
           // the edge organic without per-frame random flicker.
@@ -8138,6 +8227,13 @@ export const PlayingView: React.FC<{
           ref={canvasRef}
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
           style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
+        />
+        {/* Cinematic edge shading: settles the frame and separates the stage
+            from the page chrome without touching the artwork itself. */}
+        <div
+          className="pointer-events-none absolute inset-0 z-10 rounded-[inherit]"
+          aria-hidden="true"
+          style={{ boxShadow: 'inset 0 0 70px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.08)' }}
         />
 
         {showLevelComplete && levelSummary && (() => {

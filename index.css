@@ -238,6 +238,26 @@ body {
   }
 }
 
+/* Hero wordmark: the green half of "Shadow Paw" gets its own neon ramp and a
+   soft bloom, so the title reads as a logo instead of two coloured words. */
+.paw-title {
+  background: linear-gradient(180deg, #8dffbc 0%, #2bee79 46%, #0f9d4d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 26px rgba(43, 238, 121, 0.35));
+}
+
+/* Breathing halo behind the primary call to action. */
+@keyframes cta-breathe {
+  0%, 100% { box-shadow: 0 12px 30px -10px rgba(43, 238, 121, 0.65), 0 0 0 0 rgba(43, 238, 121, 0.28); }
+  50% { box-shadow: 0 16px 38px -10px rgba(43, 238, 121, 0.85), 0 0 0 10px rgba(43, 238, 121, 0); }
+}
+
+.cta-breathe {
+  animation: cta-breathe 3.2s ease-in-out infinite;
+}
+
 .text-gradient {
   background: linear-gradient(135deg, #2bee79 0%, #0fac52 100%);
   -webkit-background-clip: text;
