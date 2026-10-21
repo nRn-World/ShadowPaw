@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppView, ScoreEntry } from '../types';
 import { getJerryTaunt } from '../services/geminiService';
 import { useProgress } from '../context/ProgressContext';
@@ -12,6 +12,27 @@ const getSeasonTheme = () => {
   if (month >= 5 && month <= 7) return 'summer';
   return 'autumn';
 };
+
+/** Human-facing labels and goals for the five level modes. Kept in one place
+    so the intro card, HUD and results screen always agree. */
+const LEVEL_MODE_META: Record<string, { label: string; short: string; goal: string; accent: string }> = {
+  Classic: { label: 'Klassisk runda', short: 'KLASSISK', goal: 'Rädda Jerry och samla alla fiskar', accent: '#2bee79' },
+  Collection: { label: 'Insamling', short: 'INSAMLING', goal: 'Extra många fiskar · varje fisk ger mynt', accent: '#ffd166' },
+  Survival: { label: 'Överlevnad', short: 'ÖVERLEVNAD', goal: 'Tätare faror · håll streaken vid liv', accent: '#ff8f6b' },
+  'Speed Run': { label: 'Tidsjakt', short: 'TIDSJAKT', goal: 'Klockan tickar · varje fisk köper tid', accent: '#7ee7ff' },
+  'Boss Battle': { label: 'Bosskamp', short: 'BOSSKAMP', goal: 'Besegra bossen och samla fiskarna', accent: '#ff5f8a' },
+};
+
+const CHAPTER_NAMES = [
+  'Neon City', 'Regnzonen', 'Höghusen', 'Skogsbrynet', 'Industrihamnen',
+  'Snögränsen', 'Kraftverket', 'Övergivna kvarter', 'Motorvägen', 'Glaciären',
+  'Rymdstationen', 'Vulkanen', 'Underjorden', 'Himmelsbron', 'Kärnkraften',
+  'Laboratoriet', 'Datacentret', 'Arktis', 'Krigszonen', 'Kvantskiftet',
+  'Inferno', 'Mardrömmen', 'Tomrummet', 'Kaoset', 'Askfallet',
+  'Avgrunden', 'Glömskan', 'Pandemonium', 'Apokalypsen', 'Harmagedon',
+  'Titanen', 'Hades', 'Tartaros', 'Nexus', 'Omega',
+  'Oändligheten', 'Transcendens', 'Upplysningen', 'Uppstigningen', 'Legenden',
+];
 
 const SKINS: Record<string, { name: string; color: string; accent: string; unlockHint: string }> = {
   default: { name: 'Neon Blue', color: '#4169E1', accent: '#333', unlockHint: 'Default' },
@@ -228,115 +249,236 @@ const InjuredCatVisual: React.FC = () => (
 );
 
 /** START MENU **/
-export const StartMenuView: React.FC<{ onNavigate: (v: AppView) => void }> = ({ onNavigate }) => {
-  const [tip, setTip] = useState<string>("");
+export const StartMenuView: React.FC<{
+  onNavigate: (v: AppView) => void;
+  onStart: (level?: number) => void;
+}> = ({ onNavigate, onStart }) => {
+  const [tip, setTip] = useState<string>('');
   const { progress } = useProgress();
 
   const gameTips = [
-    "Använd dubbelhopp för att nå högre plattformar!",
-    "Samla fiskar för att få ammunition!",
-    "Hoppa på fiender för att besegra dem!",
-    "Håll kattens fart – dash med Shift ger extra fart!",
-    "Ju längre din streak håller, desto högre blir multiplikatorn!",
-    "Åk förbi fiender utan att träffa – det ger bonuspoäng!",
-    "Varje 10:e fisk ger dig en mynt och ett extra skott!",
-    "Klara en nivå utan att ta skada för +750 poäng!",
-    "Rör dig nära fiender för nästan-träffar – de ger extra poäng!",
-    "Samla fisk och besegra fiender för att fylla dagliga uppdrag!",
-    "Ju högre nivå, desto snårare är ammunitionen – planera!",
-    "Kontrollera allt från början av din hoppning för maximal höjd!",
-    "Undvik att falla i hål – dubbelhopp räcker nästan alltid!",
-    "Kombinationer ger poäng – chained-action mot fiender är starkast!"
+    'Använd dubbelhopp för att nå högre plattformar!',
+    'Samla fiskar för att få ammunition!',
+    'Hoppa på fiender för att besegra dem!',
+    'Håll kattens fart – dash med Shift ger extra fart!',
+    'Ju längre din streak håller, desto högre blir multiplikatorn!',
+    'Åk förbi fiender utan att träffa – det ger bonuspoäng!',
+    'Varje 10:e fisk ger dig ett mynt och ett extra skott!',
+    'Klara en nivå utan att ta skada för +750 poäng!',
+    'Sköldar, magneter och rapid fire gömmer sig i banorna!',
+    'Turret-drönare skjuter långsamt – lär dig deras rytm!',
+    'Samla fisk och besegra fiender för att fylla dagliga uppdrag!',
+    'Ju högre nivå, desto snårare är ammunitionen – planera!',
+    'Undvik att falla i hål – dubbelhopp räcker nästan alltid!',
+    'Kombinationer ger poäng – chained-action mot fiender är starkast!',
   ];
 
   useEffect(() => {
-    const randomTip = gameTips[Math.floor(Math.random() * gameTips.length)];
-    setTip(randomTip);
+    setTip(gameTips[Math.floor(Math.random() * gameTips.length)]);
+    // A stable per-day seed picks the daily challenge level.
   }, []);
 
+  const dailyDigits = progress.dailySeed.replace(/\D/g, '');
+  const dailyLevel = 3 + (Number(dailyDigits || 0) % 28);
+  const questsDone = progress.dailyQuests.filter((q) => q.completed).length;
+  const storyLevel = Math.max(1, progress.level);
+
   return (
-    <div className="w-full min-h-[70vh] flex flex-col items-center justify-center px-4 py-8 md:py-12 animate-fade-in-up">
-      <div className="mb-5 md:mb-7">
-        <CatMenuIcon />
+    <div className="w-full max-w-6xl mx-auto px-4 py-6 md:py-10 animate-fade-in-up">
+      <div className="grid items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
+        {/* ------------------------------------------------------- hero copy */}
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/[0.07] px-3 py-1.5">
+            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/90">
+              Ett neonäventyr från NRN World
+            </span>
+          </div>
+
+          <h1 className="mt-5 font-display text-[3.4rem] font-black uppercase leading-[0.86] tracking-tight md:text-[5.2rem]">
+            <span className="block display-title">Shadow</span>
+            <span className="mt-1 block text-primary" style={{ textShadow: '0 0 48px rgba(43,238,121,0.4)' }}>
+              Paw
+            </span>
+          </h1>
+
+          <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
+            Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40+ handbyggda
+            kapitel – bygg streaken, besegra bossarna och ta tillbaka natten.
+          </p>
+
+          <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
+            <button onClick={() => onStart(1)} className="btn-primary group flex-1 px-7 py-4 text-base">
+              <span className="material-symbols-outlined text-2xl transition-transform duration-200 group-hover:translate-x-0.5">
+                play_arrow
+              </span>
+              <span>Spela nu</span>
+            </button>
+            <button
+              onClick={() => onStart(dailyLevel)}
+              className="btn-ghost px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
+              title={`Starta direkt på nivå ${dailyLevel}`}
+            >
+              <span className="material-symbols-outlined text-lg text-primary">bolt</span>
+              Dagens runda · nivå {dailyLevel}
+            </button>
+          </div>
+
+          <div className="mt-5 grid max-w-md grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { k: 'A / D', v: 'Rör dig', icon: 'open_with' },
+              { k: 'Mellanslag', v: 'Hoppa', icon: 'arrow_upward' },
+              { k: 'Shift', v: 'Dash', icon: 'bolt' },
+              { k: 'Klick', v: 'Skjuta', icon: 'ads_click' },
+            ].map((c) => (
+              <div key={c.v} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2 text-center">
+                <span className="material-symbols-outlined text-[16px] text-white/45">{c.icon}</span>
+                <p className="mt-0.5 truncate text-[9px] font-black uppercase tracking-wider text-white/75">{c.k}</p>
+                <p className="truncate text-[8px] font-bold uppercase tracking-wider text-white/30">{c.v}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex max-w-md items-start gap-2.5 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3">
+            <span className="material-symbols-outlined text-base text-primary/80">lightbulb</span>
+            <div>
+              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Dagens tips</p>
+              <p className="mt-1 text-xs leading-relaxed text-white/70">{tip}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ----------------------------------------------------- hero panel */}
+        <div className="relative">
+          <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
+            {/* Neon diorama */}
+            <div className="relative h-52 overflow-hidden md:h-60">
+              <div className="absolute inset-0 bg-[radial-gradient(120%_100%_at_50%_120%,rgba(43,238,121,0.22)_0%,rgba(10,18,38,0)_58%)]" />
+              <div className="neon-grid absolute inset-x-0 bottom-0 h-32 opacity-60" />
+              <div className="absolute -top-10 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
+              <div className="relative flex h-full items-end justify-center gap-5 pb-8">
+                <div className="animate-float">
+                  <CatMenuIcon />
+                </div>
+                <div className="mb-1 flex flex-col items-center gap-2">
+                  <span className="rounded-full border border-yellow-300/30 bg-yellow-300/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-yellow-200">
+                    Rädda Jerry
+                  </span>
+                  <svg viewBox="0 0 80 80" className="h-14 w-14 md:h-16 md:w-16" role="img" aria-label="Jerry">
+                    <ellipse cx="40" cy="68" rx="20" ry="4" fill="rgba(0,0,0,0.35)" />
+                    <circle cx="34" cy="26" r="9" fill="#c47a2a" />
+                    <circle cx="52" cy="26" r="9" fill="#c47a2a" />
+                    <circle cx="34" cy="26" r="5" fill="#e89080" />
+                    <circle cx="52" cy="26" r="5" fill="#e89080" />
+                    <ellipse cx="43" cy="46" rx="18" ry="21" fill="#c47a2a" />
+                    <ellipse cx="43" cy="50" rx="11" ry="13" fill="#e8a060" />
+                    <circle cx="36" cy="40" r="4.6" fill="#fff" />
+                    <circle cx="50" cy="40" r="4.6" fill="#fff" />
+                    <circle cx="37" cy="40.5" r="2.6" fill="#222244" />
+                    <circle cx="51" cy="40.5" r="2.6" fill="#222244" />
+                    <circle cx="38" cy="39" r="1.2" fill="#fff" />
+                    <circle cx="52" cy="39" r="1.2" fill="#fff" />
+                    <circle cx="43" cy="48" r="2.6" fill="#cc7799" />
+                    <path d="M43 50 Q40 55 36 52 M43 50 Q46 55 50 52" stroke="#6b4526" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+                  </svg>
+                </div>
+              </div>
+              <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/45 px-2.5 py-1 backdrop-blur-md">
+                <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
+                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/60">Live run</span>
+              </div>
+            </div>
+
+            <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Nästa mål</p>
+                  <p className="text-xs font-bold text-white/85">Kapitel {Math.ceil(storyLevel / 5)} · nivå {storyLevel}</p>
+                </div>
+                <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
+                  Rank {progress.level}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Career stats */}
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              { icon: 'monetization_on', label: 'Mynt', value: progress.coins, tone: 'text-yellow-400' },
+              { icon: 'local_fire_department', label: 'Bästa combo', value: progress.stats.bestCombo, tone: 'text-cyan-300' },
+              { icon: 'emoji_events', label: 'Bossar', value: progress.stats.bossesDefeated, tone: 'text-orange-300' },
+              { icon: 'set_meal', label: 'Fiskar', value: progress.stats.totalFishCollected, tone: 'text-sky-300' },
+              { icon: 'swords', label: 'Fiender', value: progress.stats.totalEnemiesDefeated, tone: 'text-rose-300' },
+              { icon: 'stars', label: 'Perfekta', value: progress.stats.perfectLevels, tone: 'text-primary' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2">
+                <div className="flex items-center gap-1">
+                  <span className={`material-symbols-outlined text-[13px] ${s.tone}`}>{s.icon}</span>
+                  <span className="tabular text-sm font-black text-white">{s.value}</span>
+                </div>
+                <p className="mt-0.5 truncate text-[8px] font-black uppercase tracking-wider text-white/30">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Daily quests */}
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[15px] text-primary">task_alt</span>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/55">Dagliga uppdrag</p>
+              </div>
+              <button
+                onClick={() => onNavigate(AppView.QUESTS)}
+                className="text-[9px] font-black uppercase tracking-wider text-primary/80 transition-colors hover:text-primary"
+              >
+                Alla {questsDone}/{progress.dailyQuests.length} →
+              </button>
+            </div>
+            <div className="mt-2.5 space-y-2">
+              {progress.dailyQuests.map((q) => {
+                const pct = Math.min(100, (q.current / Math.max(1, q.target)) * 100);
+                return (
+                  <div key={q.id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={`truncate text-[10px] font-bold ${q.completed ? 'text-primary' : 'text-white/60'}`}>
+                        {q.description}
+                      </p>
+                      <span className="tabular shrink-0 text-[9px] font-black text-white/35">
+                        {Math.min(q.current, q.target)}/{q.target}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className={`h-full rounded-full ${q.completed ? 'bg-primary' : 'bg-gradient-to-r from-primary/50 to-primary'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="w-full max-w-xl text-center">
-        <h1 className="display-title text-4xl md:text-7xl">
-          Shadow <span className="text-primary">Paw</span>
-        </h1>
-        <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-white/55 md:text-base">
-          Snabba dig genom neonstaden. Rädda Jerry. Bygg din streak.
-        </p>
+      {/* ------------------------------------------------------- footer nav */}
+      <div className="mt-6 grid grid-cols-2 gap-2 md:grid-cols-4">
+        <MenuButton icon="store" label="Butik" onClick={() => onNavigate(AppView.SHOP)} />
+        <MenuButton icon="task_alt" label="Uppdrag" onClick={() => onNavigate(AppView.QUESTS)} />
+        <MenuButton icon="help" label="Så spelar du" onClick={() => onNavigate(AppView.HOW_TO_PLAY)} subtle />
+        <MenuButton icon="emoji_events" label="Topplista" onClick={() => onNavigate(AppView.LEADERBOARD)} subtle />
+      </div>
 
-        {/* Hero stats */}
-        <div className="mt-6 grid grid-cols-3 gap-2.5">
-          <StatTile icon="monetization_on" label="Mynt" value={progress.coins} tone="text-yellow-400" glow="rgba(250,204,21,0.16)" />
-          <StatTile icon="military_tech" label="Nivå" value={progress.level} tone="text-primary" glow="rgba(43,238,121,0.16)" />
-          <StatTile icon="local_fire_department" label="Bästa combo" value={progress.stats.bestCombo} tone="text-cyan-300" glow="rgba(103,232,249,0.16)" />
-        </div>
-
-        {/* Career stats */}
-        <div className="mt-2.5 grid grid-cols-3 gap-2.5">
-          {[
-            { v: progress.stats.totalFishCollected, l: 'Fiskar' },
-            { v: progress.stats.totalEnemiesDefeated, l: 'Fiender' },
-            { v: progress.stats.perfectLevels, l: 'Perfekta' },
-          ].map((s) => (
-            <div key={s.l} className="card-premium px-2 py-2.5">
-              <p className="tabular text-sm font-black text-white">{s.v}</p>
-              <p className="eyebrow mt-0.5">{s.l}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Primary action */}
-        <button
-          onClick={() => onNavigate(AppView.PLAYING)}
-          className="btn-primary group mt-6 w-full px-8 py-5 text-lg"
-        >
-          <span className="material-symbols-outlined text-[30px] transition-transform duration-200 group-hover:scale-110">play_arrow</span>
-          <span>Spela</span>
-        </button>
-
-        {/* Secondary actions */}
-        <div className="mt-3 grid grid-cols-2 gap-2.5">
-          <MenuButton icon="store" label="Butik" onClick={() => onNavigate(AppView.SHOP)} />
-          <MenuButton icon="task_alt" label="Uppdrag" onClick={() => onNavigate(AppView.QUESTS)} />
-        </div>
-        <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-          <MenuButton icon="help" label="Så spelar du" onClick={() => onNavigate(AppView.HOW_TO_PLAY)} subtle />
-          <MenuButton icon="emoji_events" label="Topplista" onClick={() => onNavigate(AppView.LEADERBOARD)} subtle />
-        </div>
-
-        {/* Tip */}
-        <div className="card-premium mt-4 p-4 text-left">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm text-primary">lightbulb</span>
-            <p className="eyebrow">Dagens tips</p>
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-white/80">{tip}</p>
-        </div>
-
-        {/* Controls cheatsheet */}
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          {[
-            { k: 'A / D', v: 'Rör dig' },
-            { k: 'Mellanslag', v: 'Hoppa' },
-            { k: 'Shift', v: 'Dash' },
-            { k: 'Klick', v: 'Skjuta' },
-          ].map((c) => (
-            <span key={c.k} className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white/45">
-              <span className="text-white/80">{c.k}</span> {c.v}
-            </span>
-          ))}
-        </div>
-
-        <button
-          onClick={() => onNavigate(AppView.SETTINGS)}
-          className="mt-5 text-white/70 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest"
-        >
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">
+        <button onClick={() => onNavigate(AppView.SETTINGS)} className="transition-colors hover:text-white/80">
           Inställningar
         </button>
+        <span aria-hidden="true">·</span>
+        <span>Neon City · 40 kapitel</span>
+        <span aria-hidden="true">·</span>
+        <span className="text-white/20">v2.0</span>
       </div>
     </div>
   );
@@ -372,16 +514,20 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   return (
-    <div className="w-full max-w-xl mx-auto animate-fade-in-up py-8 md:py-12 px-4">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-3">
-          <span className="material-symbols-outlined text-primary text-sm">settings</span>            <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">System</span>
-            <span className="text-white/30 text-[10px] ml-2"> Dra slidarna för att justera</span>
+    <div className="mx-auto w-full max-w-2xl animate-fade-in-up px-4 py-6 md:py-10">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow text-primary">System</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-4xl">Inställningar</h1>
+          <p className="mt-1 text-xs text-white/40">Ljud, bild och säkerhetskopiering. Allt sparas lokalt.</p>
         </div>
-        <h1 className="display-title text-3xl md:text-4xl">Inställningar</h1>
+        <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
+          <span className="material-symbols-outlined text-base">arrow_back</span>
+          Tillbaka
+        </button>
       </div>
 
-      <div className="glass-card rounded-2xl border border-white/10 divide-y divide-white/5">
+      <div className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/78 backdrop-blur-xl">
         {/* Audio Section */}
         <div className="p-5">
           <div className="flex items-center gap-2 mb-5">
@@ -572,9 +718,9 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       <button
         onClick={onBack}
-        className="w-full mt-6 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 transition-colors"
+        className="btn-ghost mt-4 w-full py-3 text-xs uppercase tracking-wider"
       >
-        <span className="material-symbols-outlined">arrow_back</span>
+        <span className="material-symbols-outlined text-base">arrow_back</span>
         Tillbaka till menyn
       </button>
     </div>
@@ -583,102 +729,134 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
 /** HOW TO PLAY **/
 export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const powerups = [
+    { icon: 'shield', name: 'Sköld', color: 'text-cyan-300', ring: 'border-cyan-300/30 bg-cyan-300/10', desc: 'Tar emot nästa smäll åt dig.' },
+    { icon: 'attractions', name: 'Fiskmagnet', color: 'text-yellow-300', ring: 'border-yellow-300/30 bg-yellow-300/10', desc: 'Drar fiskar till dig i 10 sekunder.' },
+    { icon: 'local_fire_department', name: 'Rapid fire', color: 'text-orange-300', ring: 'border-orange-300/30 bg-orange-300/10', desc: 'Trespångseld utan ammokostnad i 9 sekunder.' },
+    { icon: 'favorite', name: 'Hjärta', color: 'text-rose-300', ring: 'border-rose-300/30 bg-rose-300/10', desc: 'Ger ett extra liv, upp till sex.' },
+    { icon: 'bolt', name: 'Ammolåda', color: 'text-indigo-300', ring: 'border-indigo-300/30 bg-indigo-300/10', desc: 'Sex skott. Dyker upp igen i bossarenan.' },
+  ];
+
+  const enemies = [
+    { icon: 'pets', name: 'Vakthund & råtta', color: 'text-orange-300', desc: 'Patrullerar plattformar. Hoppa på dem eller skjut.' },
+    { icon: 'cyclone', name: 'Sågdrönare', color: 'text-red-300', desc: 'Roterande taggar – håll avstånd.' },
+    { icon: 'smart_toy', name: 'Sentry-torn', color: 'text-amber-300', desc: 'Står still och skjuter långsamma orbs. Rör dig i sidled.' },
+    { icon: 'bug_report', name: 'Laddare', color: 'text-violet-300', desc: 'Lyser rött innan den rusar. Hoppa över eller dasha undan.' },
+    { icon: 'military_tech', name: 'Bossar', color: 'text-pink-300', desc: 'Var femte nivå. Tre faser, nya attacker och unik design.' },
+  ];
+
   return (
-    <div className="w-full max-w-4xl mx-auto animate-fade-in-up py-8 md:py-12 px-4">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-3">
-          <span className="material-symbols-outlined text-primary text-sm">school</span>
-          <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Så spelar du</span>
-        </div>
-        <h1 className="display-title text-3xl md:text-4xl">Hur man spelar</h1>
-        <p className="mt-2 text-white/70 text-sm">Lär dig grunderna för att dominera neonstaden</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="card-premium p-5">
-          <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
-            <span className="material-symbols-outlined text-primary text-2xl">flag</span>
-          </div>
-          <h3 className="text-white font-bold text-lg uppercase mb-2">Målet</h3>
-          <p className="text-white/60 text-sm leading-relaxed">Ta dig genom staden, samla alla fiskar och nå Jerry. Undvik fiender och faror – varje nivå ger XP, mynt och högre poäng.</p>
-        </div>
-
-        <div className="card-premium p-5">
-          <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
-            <span className="material-symbols-outlined text-primary text-2xl">gamepad</span>
-          </div>
-          <h3 className="text-white font-bold text-lg uppercase mb-2">Kontroller</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">A / D</span>
-              <span className="text-white/60">Rör dig</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Mellanslag / W</span>
-              <span className="text-white/60">Hoppa (håll för högre hopp, tryck igen för dubbelhopp)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Shift</span>
-              <span className="text-white/60">Dash – snabb burst i riktningen du tittar</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono">Klick</span>
-              <span className="text-white/60">Skjuta (kostar ammunition)</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="card-premium border-primary/25 p-5">
-          <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-yellow-400/25 bg-yellow-400/10">
-            <span className="material-symbols-outlined text-yellow-400 text-2xl">local_fire_department</span>
-          </div>
-          <h3 className="text-white font-bold text-lg uppercase mb-2">Streak &amp; Multiplikator</h3>
-          <p className="text-white/60 text-sm leading-relaxed mb-2">
-            Varje fisk, fiender och bonus bygger din streak. Var 4:e i streak stiger multiplikatorn (upp till x8) och ger extra poäng p\u00e5 allt du g\u00f6r. Streaken tapas om du tar skada eller om den g\u00e5r ut.
+    <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-6 md:py-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow text-primary">Så spelar du</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Handboken</h1>
+          <p className="mt-2 max-w-lg text-sm text-white/50">
+            Allt du behöver för att ta dig genom neonstaden, från första hoppet till sista bossen.
           </p>
-          <ul className="text-white/60 text-sm space-y-1.5">
-            <li className="flex items-start gap-2">
-              <span className="text-primary">•</span>
-              <span>Bonusar: <strong className="text-white/80">OHIT +750</strong>, <strong className="text-white/80">PERFEKT +500</strong></span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary">•</span>
-              <span>\u00c5k f\u00f6rbi fiender utan att r\u00f6ra dem = <strong className="text-white/80">N\u00c4STAN! +75</strong></span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary">•</span>
-              <span>XP fyller din runniv\u00e5 – varje niv\u00e5 ger +2 skott</span>
-            </li>
-          </ul>
         </div>
+        <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
+          <span className="material-symbols-outlined text-base">arrow_back</span>
+          Tillbaka
+        </button>
+      </div>
 
-        <div className="card-premium p-5">
-          <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
-            <span className="material-symbols-outlined text-primary text-2xl">stars</span>
+      <div className="mt-6 grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
+          <span className="material-symbols-outlined text-2xl text-primary">flag</span>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Målet</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/50">
+            Samla <strong className="text-white/80">alla fiskar</strong> och nå Jerry längst fram.
+            Bossnivåer kräver att bossen besegras först. Varje nivå ger XP, mynt och poäng.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
+          <span className="material-symbols-outlined text-2xl text-cyan-300">gamepad</span>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Kontroller</h2>
+          <div className="mt-2 space-y-1.5">
+            {[
+              { k: 'A / D  ← →', v: 'Rör dig' },
+              { k: 'Mellanslag', v: 'Hoppa · dubbelhopp' },
+              { k: 'Shift', v: 'Dash' },
+              { k: 'Klick / F', v: 'Skjuta' },
+              { k: 'Esc / P', v: 'Paus' },
+            ].map((c) => (
+              <div key={c.k} className="flex items-center justify-between gap-2">
+                <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold text-white/75">{c.k}</span>
+                <span className="text-[10px] text-white/45">{c.v}</span>
+              </div>
+            ))}
           </div>
-          <h3 className="text-white font-bold text-lg uppercase mb-2">Proffstips</h3>
-          <ul className="text-white/60 text-sm space-y-1.5">
-            <li className="flex items-start gap-2">
-              <span className="text-primary">•</span>
-              <span>Dubbelhopp räddar liv</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary">•</span>
-              <span>Skjut fiender p\u00e5 avst\u00e5nd \u2014 du sparar n\u00e4ra skott</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary">•</span>
-              <span>Samla alla fiskar innan du n\u00e5r Jerry</span>
-            </li>
-          </ul>
+        </div>
+        <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] p-4 backdrop-blur-md">
+          <span className="material-symbols-outlined text-2xl text-yellow-300">local_fire_department</span>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Streak</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
+            Fiskar, fiender och bonusar bygger streaken. Var fjärde aktion höjer multiplikatorn
+            (upp till <strong className="text-yellow-200">x8</strong>). Skada nollställer den.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">OHIT +750</span>
+            <span className="rounded-md border border-yellow-300/25 bg-yellow-300/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-200">NÄSTAN +75</span>
+          </div>
         </div>
       </div>
 
-      <button
-        onClick={onBack}
-        className="w-full max-w-xs mx-auto flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-[#112218] font-black uppercase tracking-wider hover:bg-primary/90 transition-colors"
-      >
-        <span className="material-symbols-outlined">check</span>
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Power-ups</h2>
+      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        {powerups.map((p) => (
+          <div key={p.name} className="rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
+            <span className={`material-symbols-outlined text-xl ${p.color}`}>{p.icon}</span>
+            <p className="mt-1 text-[11px] font-black text-white">{p.name}</p>
+            <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{p.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Fiender</h2>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {enemies.map((e) => (
+          <div key={e.name} className="flex items-start gap-2.5 rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
+            <span className={`material-symbols-outlined text-xl ${e.color}`}>{e.icon}</span>
+            <div>
+              <p className="text-[11px] font-black text-white">{e.name}</p>
+              <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{e.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Nivåtyper</h2>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {Object.entries(LEVEL_MODE_META).map(([key, meta]) => (
+          <div key={key} className="rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
+            <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: meta.accent }}>{meta.short}</span>
+            <p className="mt-1 text-[9px] leading-relaxed text-white/35">{meta.goal}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-white/10 bg-[#0a1220]/70 p-4">
+        <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Proffstips</h2>
+        <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+          {[
+            'Dubbelhoppet räddar liv – tryck en gång till i luften.',
+            'Lär dig sentry-tornens rytm: den lyser rött precis innan skottet.',
+            'Nära-träffar ger poäng – men bara en gång per fiende.',
+            'Rapid fire gör dig till en kulspruta: spara den till bossen.',
+            'Hämta dagliga uppdrag mellan rundorna för extra mynt.',
+            'Byt skinn i butiken när du låst upp dem.',
+          ].map((tip) => (
+            <div key={tip} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-white/45">
+              <span className="text-primary">•</span>
+              <span>{tip}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={onBack} className="btn-primary mt-6 w-full max-w-xs py-3.5 text-sm">
+        <span className="material-symbols-outlined text-lg">check</span>
         Jag förstår
       </button>
     </div>
@@ -690,11 +868,19 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
   const [scores, setScores] = useState<ScoreEntry[]>([]);
 
   useEffect(() => {
+    // Offline-friendly ghosts so the board is never empty for a new player.
+    // Avatars are generated locally from initials instead of loading remote
+    // images, so the page makes no third-party requests.
     const mockScores: ScoreEntry[] = [
-      { rank: 1, name: 'ShadowNinja', score: 50400, level: 'Nivå 42', date: '24 okt', avatar: 'https://picsum.photos/seed/ShadowNinja/50/50' },
-      { rank: 2, name: 'NeonHunter', score: 48200, level: 'Nivå 40', date: '23 okt', avatar: 'https://picsum.photos/seed/NeonHunter/50/50' },
-      { rank: 3, name: 'CyberCat', score: 45000, level: 'Nivå 38', date: '22 okt', avatar: 'https://picsum.photos/seed/CyberCat/50/50' },
-      { rank: 4, name: 'GhostPaw', score: 42100, level: 'Nivå 35', date: '21 okt', avatar: 'https://picsum.photos/seed/GhostPaw/50/50' },
+      { rank: 1, name: 'ShadowNinja', score: 50400, level: 'Nivå 42', date: '24 okt', avatar: '' },
+      { rank: 2, name: 'NeonHunter', score: 48200, level: 'Nivå 40', date: '23 okt', avatar: '' },
+      { rank: 3, name: 'CyberCat', score: 45000, level: 'Nivå 38', date: '22 okt', avatar: '' },
+      { rank: 4, name: 'GhostPaw', score: 42100, level: 'Nivå 35', date: '21 okt', avatar: '' },
+      { rank: 5, name: 'NeonBlade', score: 38950, level: 'Nivå 32', date: '20 okt', avatar: '' },
+      { rank: 6, name: 'PixelPaw', score: 35400, level: 'Nivå 30', date: '19 okt', avatar: '' },
+      { rank: 7, name: 'NightRunner', score: 31200, level: 'Nivå 27', date: '18 okt', avatar: '' },
+      { rank: 8, name: 'TurboTom', score: 27650, level: 'Nivå 24', date: '17 okt', avatar: '' },
+      { rank: 9, name: 'ShadowFox', score: 24300, level: 'Nivå 21', date: '16 okt', avatar: '' },
     ];
 
     const savedScoresData = localStorage.getItem('shadow_paw_scores');
@@ -713,99 +899,142 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
       score: s.score,
       level: `Nivå ${Math.floor(s.score / 1000) || 1}`,
       date: s.date,
-      avatar: `https://picsum.photos/seed/${s.name}/50/50`,
-      isUser: true
+      avatar: '',
+      isUser: true,
     }));
 
     const combined = [...mockScores, ...userScores].sort((a, b) => b.score - a.score);
-    const finalScores = combined.map((s, idx) => ({ ...s, rank: idx + 1 })).slice(0, 15);
-    setScores(finalScores);
+    setScores(combined.map((s, idx) => ({ ...s, rank: idx + 1 })).slice(0, 20));
   }, []);
 
+  const initial = (name: string) => (name.trim()[0] || '?').toUpperCase();
+  const hueFor = (name: string) => {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return h;
+  };
+  const avatarStyle = (name: string) => ({
+    background: `linear-gradient(135deg, hsl(${hueFor(name)} 70% 55%), hsl(${(hueFor(name) + 40) % 360} 65% 35%))`,
+  });
+
+  const userBest = scores.filter((s) => s.isUser).sort((a, b) => b.score - a.score)[0];
+
   return (
-    <div className="w-full max-w-3xl mx-auto animate-fade-in-up py-8 md:py-12 px-4">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-3">
-          <span className="material-symbols-outlined text-primary text-sm">emoji_events</span>
-          <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Rangordning</span>
+    <div className="mx-auto w-full max-w-3xl animate-fade-in-up px-4 py-6 md:py-10">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow text-primary">Rangordning</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Topplista</h1>
+          <p className="mt-1 text-xs text-white/40">Lokala rekord och legendariska neonlöpare.</p>
         </div>
-        <h1 className="display-title text-3xl md:text-4xl">Topplista</h1>
-        <p className="mt-2 text-white/70 text-sm">Se vem som är mästaren av neonstaden</p>
+        <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
+          <span className="material-symbols-outlined text-base">arrow_back</span>
+          Tillbaka
+        </button>
       </div>
 
-      {/* Top 3 Podium */}
-      {scores.length >= 3 && (
-        <div className="flex items-end justify-center gap-4 mb-8">
-          {/* 2nd Place */}
-          <div className="flex flex-col items-center">
-            <div className="w-16 h-16 rounded-full bg-slate-400 ring-4 ring-white/10 mb-2 overflow-hidden">
-              <img src={scores[1].avatar} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="w-20 h-24 glass-card rounded-t-xl border border-white/10 flex flex-col items-center justify-end pb-2">
-              <span className="text-slate-400 font-black text-xl">2</span>
-            </div>
+      {userBest && (
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-primary/25 bg-primary/[0.08] p-3">
+          <div className="flex size-10 items-center justify-center rounded-xl text-sm font-black text-white" style={avatarStyle(userBest.name)}>
+            {initial(userBest.name)}
           </div>
-          {/* 1st Place */}
-          <div className="flex flex-col items-center -mt-2">
-            <div className="w-20 h-20 rounded-full bg-yellow-500 ring-4 ring-yellow-500/30 mb-2 overflow-hidden">
-              <img src={scores[0].avatar} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="w-24 h-32 glass-card rounded-t-xl border border-yellow-500/30 flex flex-col items-center justify-end pb-2 bg-yellow-500/5">
-              <span className="text-yellow-500 font-black text-3xl">1</span>
-            </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">Ditt bästa resultat</p>
+            <p className="truncate text-sm font-black text-white">{userBest.name} · rank #{userBest.rank}</p>
           </div>
-          {/* 3rd Place */}
-          <div className="flex flex-col items-center">
-            <div className="w-16 h-16 rounded-full bg-orange-700 ring-4 ring-white/10 mb-2 overflow-hidden">
-              <img src={scores[2].avatar} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="w-20 h-20 glass-card rounded-t-xl border border-white/10 flex flex-col items-center justify-end pb-2">
-              <span className="text-orange-700 font-black text-xl">3</span>
-            </div>
-          </div>
+          <p className="tabular text-lg font-black text-primary">{userBest.score.toLocaleString()}</p>
         </div>
       )}
 
-      {/* Leaderboard List */}
-      <div className="glass-card rounded-2xl border border-white/10 overflow-hidden">
-        <div className="max-h-[400px] overflow-y-auto">
+      {/* Podium */}
+      {scores.length >= 3 && (
+        <div className="mt-8 flex items-end justify-center gap-2 sm:gap-4">
+          {[scores[1], scores[0], scores[2]].map((s) => {
+            const place = s.rank;
+            const first = place === 1;
+            const size = first ? 'size-[74px]' : 'size-14';
+            const ring = first
+              ? 'ring-[3px] ring-yellow-300/70'
+              : place === 2
+                ? 'ring-2 ring-slate-200/45'
+                : 'ring-2 ring-orange-300/45';
+            const glow = first ? 'shadow-[0_0_50px_-6px_rgba(255,214,102,0.6)]' : '';
+            const plinth = first ? 'h-32' : place === 2 ? 'h-24' : 'h-20';
+            const tone = first ? 'text-yellow-300' : place === 2 ? 'text-slate-200' : 'text-orange-300';
+            const tint = first
+              ? 'from-yellow-300/[0.14] to-yellow-300/[0.03] border-yellow-300/25'
+              : place === 2
+                ? 'from-slate-200/[0.10] to-white/[0.02] border-white/15'
+                : 'from-orange-300/[0.10] to-white/[0.02] border-orange-300/20';
+            return (
+              <div key={`${s.name}-${s.rank}`} className={`flex flex-col items-center ${first ? 'w-[104px] sm:w-36' : 'w-[92px] sm:w-32'}`}>
+                <p className={`mb-2 max-w-full truncate text-[11px] font-bold ${s.isUser ? 'text-primary' : 'text-white/80'}`}>
+                  {s.name}
+                </p>
+                <div className="relative">
+                  {first && (
+                    <span className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full border border-yellow-300/40 bg-[#0d1522] shadow-[0_0_16px_rgba(255,214,102,0.35)]">
+                      <span className="material-symbols-outlined text-[14px] text-yellow-300">workspace_premium</span>
+                    </span>
+                  )}
+                  <div
+                    className={`flex ${size} items-center justify-center rounded-full ${first ? 'text-2xl' : 'text-xl'} font-black text-white ${ring} ${glow}`}
+                    style={avatarStyle(s.name)}
+                  >
+                    {initial(s.name)}
+                  </div>
+                  <span className={`absolute -bottom-1.5 left-1/2 flex size-5 -translate-x-1/2 items-center justify-center rounded-full bg-[#080e1a] text-[9px] font-black ring-1 ring-white/20 ${tone}`}>
+                    {place}
+                  </span>
+                </div>
+                <div
+                  className={`mt-3 flex w-full ${plinth} flex-col items-center justify-end gap-1 rounded-t-2xl border border-b-0 bg-gradient-to-b ${tint} pb-2.5 backdrop-blur-md`}
+                >
+                  <span className={`tabular text-sm font-black ${s.isUser ? 'text-primary' : 'text-white/90'}`}>
+                    {s.score.toLocaleString()}
+                  </span>
+                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-white/35">
+                    {s.isUser ? 'Du' : s.level}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Full board */}
+      <div className="mt-9 overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/92 backdrop-blur-xl shadow-[0_30px_80px_-40px_rgba(0,0,0,0.9)]">
+        <div className="divide-y divide-white/[0.05]">
           {scores.map((s) => (
             <div
               key={`${s.name}-${s.score}-${s.date}`}
-              className={`flex items-center gap-4 p-4 border-b border-white/5 ${s.isUser ? 'bg-primary/5' : 'hover:bg-white/5'} transition-colors`}
+              className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${s.isUser ? 'bg-primary/[0.07]' : 'hover:bg-white/[0.04]'}`}
             >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${s.rank === 1 ? 'bg-yellow-500/20 text-yellow-500' :
-                s.rank === 2 ? 'bg-slate-400/20 text-slate-400' :
-                  s.rank === 3 ? 'bg-orange-700/20 text-orange-700' :
-                    'bg-white/5 text-white/40'
-                }`}>
+              <span className={`tabular w-6 text-center text-xs font-black ${s.rank === 1 ? 'text-yellow-300' : s.rank === 2 ? 'text-slate-300' : s.rank === 3 ? 'text-orange-300' : 'text-white/30'}`}>
                 {s.rank}
+              </span>
+              <div className={`flex size-8 items-center justify-center rounded-lg text-xs font-black text-white ${s.isUser ? 'ring-2 ring-primary/50' : ''}`} style={avatarStyle(s.name)}>
+                {initial(s.name)}
               </div>
-              <img src={s.avatar} alt="" className="w-10 h-10 rounded-xl object-cover" />
-              <div className="flex-1 min-w-0">
-                <p className={`font-bold text-sm truncate ${s.isUser ? 'text-primary' : 'text-white'}`}>{s.name}</p>
-                <p className="text-white/40 text-xs">{s.level}</p>
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-xs font-bold ${s.isUser ? 'text-primary' : 'text-white/80'}`}>
+                  {s.name} {s.isUser && <span className="text-[8px] font-black uppercase tracking-wider text-primary/60">du</span>}
+                </p>
+                <p className="text-[9px] text-white/30">{s.level} · {s.date}</p>
               </div>
-              <div className="text-right">
-                <p className={`font-black text-lg ${s.isUser ? 'text-primary' : 'text-white'}`}>{s.score.toLocaleString()}</p>
-                <p className="text-white/30 text-xs">{s.date}</p>
-              </div>
+              <p className={`tabular text-sm font-black ${s.isUser ? 'text-primary' : 'text-white/85'}`}>{s.score.toLocaleString()}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={onBack}
-          className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 transition-colors"
-        >
+      <div className="mt-4 flex gap-2">
+        <button onClick={onBack} className="btn-ghost flex-1 py-3 text-xs uppercase tracking-wider">
           Tillbaka
         </button>
-        <button
-          onClick={onPlay}
-          className="flex-1 py-3 rounded-xl bg-primary text-[#112218] font-black uppercase tracking-wider hover:bg-primary/90 transition-colors"
-        >
+        <button onClick={onPlay} className="btn-primary flex-1 py-3 text-sm">
+          <span className="material-symbols-outlined text-lg">play_arrow</span>
           Spela nu
         </button>
       </div>
@@ -815,8 +1044,8 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
 
 /** GAME OVER **/
 export const GameOverView: React.FC<{ score: number, fishesCollected?: number, onRestart: () => void, onMenu: () => void }> = ({ score, fishesCollected = 0, onRestart, onMenu }) => {
-  const [taunt, setTaunt] = useState<string>("Bättre lycka nästa gång!");
-  const [name, setName] = useState("");
+  const [taunt, setTaunt] = useState<string>('Bättre lycka nästa gång!');
+  const [name, setName] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
   const { progress, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
@@ -831,6 +1060,18 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   // Coins are already awarded live during play, so this screen only tallies XP.
   const coinsEarned = lastRun.coins || 0;
   const totalCoins = progress.coins;
+  const storedBest = (() => {
+    try {
+      const scores = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
+      return Math.max(0, ...scores.map((s: { score: number }) => s.score));
+    } catch {
+      return 0;
+    }
+  })();
+  const bestScore = Math.max(score, storedBest);
+  // "New record" must mean the run beat the stored best, not that it equals the
+  // maximum that already includes this score.
+  const isRecord = score > storedBest && score > 0;
 
   useEffect(() => {
     getJerryTaunt(score).then(setTaunt);
@@ -912,129 +1153,149 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     a.download = `shadow-paw-score-${score}.png`;
     a.click();
 
-    const summary = `Jag fick ${score} poäng i Shadow Paw!`; 
+    const summary = `Jag fick ${score} poäng i Shadow Paw!`;
     await navigator.clipboard.writeText(summary);
     setShareMessage('Bild nedladdad + text kopierad!');
     setTimeout(() => setShareMessage(''), 2500);
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto py-8 md:py-12 px-4 animate-fade-in-up max-h-[calc(100vh-110px)] overflow-y-auto overscroll-contain pb-24">
-      {/* Header Section */}
-      <div className="mb-8 md:mb-10 grid grid-cols-1 md:grid-cols-[360px_1fr] gap-6 md:gap-8 items-center">
-        <div className="glass-card rounded-3xl border border-white/10 overflow-hidden">
-          <div className="relative aspect-square bg-gradient-to-b from-black/25 to-black/60">
+    <div className="relative mx-auto w-full max-w-5xl px-4 py-6 md:py-10 animate-fade-in-up">
+      {/* Scrim: this screen is dense with small text, so the skyline behind it
+          is dimmed rather than left to fight the labels for contrast. */}
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-[#04060f]/70 via-[#04060f]/55 to-[#04060f]/85" />
+      <div className="grid gap-6 md:grid-cols-[300px_1fr] md:gap-8">
+        {/* Mascot panel */}
+        <div className="relative self-start overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#101a2c] to-[#05080f] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.9)]">
+          <div className="relative flex h-64 items-center justify-center overflow-hidden md:h-72">
+            <div className="absolute inset-0 bg-[radial-gradient(90%_80%_at_50%_100%,rgba(238,43,43,0.18)_0%,transparent_65%)]" />
             <InjuredCatVisual />
           </div>
-          <div className="p-4 border-t border-white/10">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/5 border border-white/10">
-              <span className="material-symbols-outlined text-white/60 text-base">warning</span>
+          <div className="relative border-t border-white/10 p-3">
+            <div className="flex items-center gap-2 rounded-2xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2">
+              <span className="material-symbols-outlined text-base text-red-300">warning</span>
               <div className="min-w-0">
-                <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest">Status</p>
-                <p className="text-white font-black uppercase tracking-wide truncate">Uppdraget misslyckades</p>
+                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Status</p>
+                <p className="truncate text-xs font-black uppercase tracking-wide text-white/90">Uppdraget misslyckades</p>
               </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between px-1 text-[9px] font-black uppercase tracking-wider text-white/30">
+              <span>Nivåer klara</span>
+              <span className="tabular text-white/70">{lastRun.levelsCompleted || 0}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between px-1 text-[9px] font-black uppercase tracking-wider text-white/30">
+              <span>Bossar</span>
+              <span className="tabular text-white/70">{lastRun.bossDefeated ? '1' : '0'}</span>
             </div>
           </div>
         </div>
 
-        <div className="text-center md:text-left">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-red/10 border border-primary-red/20 mb-4">
-            <span className="material-symbols-outlined text-primary-red text-lg">sentiment_dissatisfied</span>
-            <span className="text-white text-xs font-bold uppercase tracking-widest">Uppdraget misslyckades</span>
+        {/* Summary */}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1">
+              <span className="material-symbols-outlined text-sm text-red-300">sentiment_dissatisfied</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-red-200">Rundan är över</span>
+            </span>
+            {isRecord && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/35 bg-yellow-300/10 px-3 py-1">
+                <span className="material-symbols-outlined text-sm text-yellow-300">emoji_events</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-yellow-200">Nytt rekord</span>
+              </span>
+            )}
           </div>
-          <h1 className="text-white text-5xl md:text-7xl font-black uppercase tracking-tight">
-            Spelet <span className="text-primary-red">över</span>
+
+          <h1 className="mt-3 font-display text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-6xl">
+            Spelet <span className="text-red-400">över</span>
           </h1>
-          <p className="mt-4 text-white text-base md:text-lg max-w-lg mx-auto">
-            {taunt}
-          </p>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/55 md:text-base">{taunt}</p>
+
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="col-span-3 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.14] to-transparent px-4 py-3">
+              <div className="flex items-end justify-between gap-2">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-[0.22em] text-primary/70">Slutpoäng</p>
+                  <p className="tabular text-3xl font-black leading-none text-white md:text-4xl">{score.toLocaleString()}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/30">XP intjänat</p>
+                  <p className="tabular text-lg font-black text-cyan-300">+{Math.floor(score / 10)}</p>
+                </div>
+              </div>
+            </div>
+            {[
+              { label: 'Fiskar', value: fishesCollected, tone: 'text-sky-300', icon: 'set_meal' },
+              { label: 'Bästa combo', value: lastRun.bestCombo || 0, tone: 'text-cyan-300', icon: 'local_fire_department' },
+              { label: 'Bästa streak', value: lastRun.bestStreak || 0, tone: 'text-primary', icon: 'bolt' },
+              { label: 'Fiender', value: lastRun.enemiesDefeated || 0, tone: 'text-orange-300', icon: 'swords' },
+              { label: 'Mynt i rundan', value: `+${coinsEarned}`, tone: 'text-yellow-300', icon: 'monetization_on' },
+              { label: 'Mynt totalt', value: totalCoins, tone: 'text-yellow-200', icon: 'account_balance_wallet' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.035] px-2.5 py-2">
+                <span className={`material-symbols-outlined text-[14px] ${s.tone}`}>{s.icon}</span>
+                <p className={`tabular mt-0.5 text-base font-black leading-none ${s.tone}`}>{s.value}</p>
+                <p className="mt-1 truncate text-[8px] font-black uppercase tracking-wider text-white/30">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3.5">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-base text-yellow-300">emoji_events</span>
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/45">Spara till topplistan</p>
+            </div>
+            <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-base text-white/30">person</span>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={isSaved}
+                  placeholder="Ditt namn"
+                  maxLength={15}
+                  className={`w-full rounded-xl border border-white/10 bg-white/[0.04] py-3 pl-10 pr-3 text-sm text-white placeholder-white/25 transition-colors focus:border-primary/50 focus:outline-none ${isSaved ? 'cursor-not-allowed opacity-50' : ''}`}
+                />
+              </div>
+              <button
+                onClick={handleSaveScore}
+                disabled={isSaved || !name.trim()}
+                className="btn-primary shrink-0 px-6 py-3 text-xs"
+              >
+                {isSaved ? 'Sparat!' : 'Spara'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button onClick={onRestart} className="btn-primary flex-1 py-3.5 text-sm">
+              <span className="material-symbols-outlined text-lg">replay</span>
+              Spela igen
+            </button>
+            <button onClick={onMenu} className="btn-ghost flex-1 py-3.5 text-xs uppercase tracking-wider">
+              <span className="material-symbols-outlined text-base">home</span>
+              Huvudmeny
+            </button>
+            <button onClick={handleShareCard} className="btn-ghost flex-1 py-3.5 text-xs uppercase tracking-wider">
+              <span className="material-symbols-outlined text-base text-primary">ios_share</span>
+              Dela
+            </button>
+          </div>
+          {shareMessage && <p className="mt-3 text-center text-xs font-bold text-primary">{shareMessage}</p>}
         </div>
       </div>
-
-      {/* Stats Grid */}
-      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3">
-        <StatTile icon="flag" label="Poäng" value={score.toLocaleString()} tone="text-white" glow="rgba(43,238,121,0.14)" />
-        <StatTile
-          icon="emoji_events"
-          label="Bästa"
-          value={(() => {
-            try {
-              const scores = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
-              return Math.max(score, ...scores.map((s: { score: number }) => s.score), 0).toLocaleString();
-            } catch {
-              return score.toLocaleString();
-            }
-          })()}
-          tone="text-yellow-400"
-          glow="rgba(250,204,21,0.14)"
-        />
-        <StatTile icon="set_meal" label="Fiskar" value={fishesCollected} tone="text-sky-300" glow="rgba(125,211,252,0.14)" />
-        <StatTile icon="attach_money" label="Mynt denna runda" value={`+${coinsEarned}`} tone="text-primary" glow="rgba(43,238,121,0.16)" />
-        <StatTile icon="monetization_on" label="Mynt totalt" value={totalCoins} tone="text-yellow-400" glow="rgba(250,204,21,0.14)" />
-        <StatTile icon="military_tech" label="XP" value={`+${Math.floor(score / 10)}`} tone="text-cyan-300" glow="rgba(103,232,249,0.14)" />
-      </div>
-
-      {/* High Score Section */}
-      <div className="card-premium mb-8 p-6 md:p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center">
-            <span className="text-[#112218] text-xl">🏆</span>
-          </div>
-          <div>
-            <h3 className="text-white font-black text-lg uppercase">Nytt rekord!</h3>
-            <p className="text-white/50 text-xs font-medium">Spara ditt resultat till topplistan</p>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-white/40">person</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isSaved}
-              placeholder="Ange ditt namn"
-              maxLength={15}
-              className={`w-full rounded-xl border border-white/10 bg-white/[0.04] py-4 pl-12 pr-4 text-white placeholder-white/30 transition-colors focus:border-primary/50 focus:outline-none ${isSaved ? 'cursor-not-allowed opacity-50' : ''}`}
-            />
-          </div>
-          <button
-            onClick={handleSaveScore}
-            disabled={isSaved || !name.trim()}
-            className="btn-primary whitespace-nowrap px-8 py-4 text-sm"
-          >
-            {isSaved ? 'Sparat!' : 'Spara'}
-          </button>
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <button onClick={handleShareCard} className="btn-ghost flex-1 py-4 text-lg uppercase">
-          <span className="material-symbols-outlined text-primary">ios_share</span>
-          Dela poäng
-        </button>
-        <button onClick={onRestart} className="btn-primary flex-1 py-4 text-lg">
-          <span className="material-symbols-outlined text-xl">replay</span>
-          Spela igen
-        </button>
-        <button onClick={onMenu} className="btn-ghost flex-1 py-4 text-lg uppercase">
-          <span className="material-symbols-outlined">home</span>
-          Huvudmeny
-        </button>
-      </div>
-      {shareMessage && <p className="text-center text-primary text-sm font-bold mt-4">{shareMessage}</p>}
     </div>
   );
 };
 
 // AUDIO MANAGER FOR BACKGROUND MUSIC
-const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75) => {
+const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75, isPaused: boolean = false) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const targetVolume = isMuted ? 0 : Math.min(1, (musicVolume / 100) * 0.5);
+  // Pausing ducks the soundtrack instead of stopping it, so resuming the run
+  // does not restart the track from the top.
+  const targetVolume = isMuted || isPaused ? 0 : Math.min(1, (musicVolume / 100) * 0.5);
 
   // Mute + slider changes ramp the live track so nothing clicks.
   useEffect(() => {
@@ -1364,7 +1625,9 @@ const shuffled = <T,>(items: T[]): T[] => {
 
 const SKY_ANIMALS = ['bird', 'pigeon', 'crow', 'seagull', 'eagle', 'bat', 'pelican', 'robot_bird'];
 const WAVING_ANIMALS = ['cat', 'stray_cat', 'dog', 'rabbit', 'bear', 'alien_creature', 'cow', 'horse', 'deer'];
-const SCALE_RANGE = { building: [0.5, 1.0] as const, animal: [1.4, 2.0] as const };
+// Background creatures are scenery, not characters: keep them small enough
+// that the cat always reads as the subject, and the skyline taller than them.
+const SCALE_RANGE = { building: [0.62, 1.15] as const, animal: [0.78, 1.12] as const };
 
 /** Gives a flying animal its own flight profile: heading, cruise speed, altitude,
     undulation and wingbeat. Every bird then flies its own line instead of
@@ -1553,14 +1816,17 @@ const drawCloud = (
 };
 
 /** ADVANCED 50-LEVEL PLAYABLE GAME VIEW **/
-export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: number) => void }> = ({ onEnd }) => {
+export const PlayingView: React.FC<{
+  onEnd: (score: number, fishesCollected: number) => void;
+  startLevel?: number;
+}> = ({ onEnd, startLevel = 1 }) => {
   // The game loop is started once per level. Reading onEnd through a ref keeps a
   // parent re-render (e.g. the coin counter updating after every fish) from
   // changing the loop's dependencies and restarting the whole level.
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [currentLevel, setCurrentLevel] = useState(1);
+  const [currentLevel, setCurrentLevel] = useState(() => Math.max(1, startLevel));
   const [totalScore, setTotalScore] = useState(0);
   const [lives, setLives] = useState(5);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
@@ -1568,30 +1834,48 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
   isPausedRef.current = isPaused;
+  // Incremented to rebuild the current level (restart) without changing which
+  // level the player is on.
+  const [runId, setRunId] = useState(0);
+  const [showIntro, setShowIntro] = useState(true);
 
-  const togglePause = () => {
+  const togglePause = useCallback(() => {
     setIsPaused(prev => {
       const next = !prev;
       isPausedRef.current = next;
+      if (next) AudioEngine.playUiClick();
       return next;
     });
-  };
+  }, []);
 
   const restartCurrentLevel = () => {
     setIsPaused(false);
     isPausedRef.current = false;
-    // Trigger re-setup of current level
-    setCurrentLevel(prev => prev);
-    if (gameRef.current) {
-      gameRef.current.running = false;
-    }
-    // Force re-render of level
-    setTimeout(() => {
-      setCurrentLevel(prev => prev);
-    }, 50);
+    if (gameRef.current) gameRef.current.running = false;
+    setRunId((n) => n + 1);
   };
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, multiplier: 1, streak: 0, dashReady: true, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0 });
+  // The level card introduces the stage for a beat and then fades away.
+  useEffect(() => {
+    setShowIntro(true);
+    const timer = window.setTimeout(() => setShowIntro(false), 2300);
+    return () => window.clearTimeout(timer);
+  }, [currentLevel, runId]);
+
+  // Alt-tabbing out of the game pauses it instead of letting the cat run into
+  // a hazard unseen.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden && gameRef.current?.running) {
+        setIsPaused(true);
+        isPausedRef.current = true;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -1604,7 +1888,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   const gameContainerRef = useRef<HTMLDivElement>(null);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
-  useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume);
+  useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume, isPaused);
 
   // Handle fullscreen and ESC key
   useEffect(() => {
@@ -1628,15 +1912,26 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement && gameContainerRef.current) {
-      gameContainerRef.current.requestFullscreen();
+      const request = gameContainerRef.current.requestFullscreen?.();
+      // On phones, fullscreen is only useful if the game can rotate with it.
+      // Orientation lock is best-effort - desktop browsers reject it silently.
+      if (request && 'orientation' in screen) {
+        request
+          .then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+          .catch(() => {});
+      }
     } else if (document.fullscreenElement) {
+      (screen.orientation as unknown as { unlock?: () => void }).unlock?.();
       document.exitFullscreen();
     }
   };
 
   useEffect(() => {
+    const syncViewport = () => setIsMobile(window.innerWidth < 768);
     setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    setIsMobile(window.innerWidth < 768);
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
   }, []);
 
   const setupLevel = (level: number, existingScore: number, existingLives: number) => {
@@ -1651,6 +1946,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const intensity = randomWeather.intensity;
     const timeOfDay = randomWeather.timeOfDay;
     const theme = baseLevelDesign.theme;
+
     const skin = SKINS[progress.equippedSkin] || SKINS.default;
     // A predictable five-level rhythm teaches a mechanic, adds a challenge,
     // then gives each fifth level a dedicated boss encounter.
@@ -1685,6 +1981,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       levelType: levelMode,
       levelTimer: levelMode === 'Speed Run' ? speedRunTimer : 0,
       levelTimerBudget: levelMode === 'Speed Run' ? speedRunTimer : 0,
+      levelSeconds: 0,
       combo: 0,
       comboTimer: 0,
       bestComboInRun: 0,
@@ -1720,6 +2017,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       nearMisses: 0,
       coinsThisLevel: 0,
       fishedThisLevel: 0,
+      startLives: existingLives,
+      // --- Power-up layer ---
+      pickups: [] as any[],
+      enemyBullets: [] as any[],
+      shield: false,
+      buffs: { magnet: 0, rapid: 0 },
+      shootCooldown: 0,
+      // A short cinematic intro freezes the world for a beat while the level
+      // card tells the player where they are and what to do.
+      introTimer: level === 1 ? 150 : 110,
+      introMax: level === 1 ? 150 : 110,
+      killsThisLevel: 0,
       // --- Juice timers ---
       slowMo: 0,
       zoomPunch: 0,
@@ -1763,6 +2072,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       showFishWarning: false,
       totalCollectedInLevel: 0,
       backgroundElements: [],
+      theme: theme,
       lastStatUpdate: 0
     };
 
@@ -1986,11 +2296,18 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       // Enemies deeper in the level are a touch quicker.
       const depthRamp = 1 + (ex / Math.max(1, levelLength)) * difficultyProfile.inLevelRamp * 0.35;
-      const enemyType = Math.floor(Math.random() * 3);
+      // Three archetypes from the start; turrets and chargers join later so the
+      // player is never introduced to every threat at once.
+      const roll = Math.random();
+      const enemyType = level >= 5 && roll < 0.16 ? 4 : level >= 3 && roll < 0.32 ? 3 : Math.floor(Math.random() * 3);
+      const isTurret = enemyType === 3;
       game.enemies.push({
         x: ex, y: plat.y - 40, width: 40, height: 40,
-        velocityX: difficultyProfile.enemySpeed * depthRamp * (Math.random() > 0.5 ? 1 : -1),
-        direction: 1, platform: randomSegment, type: enemyType
+        velocityX: isTurret ? 0 : difficultyProfile.enemySpeed * depthRamp * (Math.random() > 0.5 ? 1 : -1),
+        direction: 1, platform: randomSegment, type: enemyType,
+        shootTimer: 70 + Math.floor(Math.random() * 70),
+        baseY: plat.y - 40,
+        chargeTimer: 0,
       });
       enemiesPlaced++;
     }
@@ -2104,7 +2421,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
       // Keep everything reachable
       fy = Math.max(canvas.height - 300, Math.min(fy, canvas.height - 60));
-      const clampedFx = Math.max(50, Math.min(fx, levelLength - 50));
+      // Never spawn on top of the cat: the first frame of a level must not
+      // silently hand the player a fish they never went and got.
+      const clampedFx = Math.max(260, Math.min(fx, levelLength - 50));
 
       let fishCollision = false;
       const fishBounds = { x: clampedFx, y: fy, width: 24, height: 14 };
@@ -2201,6 +2520,59 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           offDuration: 70 + Math.floor(Math.random() * 90),
         });
       }
+    }
+
+    // --- Power-ups -----------------------------------------------------
+    // Placed on real platforms across the level, never bunched together, so
+    // finding one is a genuine detour worth taking. Every run gets a shield,
+    // and the mix widens as mechanics are introduced.
+    const pickupPool: string[] = level < 3
+      ? ['shield', 'magnet']
+      : level < 6
+        ? ['shield', 'magnet', 'rapid']
+        : ['shield', 'magnet', 'rapid', 'rapid', 'heart'];
+    const pickupCount = Math.min(7, 2 + Math.floor(level / 3));
+    let pickupAttempts = 0;
+    while (game.pickups.length < pickupCount && pickupAttempts < 240) {
+      pickupAttempts++;
+      const candidatePlatforms = game.platforms.filter((pl: any) => !pl.bossArena && pl.width > 74);
+      if (!candidatePlatforms.length) break;
+      const pool = candidatePlatforms[Math.floor(Math.random() * candidatePlatforms.length)];
+      const pxx = pool.x + 30 + Math.random() * Math.max(10, pool.width - 60);
+      if (pxx < 500 || pxx > levelLength - (level % 5 === 0 ? 1500 : 520)) continue;
+      if (game.pickups.some((pk: any) => Math.abs(pk.x - pxx) < 260)) continue;
+      if (game.hazards.some((h: any) => Math.abs(h.x - pxx) < 110)) continue;
+      const type = pickupPool[Math.floor(seededRandom(level * 9.7 + pickupAttempts * 3.1) * pickupPool.length)];
+      game.pickups.push({
+        x: pxx,
+        y: pool.y - 44,
+        baseY: pool.y - 44,
+        width: 32,
+        height: 32,
+        type,
+        collected: false,
+        hover: Math.random() * Math.PI * 2,
+        spin: Math.random() * Math.PI * 2,
+      });
+    }
+    // Boss arenas need a reliable ammo source: the fight is unwinnable if every
+    // shot is spent before the boss goes down. These crates respawn over time.
+    if (level % 5 === 0) {
+      const arenaX = levelLength - 960;
+      [0.32, 0.72].forEach((t) => {
+        game.pickups.push({
+          x: arenaX + t * 540,
+          y: game.groundY - 40,
+          baseY: game.groundY - 40,
+          width: 32,
+          height: 32,
+          type: 'ammo',
+          collected: false,
+          hover: Math.random() * Math.PI * 2,
+          spin: Math.random() * Math.PI * 2,
+          arena: true,
+        });
+      });
     }
 
     // Garantera att nivå 1 är väldigt lätt
@@ -2379,6 +2751,146 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     }
   };
 
+  /** Single exit path for a lost run, so every death cause is recorded and the
+      same summary reaches the game-over screen. */
+  const endRun = (game: any, cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
+    if (!game.running) return;
+    game.running = false;
+    trackDeathCause(cause);
+    persistRunSummary(game, false);
+    onEndRef.current(game.score, game.totalCollectedInLevel);
+  };
+
+  /**
+   * The only place the player can lose a life. Centralising it means the shield
+   * power-up protects against every hazard in the game, knockback is consistent,
+   * and a new damage source cannot forget to handle death.
+   */
+  const hurtPlayer = (game: any, cause: 'enemy' | 'hazard' | 'boss', opts?: { knock?: number; lift?: number }) => {
+    const p = game.player;
+    if (!p || p.invincible) return 'ignored';
+    const lift = opts?.lift ?? 5;
+
+    if (game.shield) {
+      game.shield = false;
+      p.invincible = true;
+      p.invincibleTimer = 100;
+      p.velocityY = Math.min(p.velocityY, -lift);
+      p.velocityX = -p.facing * 4.5;
+      game.screenShake = Math.max(game.screenShake, 10);
+      game.zoomPunch = 8;
+      game.slowMo = 8;
+      for (let i = 0; i < 26; i++) {
+        const a = (i / 26) * Math.PI * 2;
+        game.particles.push({
+          x: p.x + p.width / 2 + Math.cos(a) * 26,
+          y: p.y + p.height / 2 + Math.sin(a) * 34,
+          vx: Math.cos(a) * 4.5,
+          vy: Math.sin(a) * 4.5 - 1,
+          life: 30, color: i % 2 ? '#7ee7ff' : '#ffffff', size: Math.random() * 3 + 2,
+        });
+      }
+      pushToast(game, 'SKÖLDEN TOG SMÄLLEN!', '#7ee7ff');
+      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(20);
+      AudioEngine.playShieldBreak();
+      return 'shielded';
+    }
+
+    game.lives--;
+    p.invincible = true;
+    // Long enough to actually escape contact: the old 1.6s window could expire
+    // while the cat was still pressed against the same enemy or wall.
+    p.invincibleTimer = 120;
+    p.velocityY = Math.min(p.velocityY, -lift - 1.5);
+    p.velocityX = -p.facing * 7;
+    game.combo = 0;
+    game.streak = 0;
+    game.multiplier = 1;
+    game.noHit = false;
+    game.slowMo = 10;
+    game.zoomPunch = 14;
+    game.screenShake = Math.max(game.screenShake, 14);
+    for (let i = 0; i < 20; i++) {
+      game.particles.push({
+        x: p.x + p.width / 2, y: p.y + p.height / 2,
+        vx: (Math.random() - 0.5) * 9, vy: (Math.random() - 0.5) * 9,
+        life: 26, color: i % 3 ? '#ff5470' : '#ffd166', size: Math.random() * 4 + 2,
+      });
+    }
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(35);
+    AudioEngine.playDamage();
+    AudioEngine.playLifeLost();
+    if (game.lives <= 0) endRun(game, cause);
+    return game.lives <= 0 ? 'dead' : 'hurt';
+  };
+
+  /** Applies a collected power-up and returns the message shown to the player. */
+  const applyPickup = (game: any, pickup: any) => {
+    const p = game.player;
+    let label = '';
+    let color = '#7ee7ff';
+    switch (pickup.type) {
+      case 'shield':
+        game.shield = true;
+        label = 'SKÖLD AKTIVERAD';
+        color = '#7ee7ff';
+        break;
+      case 'magnet':
+        game.buffs.magnet = 620;
+        label = 'FISKMAGNET · 10s';
+        color = '#ffd166';
+        break;
+      case 'rapid':
+        game.buffs.rapid = 540;
+        label = 'RAPID ELD · 9s';
+        color = '#ff8f6b';
+        break;
+      case 'heart':
+        game.lives = Math.min(6, game.lives + 1);
+        label = '+1 LIV';
+        color = '#ff5f8a';
+        break;
+      case 'ammo':
+        game.ammo += 6;
+        game.score += 50;
+        label = '+6 SKOTT';
+        color = '#9fb6ff';
+        // Arena ammo crates are a renewable resource, so a boss fight can never
+        // soft-lock with an empty gun.
+        if (pickup.arena) pickup.respawn = 780;
+        break;
+      default:
+        game.score += 100;
+        label = '+100';
+    }
+    for (let i = 0; i < 22; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 4;
+      game.particles.push({
+        x: pickup.x + 16, y: pickup.y + 16,
+        vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 1,
+        life: 26 + Math.random() * 16, color: i % 3 === 0 ? '#ffffff' : color,
+        size: Math.random() * 3.5 + 1.5,
+      });
+    }
+    game.floatingTexts.push({ x: pickup.x + 16, y: pickup.y, text: label, life: 60, color });
+    pushToast(game, label, color);
+    game.zoomPunch = 6;
+    if (pickup.type === 'heart') AudioEngine.playHeart();
+    else if (pickup.type === 'ammo') AudioEngine.playCoin(2);
+    else AudioEngine.playPowerup();
+  };
+
+  /** Letter grade for a cleared level, shown on the results card. */
+  const getGrade = (summary: { noHit?: boolean; nearMisses?: number; streak?: number; boss?: boolean }) => {
+    let points = 0;
+    if (summary.noHit) points += 2;
+    if ((summary.nearMisses || 0) >= 5) points += 1;
+    if ((summary.streak || 0) >= 15) points += 1;
+    if (summary.boss) points += 1;
+    return points >= 4 ? 'S' : points === 3 ? 'A' : points === 2 ? 'B' : 'C';
+  };
+
   const startNextLevel = () => {
     setShowLevelComplete(false);
     setLevelSummary(null);
@@ -2410,9 +2922,11 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
   };
 
   const fireBullet = (targetX: number | null = null, targetY: number | null = null) => {
-    if (!gameRef.current || !gameRef.current.running) return;
+    if (!gameRef.current || !gameRef.current.running || isPausedRef.current) return;
     const game = gameRef.current;
-    if (game.ammo <= 0) return;
+    const rapid = game.buffs.rapid > 0;
+    if (game.shootCooldown > 0) return;
+    if (!rapid && game.ammo <= 0) return;
     const playerCenterX = game.player.x + game.player.width / 2;
     const playerCenterY = game.player.y + game.player.height / 2;
 
@@ -2428,11 +2942,24 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
     const distance = Math.sqrt(dx * dx + dy * dy);
     if (distance < 0.001) return;
-    const bulletSpeed = 10;
-    game.bullets.push({
-      x: playerCenterX, y: playerCenterY, vx: (dx / distance) * bulletSpeed, vy: (dy / distance) * bulletSpeed, radius: 6, life: 100
+    const bulletSpeed = rapid ? 12.5 : 10;
+    // Rapid Fire turns the single shot into a three-way spread and removes the
+    // ammo cost for its duration, so the power-up changes how the gun feels.
+    const spread = rapid ? [-0.18, 0, 0.18] : [0];
+    spread.forEach((offset) => {
+      const angle = Math.atan2(dy, dx) + offset;
+      game.bullets.push({
+        x: playerCenterX,
+        y: playerCenterY,
+        vx: Math.cos(angle) * bulletSpeed,
+        vy: Math.sin(angle) * bulletSpeed,
+        radius: rapid ? 7 : 6,
+        life: 110,
+        tint: rapid ? '#7ee7ff' : '#ff4d4d',
+      });
     });
-    game.ammo--;
+    game.shootCooldown = rapid ? 6 : 10;
+    if (!rapid) game.ammo--;
     if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(8);
     AudioEngine.playShoot();
   };
@@ -2471,6 +2998,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const game = setupLevel(currentLevel, totalScore, lives);
     if (!game) return;
     gameRef.current = game;
+    // Debug handles the automated play-test uses to inspect live state and jump
+    // between stages. They expose nothing the player can abuse in a local game.
+    (window as any).__SP = game;
+    (window as any).__SP_NEXT = startNextLevel;
 
     const handleKeyDown = (e: KeyboardEvent) => setKeyState(e.keyCode, true);
     const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
@@ -2548,9 +3079,19 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     const FIXED_STEP_MS = 1000 / 60;
     const simulate = () => {
       if (!game.running) return;
+      if (isPausedRef.current) return;
       if (game.hitStop > 0) {
         game.hitStop--;
         return;
+      }
+
+      // Level clock (used for the results card, independent of the Speed Run
+      // countdown).
+      game.levelSeconds = (game.levelSeconds || 0) + 1 / 60;
+      // Accessibility: motion-sensitive players can turn off shake and punch-in.
+      if (progress.settings.reduceMotion) {
+        game.screenShake = 0;
+        game.zoomPunch = 0;
       }
 
       // Player Logic
@@ -2643,8 +3184,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             e.x = -1000; b.life = 0;
             registerCombo(game, 200, e.x, e.y);
             grantXp(game, 25);
-            awardCoins(game, 2);
+            awardCoins(game, 3);
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
+            game.killsThisLevel = (game.killsThisLevel || 0) + 1;
             AudioEngine.playExplosion();
 
             // Explosion particles
@@ -2745,10 +3287,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           game.deathsInRun = (game.deathsInRun || 0) + 1;
           game.noHit = false;
           if (game.lives <= 0) {
-            game.running = false;
-            trackDeathCause('timer');
-            persistRunSummary(game, false);
-            onEndRef.current(game.score, game.totalCollectedInLevel);
+            endRun(game, 'timer');
             return;
           }
           // Running out of time costs a life like any other mistake. Ending the
@@ -2899,8 +3438,44 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         // Only move enemy if platform exists
         const p = game.platforms[e.platform];
         if (p) {
-          e.x += e.velocityX;
-          if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+          if (e.type === 4) {
+            // Charger: winds up, then lunges at the cat when it gets close.
+            const dx = (game.player.x + game.player.width / 2) - (e.x + e.width / 2);
+            const dy = Math.abs((game.player.y + game.player.height / 2) - (e.y + e.height / 2));
+            if (e.chargeTimer > 0) {
+              e.chargeTimer--;
+              e.x += Math.sign(dx || 1) * 4.4;
+            } else {
+              if (Math.abs(dx) < 240 && dy < 90) {
+                e.chargeTimer = 34;
+                game.particles.push({ x: e.x + e.width / 2, y: e.y + e.height, vx: 0, vy: -1, life: 20, color: '#ffb703', size: 4 });
+              }
+              e.x += e.velocityX * 0.6;
+            }
+            if (e.x < p.x) { e.x = p.x; e.velocityX = Math.abs(e.velocityX); }
+            if (e.x + e.width > p.x + p.width) { e.x = p.x + p.width - e.width; e.velocityX = -Math.abs(e.velocityX); }
+          } else if (e.type === 3) {
+            // Turret: immobile, but it aims a slow orb at the cat on a timer.
+            e.shootTimer = (e.shootTimer ?? 90) - 1;
+            const dx = (game.player.x + game.player.width / 2) - (e.x + e.width / 2);
+            const dy = (game.player.y + game.player.height / 2) - (e.y + e.height / 2);
+            if (e.shootTimer <= 0 && Math.abs(dx) < 620 && Math.abs(dy) < 300) {
+              e.shootTimer = 150;
+              const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+              game.enemyBullets.push({
+                x: e.x + e.width / 2,
+                y: e.y + e.height * 0.42,
+                vx: (dx / dist) * 3.1,
+                vy: (dy / dist) * 3.1,
+                radius: 7,
+                life: 220,
+              });
+              AudioEngine.playShoot();
+            }
+          } else {
+            e.x += e.velocityX;
+            if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+          }
         }
 
         // ONLY check collision if player is NOT invincible AND there's actual overlap
@@ -2928,6 +3503,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             grantXp(game, 25);
             awardCoins(game, 2);
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
+            game.killsThisLevel = (game.killsThisLevel || 0) + 1;
             game.player.velocityY = -12;
             game.zoomPunch = 5;
             AudioEngine.playExplosion();
@@ -2940,32 +3516,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
               }
               game.floatingTexts.push({ x: enemyCenterXBeforeRemove, y: enemyCenterYBeforeRemove, text: '+200', life: 40, color: '#ff8800' });
             } else {
-              // Player touched enemy from side or below - die
-              game.lives--;
-              game.player.invincible = true;
-              game.player.invincibleTimer = 90;
-              game.player.x = Math.max(100, game.player.x - 150);
-              game.player.y = Math.max(50, game.player.y - 50);
-              game.player.velocityY = 0;
-              game.combo = 0;
-              game.noHit = false;
-              game.slowMo = 10;
-              game.zoomPunch = 12;
-              for (let i = 0; i < 18; i++) {
-                game.particles.push({
-                  x: game.player.x + game.player.width / 2, y: game.player.y + game.player.height / 2,
-                  vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
-                  life: 26, color: '#ff5470', size: Math.random() * 4 + 2
-                });
-              }
-              AudioEngine.playDamage();
-              AudioEngine.playLifeLost();
-              if (game.lives <= 0) {
-                game.running = false;
-                trackDeathCause('enemy');
-                persistRunSummary(game, false);
-                onEndRef.current(game.score, game.totalCollectedInLevel);
-              }
+              // Side or underside contact costs a life unless a shield soaks it.
+              hurtPlayer(game, 'enemy', { lift: 6 });
             }
           }
         }
@@ -2977,7 +3529,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         if (!boss.encountered && Math.abs(boss.x - game.player.x) < canvas.width * 0.8) {
           boss.encountered = true;
           pushToast(game, `BOSS INKOMMER · ${boss.name}`, '#ff9f43');
-          game.screenShake = Math.max(game.screenShake, 5);
+          game.screenShake = Math.max(game.screenShake, 14);
+          game.slowMo = 24;
+          game.zoomPunch = 16;
+          AudioEngine.playBossRoar();
         }
         boss.auraAngle = (boss.auraAngle || 0) + 0.05;
         
@@ -2989,6 +3544,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           game.screenShake = 20;
           game.slowMo = 30;
           pushToast(game, `${boss.name} FAS ${boss.phase + 1}!`, '#ff6b35');
+          AudioEngine.playBossRoar();
+          game.zoomPunch = 12;
           boss.attackTimer = 30; // Kortare cooldown i högre faser
           boss.attackCooldown = Math.max(48, attackProfile.cooldown - boss.phase * 24);
         }
@@ -3057,21 +3614,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             const dy = (game.player.y + game.player.height/2) - p.y;
             if (Math.sqrt(dx*dx + dy*dy) < p.radius + 20) {
               p.life = 0;
-              game.lives--;
-              game.player.invincible = true;
-              game.player.invincibleTimer = 90;
-              game.combo = 0;
-              game.noHit = false;
-              game.screenShake = 12;
-              game.slowMo = 10;
-              AudioEngine.playDamage();
-              AudioEngine.playLifeLost();
-              if (game.lives <= 0) {
-                game.running = false;
-                trackDeathCause('boss');
-                persistRunSummary(game, false);
-                onEndRef.current(game.score, game.totalCollectedInLevel);
-              }
+              hurtPlayer(game, 'boss', { lift: 6 });
             }
           }
         });
@@ -3081,26 +3624,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           const overlapX = game.player.x + game.player.width > boss.x && game.player.x < boss.x + boss.width;
           const overlapY = game.player.y + game.player.height > boss.y && game.player.y < boss.y + boss.height;
           if (overlapX && overlapY) {
-            game.lives--;
-            game.player.invincible = true;
-            game.player.invincibleTimer = 110;
-            game.player.x = Math.max(100, game.player.x - 190);
-            game.player.y = Math.max(60, game.player.y - 45);
-            game.player.velocityY = -5;
-            game.combo = 0;
-            game.noHit = false;
-            game.screenShake = 14;
-            game.slowMo = 12;
-            boss.stunTimer = 15; // Boss stun vid träff
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(35);
-            AudioEngine.playDamage();
-            AudioEngine.playLifeLost();
-            if (game.lives <= 0) {
-              game.running = false;
-              trackDeathCause('boss');
-              persistRunSummary(game, false);
-              onEndRef.current(game.score, game.totalCollectedInLevel);
-            }
+            hurtPlayer(game, 'boss', { lift: 8 });
+            boss.stunTimer = 15; // A body check staggers the boss too
           }
         }
       }
@@ -3112,32 +3637,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
           const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
           if (overlapX && overlapY) {
-            game.lives--;
-            game.player.invincible = true;
-            game.player.invincibleTimer = 90;
-            game.player.x = Math.max(100, game.player.x - 170);
-            game.player.y = Math.max(60, game.player.y - 45);
-            game.player.velocityY = -3;
-            game.combo = 0;
-            game.noHit = false;
-            game.slowMo = 10;
-            game.zoomPunch = 12;
-            for (let i = 0; i < 16; i++) {
-              game.particles.push({
-                x: game.player.x + game.player.width / 2, y: game.player.y + game.player.height / 2,
-                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
-                life: 24, color: '#ff8c00', size: Math.random() * 4 + 2
-              });
-            }
-            if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(26);
-            AudioEngine.playDamage();
-            AudioEngine.playLifeLost();
-            if (game.lives <= 0) {
-              game.running = false;
-              trackDeathCause('hazard');
-              persistRunSummary(game, false);
-              onEndRef.current(game.score, game.totalCollectedInLevel);
-            }
+            hurtPlayer(game, 'hazard', { lift: 5 });
             break;
           }
         }
@@ -3146,21 +3646,27 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       if (game.player.invincibleTimer > 0) game.player.invincibleTimer--;
       else game.player.invincible = false;
 
-      // Only die if falling into hole - with bigger buffer
+      // Falling into a chasm costs a life and respawns on the last safe
+      // platform - not at a fixed offset that can drop the cat straight back
+      // into the same hole and drain several lives in a row.
       if (game.player.y > canvas.height + 100) {
         game.lives--;
         game.noHit = false;
         game.slowMo = 10;
-        game.player.x = Math.max(100, game.player.x - 200);
-        game.player.y = 100;
+        game.screenShake = 12;
+        const safePlatforms = game.platforms
+          .filter((pl: any) => pl.isGround && pl.x < game.player.x + 20 && !pl.chasm)
+          .sort((a: any, b: any) => b.x - a.x);
+        const safe = safePlatforms[0];
+        game.player.x = safe ? safe.x + Math.min(safe.width - game.player.width / 2, Math.max(game.player.width / 2, safe.width / 2)) : 160;
+        game.player.y = (safe ? safe.y : game.groundY) - game.player.height - 30;
         game.player.velocityY = 0;
+        game.player.velocityX = 0;
+        game.player.invincible = true;
+        game.player.invincibleTimer = 70;
         AudioEngine.playLifeLost();
-        if (game.lives <= 0) {
-          game.running = false;
-          trackDeathCause('hole');
-          persistRunSummary(game, false);
-          onEndRef.current(game.score, game.totalCollectedInLevel);
-        }
+        pushToast(game, '-1 LIV · TILLBAKA PÅ SPÅRET', '#ff8888');
+        if (game.lives <= 0) endRun(game, 'hole');
       }
 
 
@@ -3177,9 +3683,64 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
       game.scrollX = Math.max(0, Math.min(game.scrollX, maxScroll));
 
+      // Active power-up timers and the short shot cooldown.
+      if (game.buffs.magnet > 0) game.buffs.magnet--;
+      if (game.buffs.rapid > 0) game.buffs.rapid--;
+      if (game.shootCooldown > 0) game.shootCooldown--;
+
+      // Pickups: float in place, then trigger their buff on touch.
+      game.pickups.forEach((pk: any) => {
+        if (pk.collected) {
+          if (pk.arena && pk.respawn > 0) {
+            pk.respawn--;
+            if (pk.respawn <= 0) {
+              pk.collected = false;
+              pk.hover = 0;
+            }
+          }
+          return;
+        }
+        pk.hover += 0.045;
+        pk.spin += 0.03;
+        pk.y = pk.baseY + Math.sin(pk.hover) * 6;
+        if (
+          game.player.x < pk.x + pk.width &&
+          game.player.x + game.player.width > pk.x &&
+          game.player.y < pk.y + pk.height &&
+          game.player.y + game.player.height > pk.y
+        ) {
+          pk.collected = true;
+          applyPickup(game, pk);
+        }
+      });
+
+      // Enemy projectiles (turrets). Slow, clearly telegraphed orbs.
+      game.enemyBullets = game.enemyBullets.filter((b: any) => b.life > 0);
+      game.enemyBullets.forEach((b: any) => {
+        b.x += b.vx; b.y += b.vy; b.life--;
+        const dx = (game.player.x + game.player.width / 2) - b.x;
+        const dy = (game.player.y + game.player.height / 2) - b.y;
+        if (!game.player.invincible && Math.sqrt(dx * dx + dy * dy) < b.radius + 18) {
+          b.life = 0;
+          hurtPlayer(game, 'enemy', { lift: 6 });
+        }
+      });
+
       // Update coin positions and check collection
       game.fishes.forEach((f: any) => {
         if (!f.collected) {
+          // Fish magnet: drift nearby fish toward the cat so the pickup feels
+          // like a vacuum instead of a larger hitbox.
+          if (game.buffs.magnet > 0) {
+            const mdx = (game.player.x + game.player.width / 2) - (f.x + f.width / 2);
+            const mdy = (game.player.y + game.player.height / 2) - (f.y + f.height / 2);
+            const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+            if (mdist < 300 && mdist > 1) {
+              const pull = Math.min(9, 120 / mdist);
+              f.x += (mdx / mdist) * pull;
+              f.baseY += (mdy / mdist) * pull;
+            }
+          }
           // Dynamic bobbing effect
           if (f.isFlying) {
             f.hoverOffset += 0.05;
@@ -3195,7 +3756,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {            f.collected = true;
             registerCombo(game, 50, f.x, f.y);
             grantXp(game, 10);
-            awardCoins(game, 1);
+            awardCoins(game, 2);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
             game.totalCollectedInLevel++;
             AudioEngine.playCoin(game.streak || 0);
@@ -3225,13 +3786,24 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       // --- DRAWING ---
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // One camera transform for shake and impact zoom. The zoom is centred on
+      // the cat so a hit or a dash punches in on the action instead of the frame.
+      ctx.save();
       const applyScreenShake = game.screenShake > 0;
       if (applyScreenShake) {
         game.screenShake--;
-        const shakeX = (Math.random() - 0.5) * 8;
-        const shakeY = (Math.random() - 0.5) * 8;
-        ctx.save();
+        const shakeMag = Math.min(12, 3 + game.screenShake * 0.35);
+        const shakeX = (Math.random() - 0.5) * shakeMag;
+        const shakeY = (Math.random() - 0.5) * shakeMag;
         ctx.translate(shakeX, shakeY);
+      }
+      if (game.zoomPunch > 0) {
+        const zoom = 1 + game.zoomPunch * 0.0035;
+        const focusX = game.player.x - game.scrollX + game.player.width / 2;
+        const focusY = game.player.y + game.player.height / 2;
+        ctx.translate(focusX, focusY);
+        ctx.scale(zoom, zoom);
+        ctx.translate(-focusX, -focusY);
       }
 
       // Background - neon sky driven by time of day and season
@@ -3266,6 +3838,30 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       sunGlow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = sunGlow;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Visible sun / moon disc, softened by the halo above. Having a real
+      // light source gives the whole scene direction and depth.
+      ctx.save();
+      ctx.globalAlpha = isNight ? 0.9 : 0.85;
+      const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 46);
+      disc.addColorStop(0, isNight ? '#eef4ff' : '#fffbe8');
+      disc.addColorStop(0.55, isNight ? 'rgba(214,228,255,0.95)' : 'rgba(255,246,206,0.95)');
+      disc.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = disc;
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, 46, 0, Math.PI * 2);
+      ctx.fill();
+      if (isNight) {
+        // A couple of craters keep the moon from reading as a white hole.
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#8796b8';
+        ctx.beginPath();
+        ctx.arc(sunX - 10, sunY - 6, 8, 0, Math.PI * 2);
+        ctx.arc(sunX + 9, sunY + 8, 5.5, 0, Math.PI * 2);
+        ctx.arc(sunX + 4, sunY - 14, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
 
       // Neon horizon glow behind the skyline
       const horizonGlow = ctx.createRadialGradient(
@@ -3324,6 +3920,77 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         drawCloud(ctx, x, cloud.y, cloud.scale, cloud.alpha, i, isNight);
       });
 
+      // Distant land: two soft ridgelines with a very slow parallax drift. They
+      // give the horizon depth and stop the sky from meeting the ground in one
+      // hard line when the city silhouettes are sparse.
+      ctx.save();
+      const ridgeBase = game.groundY ?? canvas.height - 96;
+      const ridges: Array<[number, string, number, number, number]> = [
+        [0.045, isNight ? '#0a1a2b' : '#7fb4c9', 150, 0.0035, 30],
+        [0.09, isNight ? '#0d2438' : '#659cb5', 92, 0.0062, 18],
+      ];
+      ridges.forEach(([parallax, color, height, freq, amp], layer) => {
+        ctx.globalAlpha = isNight ? 0.55 : 0.38;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(-20, canvas.height);
+        for (let x = -20; x <= canvas.width + 40; x += 16) {
+          const wx = x + game.scrollX * parallax;
+          const y = ridgeBase - height - Math.sin(wx * freq) * amp - Math.cos(wx * freq * 2.1 + layer) * amp * 0.45;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(canvas.width + 20, canvas.height);
+        ctx.closePath();
+        ctx.fill();
+      });
+      // Atmospheric haze so the ridgelines fade into the sky rather than
+      // reading as solid cut-outs.
+      const haze = ctx.createLinearGradient(0, ridgeBase - 230, 0, ridgeBase - 20);
+      haze.addColorStop(0, isNight ? 'rgba(20,40,70,0)' : 'rgba(220,245,255,0)');
+      haze.addColorStop(1, isNight ? 'rgba(30,60,95,0.5)' : 'rgba(205,240,252,0.55)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = haze;
+      ctx.fillRect(0, ridgeBase - 230, canvas.width, 210);
+      ctx.restore();
+
+      // Depth layer: a far skyline (urban chapters) or treeline (green chapters)
+      // with slow parallax. It sits behind the hand-placed scenery and gives the
+      // horizon several planes instead of one painted backdrop.
+      {
+        const themeName = String(game.theme || '');
+        const urbanTheme = /city|downtown|industrial|construction|rooftop|power|highway|space|data|warzone|quantum|harbor|sewer|nuclear|laboratory|underground|roof/.test(themeName);
+        const drawDepthLayer = (parallax: number, baseH: number, alpha: number, seedBase: number, color: string) => {
+          const span = 240;
+          const offset = ((game.scrollX * parallax) % span + span) % span;
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = color;
+          for (let i = -1; i < Math.ceil(canvas.width / span) + 2; i++) {
+            const r1 = skyHash(seedBase + i * 3.7);
+            const r2 = skyHash(seedBase + i * 7.1 + 5);
+            const w = 46 + r1 * 84;
+            const h = baseH * (0.42 + r2 * 0.75);
+            const x = i * span - offset + r1 * 60;
+            const y = ridgeBase - h;
+            if (urbanTheme) {
+              ctx.fillRect(x, y, w, h);
+              if (r2 > 0.65) ctx.fillRect(x + w * 0.2, y - 14, 3, 14);
+              if (r1 > 0.55) ctx.fillRect(x + w * 0.55, y - 22, w * 0.25, 22);
+            } else {
+              ctx.fillRect(x + w * 0.46, y + h * 0.25, Math.max(2, w * 0.08), h * 0.75);
+              ctx.beginPath();
+              ctx.moveTo(x + w / 2, y - h * 0.45);
+              ctx.lineTo(x + w, y + h * 0.6);
+              ctx.lineTo(x, y + h * 0.6);
+              ctx.closePath();
+              ctx.fill();
+            }
+          }
+          ctx.globalAlpha = 1;
+        };
+        drawDepthLayer(0.025, 260, isNight ? 0.62 : 0.2, 11, isNight ? '#071224' : '#6ba0b8');
+        drawDepthLayer(0.065, 190, isNight ? 0.72 : 0.22, 47, isNight ? '#0a1830' : '#578ba5');
+      }
+
       // Scenery has two layers. Buildings are the fixed skyline and stay in
       // screen space; animals - on the ground and in the sky - are anchored in
       // the level and scroll against game.scrollX like the platforms, so the
@@ -3333,8 +4000,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       // stand in front of it - they are nearer the cat, so they are painted
       // last and drawn solid instead of as faint as the far-off buildings.
       const sceneryLayers: Array<[number, any[]]> = [
-        [0.5, game.backgroundElements.filter((el: any) => el.kind === 'building')],
-        [0.92, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
+        [0.55, game.backgroundElements.filter((el: any) => el.kind === 'building')],
+        [0.8, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
       ];
       sceneryLayers.forEach(([layerAlpha, elements]) => {
         ctx.globalAlpha = layerAlpha;
@@ -4457,6 +5124,26 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           ctx.roundRect(platX, platY, plat.width, plat.height, plat.isGround ? 0 : 4);
           ctx.fill();
 
+          // Grass fringe on solid ground. Deterministic sine-based blades keep
+          // the edge organic without per-frame random flicker.
+          if (plat.isGround && !plat.bossWalkway && !plat.bossArena) {
+            const night = game.timeOfDay === 'NIGHT';
+            ctx.strokeStyle = game.weather === 'SNÖIGT'
+              ? 'rgba(235,248,255,0.9)'
+              : night ? 'rgba(74,160,108,0.85)' : 'rgba(120,214,96,0.9)';
+            ctx.lineWidth = 1.6;
+            ctx.lineCap = 'round';
+            const start = Math.max(platX + 3, -4);
+            const end = Math.min(platX + plat.width - 2, canvas.width + 4);
+            for (let gx = start; gx < end; gx += 8) {
+              const blade = 3 + (Math.sin(gx * 0.63) + 1) * 3.6;
+              ctx.beginPath();
+              ctx.moveTo(gx, platY + 1);
+              ctx.quadraticCurveTo(gx + Math.sin(gx * 0.31) * 2, platY - blade * 0.6, gx + Math.sin(gx * 0.31) * 3, platY - blade);
+              ctx.stroke();
+            }
+          }
+
           // Kant-highlight (top edge)
           if (!plat.isGround || plat.y < game.groundY) {
             ctx.fillStyle = plat.bossArena ? '#ffd18a' : plat.bossWalkway ? '#53e5a0' : 'rgba(255,255,255,0.15)';
@@ -4479,10 +5166,22 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             ctx.restore();
           }
 
-          // Skugga under luftplattform
+          // Floating platforms get a neon underglow and a soft drop shadow, so
+          // they read as hovering rather than pasted onto the sky.
           if (!plat.isGround) {
-            ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.fillRect(platX + 4, platY + plat.height, plat.width - 8, 6);
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.shadowColor = plat.bossArena ? '#ff9f43' : '#2bee79';
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = plat.bossArena ? 'rgba(255,159,67,0.5)' : 'rgba(43,238,121,0.45)';
+            ctx.beginPath();
+            ctx.roundRect(platX + 10, platY + plat.height - 1, Math.max(0, plat.width - 20), 2.5, 2);
+            ctx.fill();
+            ctx.restore();
+            ctx.fillStyle = 'rgba(0,0,0,0.22)';
+            ctx.beginPath();
+            ctx.ellipse(platX + plat.width / 2, platY + plat.height + 7, plat.width * 0.42, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
       });
@@ -4561,23 +5260,25 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         }
       });
 
-      // Bullets - Bright Red color
-      ctx.globalCompositeOperation = 'source-over';
+      // Bullets - a glowing core with a short motion trail. Rapid-fire shots are
+      // icy cyan so the temporary weapon state is obvious at a glance.
+      ctx.globalCompositeOperation = 'lighter';
       game.bullets.forEach((b: any) => {
         const bx = b.x - game.scrollX;
-
-        // Outer red glow
-        ctx.fillStyle = '#FF0000';
-        ctx.beginPath(); ctx.arc(bx, b.y, b.radius * 2, 0, Math.PI * 2); ctx.fill();
-
-        // Inner bright red
-        ctx.fillStyle = '#FF4444';
-        ctx.beginPath(); ctx.arc(bx, b.y, b.radius * 1.3, 0, Math.PI * 2); ctx.fill();
-
-        // White center
+        const tint = b.tint || '#ff4d4d';
+        ctx.fillStyle = tint;
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        ctx.ellipse(bx - b.vx * 1.6, b.y - b.vy * 1.6, b.radius * 2.4, b.radius * 1.2, Math.atan2(b.vy, b.vx), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = tint;
+        ctx.beginPath(); ctx.arc(bx, b.y, b.radius * 1.45, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#FFFFFF';
-        ctx.beginPath(); ctx.arc(bx, b.y, b.radius * 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(bx, b.y, b.radius * 0.6, 0, Math.PI * 2); ctx.fill();
       });
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
 
       // Enemies - Detailed premium enemies with ground shadows and animations
       game.enemies.forEach(e => {
@@ -4738,7 +5439,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           ctx.arc(ex + ew * 0.7, ey + eh - 2 - trot, 4, 0, Math.PI * 2);
           ctx.fill();
 
-        } else { // Spike ball - Floating mechanical saw drone with pulsating core
+        } else if (e.type === 2) { // Spike ball - Floating mechanical saw drone
           const radius = ew / 2;
           const spin = Date.now() / 150;
           const pulse = (Math.sin(Date.now() / 100) + 1) / 2;
@@ -4803,7 +5504,171 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           ctx.arc(ex + radius - 2, ey + radius - 2, radius * 0.12, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
+        } else if (e.type === 3) {
+          // Sentry turret: a low armoured pod on a tripod, with a scanning eye
+          // that turns red just before it fires.
+          const cx = ex + ew / 2;
+          const cy = ey + eh * 0.52;
+          const winding = (e.shootTimer ?? 99) < 34;
+          const eyeColor = winding ? '#ff3b3b' : '#ffb703';
+
+          // Tripod legs
+          ctx.strokeStyle = '#2b3546';
+          ctx.lineWidth = 4;
+          ctx.lineCap = 'round';
+          [-1, 0, 1].forEach((leg) => {
+            ctx.beginPath();
+            ctx.moveTo(cx + leg * 4, cy + 8);
+            ctx.lineTo(cx + leg * 13, ey + eh - 1);
+            ctx.stroke();
+          });
+
+          // Armoured pod
+          const podGrad = ctx.createLinearGradient(cx, cy - 16, cx, cy + 14);
+          podGrad.addColorStop(0, '#5b6b85');
+          podGrad.addColorStop(0.55, '#303b4e');
+          podGrad.addColorStop(1, '#161d29');
+          ctx.fillStyle = podGrad;
+          ctx.beginPath();
+          ctx.roundRect(cx - 16, cy - 14, 32, 28, 9);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Shoulder plates + antenna
+          ctx.fillStyle = '#3d4a60';
+          ctx.beginPath();
+          ctx.roundRect(cx - 20, cy - 6, 7, 12, 3);
+          ctx.roundRect(cx + 13, cy - 6, 7, 12, 3);
+          ctx.fill();
+          ctx.strokeStyle = '#7d8ba3';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(cx + 11, cy - 14);
+          ctx.lineTo(cx + 15, cy - 24);
+          ctx.stroke();
+          ctx.fillStyle = '#ff4d4d';
+          ctx.beginPath();
+          ctx.arc(cx + 15, cy - 25, 2.4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Eye lens, glowing stronger while charging
+          ctx.save();
+          ctx.shadowColor = eyeColor;
+          ctx.shadowBlur = winding ? 18 : 8;
+          ctx.fillStyle = eyeColor;
+          ctx.beginPath();
+          ctx.arc(cx, cy, winding ? 6.2 : 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#1a0d05';
+          ctx.beginPath();
+          ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.arc(cx, cy, winding ? 9.5 : 8, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          // Charger beetle: wide, low, with a glowing horn and splayed legs.
+          const charging = (e.chargeTimer ?? 0) > 0;
+          const facing = e.velocityX >= 0 ? 1 : -1;
+          const cx = ex + ew / 2;
+          const baseY = ey + eh;
+          const shell = ctx.createLinearGradient(cx, ey + 8, cx, baseY);
+          if (charging) {
+            shell.addColorStop(0, '#ff7b5a');
+            shell.addColorStop(0.55, '#c0392b');
+            shell.addColorStop(1, '#5a120c');
+          } else {
+            shell.addColorStop(0, '#8b5cf6');
+            shell.addColorStop(0.5, '#6d28d9');
+            shell.addColorStop(1, '#2e1065');
+          }
+          // Legs
+          ctx.strokeStyle = '#1e1b4b';
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+          [-1, 1].forEach((side) => {
+            for (let i = 0; i < 2; i++) {
+              ctx.beginPath();
+              ctx.moveTo(cx + side * (6 + i * 8), ey + eh * 0.62);
+              ctx.lineTo(cx + side * (16 + i * 8), baseY - 2);
+              ctx.stroke();
+            }
+          });
+          // Shell
+          ctx.save();
+          ctx.shadowColor = charging ? '#ff5f3b' : '#7c3aed';
+          ctx.shadowBlur = charging ? 22 : 8;
+          ctx.fillStyle = shell;
+          ctx.beginPath();
+          ctx.ellipse(cx, ey + eh * 0.55, ew * 0.52, eh * 0.42, 0, Math.PI, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          // Shell seam + spots
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, ey + eh * 0.2);
+          ctx.lineTo(cx, ey + eh * 0.58);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,0.35)';
+          ctx.beginPath();
+          ctx.arc(cx - 7, ey + eh * 0.36, 2.4, 0, Math.PI * 2);
+          ctx.arc(cx + 7, ey + eh * 0.33, 2, 0, Math.PI * 2);
+          ctx.fill();
+          // Head + glowing horn pointing at the direction of travel
+          ctx.fillStyle = charging ? '#ffb4a2' : '#3b2b63';
+          ctx.beginPath();
+          ctx.arc(cx + facing * 14, ey + eh * 0.62, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+          ctx.fillStyle = charging ? '#fff1a8' : '#fbbf24';
+          ctx.beginPath();
+          ctx.moveTo(cx + facing * 20, ey + eh * 0.56);
+          ctx.lineTo(cx + facing * 34, ey + eh * 0.32);
+          ctx.lineTo(cx + facing * 18, ey + eh * 0.44);
+          ctx.closePath();
+          ctx.fill();
+          // Eyes
+          ctx.fillStyle = charging ? '#fff' : '#fca5a5';
+          ctx.beginPath();
+          ctx.arc(cx + facing * 17, ey + eh * 0.6, 2.4, 0, Math.PI * 2);
+          ctx.fill();
+          // Telegraph ring while winding up
+          if (charging) {
+            ctx.strokeStyle = 'rgba(255,90,60,0.7)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cx, ey + eh * 0.55, ew * 0.68 + Math.sin(Date.now() / 70) * 3, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
+      });
+
+      // Enemy projectiles: slow glowing orbs with a readable core.
+      game.enemyBullets.forEach((b: any) => {
+        const bx = b.x - game.scrollX;
+        ctx.save();
+        ctx.shadowColor = '#ff7a3d';
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = 'rgba(255, 122, 61, 0.85)';
+        ctx.beginPath();
+        ctx.arc(bx, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff3d6';
+        ctx.beginPath();
+        ctx.arc(bx, b.y, b.radius * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       });
 
       if (game.boss && game.boss.hp > 0) {
@@ -5272,47 +6137,220 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         const fw = f.width;
         const fh = f.height;
 
-        // Fish body: brushed silver with a lit top edge and a cool belly.
-        const bodyGrad = ctx.createLinearGradient(fx, fy, fx, fy + fh);
-        bodyGrad.addColorStop(0, '#ffffff');
-        bodyGrad.addColorStop(0.35, '#dee7f1');
-        bodyGrad.addColorStop(0.72, '#a7b7c9');
-        bodyGrad.addColorStop(1, '#e9f0f8');
+        // Golden koi collectible: warm body gradient, waving tail and a soft
+        // halo. It has to read instantly against bright skies and dark caves.
+        const fx2 = fx + fw / 2;
+        const fy2 = fy + fh / 2;
+        const swim = Math.sin(Date.now() / 260 + (f.hoverOffset || 0)) * 0.16;
+
+        ctx.save();
+        // Halo
+        const halo = ctx.createRadialGradient(fx2, fy2, 1, fx2, fy2, 26);
+        halo.addColorStop(0, 'rgba(255, 216, 120, 0.5)');
+        halo.addColorStop(0.5, 'rgba(255, 186, 72, 0.18)');
+        halo.addColorStop(1, 'rgba(255, 186, 72, 0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(fx2, fy2, 26, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.translate(fx2, fy2);
+        ctx.rotate(swim);
+
+        // Tail fin, a two-lobed fan that trails the body.
+        ctx.beginPath();
+        ctx.moveTo(-fw * 0.36, 0);
+        ctx.quadraticCurveTo(-fw * 0.72, -fh * 0.95, -fw * 0.95, -fh * 0.22);
+        ctx.quadraticCurveTo(-fw * 0.62, 0, -fw * 0.95, fh * 0.62);
+        ctx.quadraticCurveTo(-fw * 0.7, fh * 0.9, -fw * 0.36, 0);
+        ctx.closePath();
+        const tailGrad = ctx.createLinearGradient(-fw * 0.9, 0, -fw * 0.3, 0);
+        tailGrad.addColorStop(0, '#ffcf6b');
+        tailGrad.addColorStop(1, '#ff9d3c');
+        ctx.fillStyle = tailGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(120,60,10,0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Dorsal fin
+        ctx.fillStyle = '#ffbe55';
+        ctx.beginPath();
+        ctx.moveTo(-fw * 0.06, -fh * 0.52);
+        ctx.quadraticCurveTo(fw * 0.16, -fh * 1.05, fw * 0.3, -fh * 0.42);
+        ctx.closePath();
+        ctx.fill();
+
+        // Body
+        const bodyGrad = ctx.createLinearGradient(0, -fh * 0.6, 0, fh * 0.6);
+        bodyGrad.addColorStop(0, '#fff3c4');
+        bodyGrad.addColorStop(0.42, '#ffd166');
+        bodyGrad.addColorStop(0.8, '#ff9f1c');
+        bodyGrad.addColorStop(1, '#f0791a');
         ctx.fillStyle = bodyGrad;
-
-        // Fish body - ellipse shape
         ctx.beginPath();
-        ctx.ellipse(fx + fw / 2, fy + fh / 2, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, fw * 0.52, fh * 0.62, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(130,70,10,0.4)';
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+
+        // Belly highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.beginPath();
+        ctx.ellipse(fw * 0.06, fh * 0.22, fw * 0.3, fh * 0.18, -0.2, 0, Math.PI * 2);
         ctx.fill();
 
-        // Fish tail
-        ctx.fillStyle = '#b0bfd1';
+        // Eye
+        ctx.fillStyle = '#fffdf4';
         ctx.beginPath();
-        ctx.moveTo(fx, fy + fh / 2);
-        ctx.lineTo(fx - fh / 2, fy);
-        ctx.lineTo(fx - fh / 2, fy + fh);
-        ctx.closePath();
+        ctx.arc(fw * 0.26, -fh * 0.2, 3.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#241505';
+        ctx.beginPath();
+        ctx.arc(fw * 0.29, -fh * 0.2, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(fw * 0.3, -fh * 0.26, 0.7, 0, Math.PI * 2);
         ctx.fill();
 
-        // Fish eye
-        ctx.fillStyle = 'white';
+        // Scale arcs, subtle
+        ctx.strokeStyle = 'rgba(170,90,10,0.28)';
+        ctx.lineWidth = 0.9;
+        for (let s = 0; s < 2; s++) {
+          ctx.beginPath();
+          ctx.arc(-fw * 0.02 - s * 5, 0, fh * 0.42, -0.9, 0.9);
+          ctx.stroke();
+        }
+
+        // Tiny sparkle
+        const sp = (Math.sin(Date.now() / 320 + (f.hoverOffset || 0)) + 1) / 2;
+        ctx.fillStyle = `rgba(255,255,255,${0.35 + sp * 0.55})`;
         ctx.beginPath();
-        ctx.arc(fx + fw * 0.7, fy + fh * 0.4, 3, 0, Math.PI * 2);
+        ctx.arc(fw * 0.1, -fh * 0.5, 1.2 + sp, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // Power-up pickups. Each type has its own colour and glyph so it can be
+      // identified from a distance; a soft ground pad anchors it in the world.
+      game.pickups.forEach((pk: any) => {
+        if (pk.collected) return;
+        const pkx = pk.x - game.scrollX;
+        if (pkx < -60 || pkx > canvas.width + 60) return;
+        const pky = pk.y;
+        const cx = pkx + pk.width / 2;
+        const cy = pky + pk.height / 2;
+        const palette: Record<string, [string, string]> = {
+          shield: ['#7ee7ff', '#2b8bd8'],
+          magnet: ['#ffd166', '#e09b24'],
+          rapid: ['#ff9d6b', '#e85d2c'],
+          heart: ['#ff7fa2', '#d93a63'],
+          ammo: ['#a8b8ff', '#5566d8'],
+        };
+        const [light, dark] = palette[pk.type] || palette.shield;
+
+        // Ground glow pad
+        ctx.save();
+        ctx.globalAlpha = 0.5 + 0.2 * Math.sin(pk.hover * 2);
+        const pad = ctx.createRadialGradient(cx, pky + pk.height + 4, 0, cx, pky + pk.height + 4, 30);
+        pad.addColorStop(0, light);
+        pad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = pad;
+        ctx.beginPath();
+        ctx.ellipse(cx, pky + pk.height + 4, 30, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Orbiting sparkle ring
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(pk.spin * 0.4);
+        ctx.strokeStyle = light;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 8]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 24, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Capsule body
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.shadowColor = light;
+        ctx.shadowBlur = 18;
+        const body = ctx.createLinearGradient(0, -16, 0, 16);
+        body.addColorStop(0, light);
+        body.addColorStop(1, dark);
+        ctx.fillStyle = body;
+        ctx.beginPath();
+        ctx.roundRect(-16, -16, 32, 32, 11);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Glossy top highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
+        ctx.beginPath();
+        ctx.roundRect(-11, -12, 22, 9, 5);
         ctx.fill();
 
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(fx + fw * 0.7, fy + fh * 0.4, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Fish fin on top
-        ctx.fillStyle = '#cdd9e7';
-        ctx.beginPath();
-        ctx.moveTo(fx + fw / 2, fy);
-        ctx.lineTo(fx + fw / 2 + 5, fy - 5);
-        ctx.lineTo(fx + fw / 2 - 5, fy);
-        ctx.closePath();
-        ctx.fill();
+        // Glyphs, drawn from primitives (no font dependency on canvas). White
+        // on the saturated capsule reads far better than a dark cut-out.
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.shadowColor = 'rgba(8,16,30,0.55)';
+        ctx.shadowBlur = 3;
+        if (pk.type === 'shield') {
+          ctx.beginPath();
+          ctx.moveTo(0, -10);
+          ctx.lineTo(9, -6);
+          ctx.lineTo(9, 2);
+          ctx.quadraticCurveTo(9, 9, 0, 12);
+          ctx.quadraticCurveTo(-9, 9, -9, 2);
+          ctx.lineTo(-9, -6);
+          ctx.closePath();
+          ctx.fill();
+        } else if (pk.type === 'magnet') {
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(0, 1, 8, Math.PI, 0);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(-8, 1); ctx.lineTo(-8, 9);
+          ctx.moveTo(8, 1); ctx.lineTo(8, 9);
+          ctx.stroke();
+        } else if (pk.type === 'rapid') {
+          ctx.beginPath();
+          ctx.moveTo(3, -11);
+          ctx.lineTo(-7, 1);
+          ctx.lineTo(-1, 1);
+          ctx.lineTo(-3, 11);
+          ctx.lineTo(8, -2);
+          ctx.lineTo(2, -2);
+          ctx.closePath();
+          ctx.fill();
+        } else if (pk.type === 'heart') {
+          ctx.beginPath();
+          ctx.moveTo(0, 9);
+          ctx.bezierCurveTo(-13, 0, -8, -10, 0, -4);
+          ctx.bezierCurveTo(8, -10, 13, 0, 0, 9);
+          ctx.fill();
+        } else {
+          // Ammo crate: two stacked slugs
+          ctx.roundRect(-7, -8, 14, 16, 3);
+          ctx.fill();
+          ctx.fillStyle = light;
+          ctx.fillRect(-4, -5, 3, 10);
+          ctx.fillRect(1, -5, 3, 10);
+        }
+        ctx.restore();
       });
 
       // Draw coins - count collected
@@ -5328,7 +6366,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       if (overlapsGoal) {
         if (allFishesCollected && bossCleared) {
           game.running = false;
-          const perfectLevel = game.lives === lives;
+          // Compared against the lives this level started with, not the React
+          // copy captured when the loop was created (which never updated).
+          const perfectLevel = game.lives === (game.startLives ?? game.lives);
           const perfectBonus = perfectLevel ? 500 : 0;
           const noHitBonus = game.noHit ? 750 : 0;
           const nearMissBonus = (game.nearMisses || 0) * 25;
@@ -5336,12 +6376,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           game.score += 1000 + perfectBonus + noHitBonus + nearMissBonus;
           if (noHitBonus > 0) pushToast(game, 'OHIT! +750', '#2bee79');
           if (nearMissBonus > 0) pushToast(game, `${game.nearMisses} NÄSTAN! +${nearMissBonus}`, '#7ef7c2');
-          awardCoins(game, 15 + (perfectLevel ? 10 : 0) + (game.noHit ? 10 : 0));
+          awardCoins(game, 25 + (perfectLevel ? 15 : 0) + (game.noHit ? 15 : 0));
           grantXp(game, 150);
           persistRunSummary(game, perfectLevel);
           setTotalScore(game.score);
           AudioEngine.playLevelUp();
-          setLevelSummary({
+          const summary = {
             score: game.score,
             perfect: perfectLevel,
             noHit: !!game.noHit,
@@ -5349,7 +6389,13 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
             streak: game.bestStreak || 0,
             runLevel: game.runLevel || 1,
             coins: game.coinsThisLevel || 0,
-          });
+            boss: !!game.bossDefeatedInRun,
+            kills: game.killsThisLevel || 0,
+            time: Math.round((game.levelSeconds || 0)),
+            levelType: game.levelType,
+          };
+          setLevelSummary({ ...summary, grade: getGrade(summary) });
+          AudioEngine.playGrade();
           setShowLevelComplete(true);
         }
         else { game.showFishWarning = true; }
@@ -5482,6 +6528,14 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.restore();
       });
 
+      // Contact shadow keeps the cat glued to the platform instead of floating.
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.26)';
+      ctx.beginPath();
+      ctx.ellipse(px + pw / 2, py + ph + 3, pw * 0.46, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
       ctx.save();
       if (game.player.invincible) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
 
@@ -5491,7 +6545,10 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       const tailDir = isMovingRight ? -1 : 1;
       const tailWiggle = Math.sin(Date.now() / 150) * 5;
 
-      ctx.strokeStyle = game.player.color; ctx.lineWidth = 8; ctx.lineCap = 'round';
+      // Tail: dark silhouette first, then the body colour, then a thin highlight
+      // along the outer curve. Three strokes read as a rounded, lit tail.
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(6,10,22,0.55)'; ctx.lineWidth = 11;
       ctx.beginPath();
       ctx.moveTo(tailX, py + ph * 0.7);
       ctx.bezierCurveTo(
@@ -5500,22 +6557,78 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         tailX + tailDir * 15, py + ph * 0.2
       );
       ctx.stroke();
+      ctx.strokeStyle = game.player.color; ctx.lineWidth = 7.5;
+      ctx.beginPath();
+      ctx.moveTo(tailX, py + ph * 0.7);
+      ctx.bezierCurveTo(
+        tailX + tailDir * 25, py + ph * 0.8 + tailWiggle,
+        tailX + tailDir * 35, py + ph * 0.4 - tailWiggle,
+        tailX + tailDir * 15, py + ph * 0.2
+      );
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(tailX - 1.5, py + ph * 0.68);
+      ctx.bezierCurveTo(
+        tailX + tailDir * 22, py + ph * 0.76 + tailWiggle,
+        tailX + tailDir * 31, py + ph * 0.4 - tailWiggle,
+        tailX + tailDir * 13, py + ph * 0.22
+      );
+      ctx.stroke();
 
-      // Kropp (Ellipse) with neon rim light
+      // Body: radial gradient lit from the upper left, dark outline and a warm
+      // neon bloom. This is the face of the game, so it gets the most detail.
+      const bodyGrad = ctx.createRadialGradient(
+        px + pw * 0.32, py + ph * 0.26, 2,
+        px + pw * 0.52, py + ph * 0.56, pw * 0.95
+      );
+      bodyGrad.addColorStop(0, '#d7e0ff');
+      bodyGrad.addColorStop(0.3, '#93a9ff');
+      bodyGrad.addColorStop(0.66, game.player.color);
+      bodyGrad.addColorStop(1, '#2a3a86');
       ctx.save();
       ctx.shadowColor = game.player.color;
-      ctx.shadowBlur = 18;
-      ctx.fillStyle = game.player.color; ctx.beginPath(); ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
+      ctx.strokeStyle = 'rgba(8,12,28,0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
 
-      // Öron (Trianglar med rosa inneröra)
-      ctx.fillStyle = game.player.color;
-      ctx.beginPath(); ctx.moveTo(px + 4, py + 16); ctx.lineTo(px - 6, py - 12); ctx.lineTo(px + 22, py + 4); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(px + pw - 4, py + 16); ctx.lineTo(px + pw + 6, py - 12); ctx.lineTo(px + pw - 22, py + 4); ctx.closePath(); ctx.fill();
-      // Inneröra (söt rosa)
-      ctx.fillStyle = '#ff9ebb';
-      ctx.beginPath(); ctx.moveTo(px + 6, py + 14); ctx.lineTo(px - 2, py - 6); ctx.lineTo(px + 18, py + 6); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(px + pw - 6, py + 14); ctx.lineTo(px + pw + 2, py - 6); ctx.lineTo(px + pw - 18, py + 6); ctx.closePath(); ctx.fill();
+      // Belly patch gives the flat silhouette a sense of volume.
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath();
+      ctx.ellipse(px + pw * 0.5, py + ph * 0.68, pw * 0.27, ph * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Ears: rounded triangles with a dark edge and a soft inner ear.
+      const drawEar = (side: -1 | 1) => {
+        const baseX = px + (side === -1 ? 0.22 : 0.78) * pw;
+        const tipX = baseX + side * pw * 0.13;
+        ctx.beginPath();
+        ctx.moveTo(baseX - pw * 0.14, py + ph * 0.17);
+        ctx.quadraticCurveTo(tipX - side * pw * 0.02, py - ph * 0.14, tipX + side * pw * 0.02, py - ph * 0.15);
+        ctx.quadraticCurveTo(tipX + side * pw * 0.1, py - ph * 0.04, baseX + pw * 0.16, py + ph * 0.19);
+        ctx.closePath();
+        ctx.fillStyle = game.player.color;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(8,12,28,0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(baseX - pw * 0.07, py + ph * 0.13);
+        ctx.quadraticCurveTo(tipX, py - ph * 0.06, baseX + pw * 0.08, py + ph * 0.15);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,158,187,0.85)';
+        ctx.fill();
+      };
+      drawEar(-1);
+      drawEar(1);
 
       // Ögon med blink-logik & pupillriktning i rörelseriktningen
       const lookOffset = (game.player.facing || 1) * 2.5;
@@ -5598,6 +6711,45 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       ctx.fill();
       ctx.restore();
 
+      // Buff auras. Shield is a solid bubble; magnet and rapid fire get a thin
+      // coloured ring that pulses so the active timers are readable in-world.
+      if (game.shield) {
+        ctx.save();
+        const shieldPulse = 0.5 + 0.2 * Math.sin(Date.now() / 180);
+        ctx.strokeStyle = `rgba(126, 231, 255, ${shieldPulse + 0.25})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#7ee7ff';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.ellipse(px + pw / 2, py + ph / 2, pw * 0.86, ph * 0.66, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(126, 231, 255, ${0.06 + 0.03 * Math.sin(Date.now() / 220)})`;
+        ctx.fill();
+        ctx.restore();
+      }
+      if (game.buffs.magnet > 0) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 209, 102, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 7]);
+        ctx.lineDashOffset = -Date.now() / 90;
+        ctx.beginPath();
+        ctx.ellipse(px + pw / 2, py + ph / 2, pw * 0.95, ph * 0.75, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (game.buffs.rapid > 0) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 157, 107, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 5]);
+        ctx.lineDashOffset = Date.now() / 70;
+        ctx.beginPath();
+        ctx.ellipse(px + pw / 2, py + ph / 2, pw * 1.02, ph * 0.8, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // Draw Particles
       ctx.globalCompositeOperation = 'lighter';
       game.particles.forEach((p: any) => {
@@ -5625,7 +6777,9 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         const alpha = lifePct < 0.25 ? lifePct / 0.25 : 1;
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.translate(canvas.width / 2, 96 + i * 40);
+        // Below the HTML HUD and boss bar, so celebration banners never sit on
+        // top of the health bar during a boss fight.
+        ctx.translate(canvas.width / 2, canvas.height * 0.34 + i * 44);
         ctx.scale(0.9 + pop * 0.1, 0.9 + pop * 0.1);
         ctx.font = 'bold 26px "Outfit", sans-serif';
         ctx.textAlign = 'center';
@@ -5649,6 +6803,25 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.fillText(t.text, 0, 7);
         ctx.restore();
       });
+
+      // Cinematic grade: warm light from the sun side, cool shadow on the
+      // opposite edge. A single overlay pass ties all the hand-drawn elements
+      // into one palette without dimming the action.
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      const grade = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      if (isNight) {
+        grade.addColorStop(0, 'rgba(90,130,220,0.10)');
+        grade.addColorStop(0.55, 'rgba(20,30,80,0.02)');
+        grade.addColorStop(1, 'rgba(5,10,30,0.18)');
+      } else {
+        grade.addColorStop(0, 'rgba(255,236,190,0.055)');
+        grade.addColorStop(0.5, 'rgba(255,255,255,0)');
+        grade.addColorStop(1, 'rgba(10,45,95,0.07)');
+      }
+      ctx.fillStyle = grade;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
       // Vignette so the eye lands on the cat
       const vignette = ctx.createRadialGradient(
@@ -5698,7 +6871,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      if (applyScreenShake) ctx.restore();
+      ctx.restore();
 
       // Throttle React state updates to prevent infinite loops and improve performance
       if (Date.now() - game.lastStatUpdate > 250) {
@@ -5718,6 +6891,8 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           multiplier: game.multiplier || 1,
           streak: game.streak || 0,
           dashReady: game.player.dashCooldown <= 0,
+          dashPct: Math.max(0, 1 - game.player.dashCooldown / 45),
+          comboTimer: game.comboTimer || 0,
           noHit: !!game.noHit,
           nearMisses: game.nearMisses || 0,
           toasts: game.toasts || [],
@@ -5726,6 +6901,12 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           bossVisible: !!game.boss && game.boss.hp > 0 && Math.abs(game.boss.x - game.player.x) < canvas.width * 0.8,
           bossName: game.boss?.name || '',
           bossPhase: game.boss?.phase || 0,
+          xpIntoLevel: game.xpIntoLevel || 0,
+          shield: !!game.shield,
+          magnet: game.buffs?.magnet || 0,
+          rapid: game.buffs?.rapid || 0,
+          coinsRun: game.coinsThisLevel || 0,
+          goalDist: Math.max(0, Math.round((game.jerry.x - game.player.x) / 40)),
         });
         setLives(game.lives);
         setTotalScore(game.score);
@@ -5752,6 +6933,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
     animationId = requestAnimationFrame(loop);
 
     return () => {
+      game.running = false;
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       canvas.removeEventListener('mousedown', handleMouseDown);
@@ -5767,7 +6949,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLevel, isTouchDevice]);
+  }, [currentLevel, isTouchDevice, runId]);
 
   return (
     <div
@@ -5781,127 +6963,296 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
         style={{
           // Fill the available viewport height without ever exceeding the
           // screen width, so the stage never leaves a dead gap underneath.
-          height: 'min(78vh, calc((100vw - 2rem) * 9 / 16))',
+          height: isFullscreen ? '100dvh' : 'min(78vh, calc((100vw - 2rem) * 9 / 16))',
           boxShadow: '0 0 0 1px rgba(43,238,121,0.15), 0 30px 90px -30px rgba(0,0,0,0.9), 0 0 80px -30px rgba(43,238,121,0.5)',
         }}
       >
 
-        {/* HUD - modern overlay with reward feedback */}
-        <div className="absolute top-0 left-0 right-0 z-20 px-2 md:px-4 py-2 md:py-3 pointer-events-none">
+        {/* HUD — compact glass panels that stay readable over any scene */}
+        <div className="absolute top-0 left-0 right-0 z-20 px-1.5 py-1.5 pointer-events-none md:px-3 md:py-2.5">
           <div className="flex items-start justify-between gap-2">
-            {/* Left cluster: lives, ammo, dash */}
+            {/* LEFT: vitals, weapon, live buffs */}
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5 rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2.5 py-1.5">
-                {Array.from({ length: Math.max(lives, 0) }).map((_, i) => (
-                  <span key={i} className="material-symbols-outlined text-primary-red text-base" style={{ filter: 'drop-shadow(0 0 6px rgba(238,43,43,0.7))' }}>favorite</span>
-                ))}
-                {lives <= 0 && <span className="text-xs font-black text-primary-red">INGA LIV</span>}
+              <div className="hud-panel flex items-center gap-2 px-2.5 py-1.5">
+                <div className="flex items-center gap-[1px]">
+                  {/* Phones get a compact heart + count; wide screens show the
+                      full row of hearts. */}
+                  <span className="flex items-center gap-0.5 sm:hidden">
+                    <span className="material-symbols-outlined text-[15px] text-[#ff5f7a]">favorite</span>
+                    <span className="tabular text-xs font-black text-[#ff8fa3]">{Math.max(0, lives)}</span>
+                  </span>
+                  <span className="hidden items-center gap-[1px] sm:flex">
+                    {Array.from({ length: Math.min(6, Math.max(lives, 0)) }).map((_, i) => (
+                      <span
+                        key={i}
+                        className="material-symbols-outlined text-[15px] text-[#ff5f7a]"
+                        style={{ filter: 'drop-shadow(0 0 5px rgba(255,70,100,0.8))' }}
+                      >
+                        favorite
+                      </span>
+                    ))}
+                    {lives <= 0 && <span className="text-[10px] font-black text-primary-red">TOMT</span>}
+                    {lives > 6 && <span className="ml-1 text-[10px] font-black text-[#ff9db0]">+{lives - 6}</span>}
+                  </span>
+                </div>
+                {stats.shield && (
+                  <span className="hud-chip border-cyan-300/45 bg-cyan-300/10 text-cyan-200" title="Sköld aktiv">
+                    <span className="material-symbols-outlined text-[14px]">shield</span>
+                  </span>
+                )}
               </div>
+
               <div className="flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 transition-colors ${stats.ammo <= 0 ? 'border-primary-red/60 animate-pulse' : 'border-white/10'}`}>
-                  <span className="material-symbols-outlined text-[#ff8888] text-base">bolt</span>
-                  <span className={`text-sm font-black ${stats.ammo <= 0 ? 'text-primary-red' : 'text-white'}`}>{stats.ammo}</span>
+                <div className={`hud-chip ${stats.ammo <= 0 ? 'border-[#ff5f7a]/60 bg-[#ff5f7a]/10 animate-pulse' : ''}`}>
+                  <span className="material-symbols-outlined text-[15px] text-[#ff9d9d]">bolt</span>
+                  <span className={`tabular text-xs font-black ${stats.ammo <= 0 ? 'text-[#ff8b8b]' : 'text-white'}`}>{stats.ammo}</span>
+                  <span className="hidden text-[8px] font-black uppercase tracking-wider text-white/35 sm:inline">skott</span>
                 </div>
-                <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 transition-all ${stats.dashReady ? 'border-primary/50' : 'border-white/10 opacity-50'}`}>
-                  <span className="material-symbols-outlined text-primary text-base">bolt</span>
-                  <span className="text-sm font-black text-primary">DASH</span>
+                <div className={`hud-chip relative hidden overflow-hidden sm:inline-flex ${stats.dashReady ? 'border-primary/50 text-primary' : 'text-white/40'}`}>
+                  <span className="material-symbols-outlined text-[15px]">bolt</span>
+                  <span className="text-[10px] font-black tracking-wider">DASH</span>
+                  <span
+                    className="absolute inset-x-0 bottom-0 h-[2px] bg-primary transition-[width] duration-150"
+                    style={{ width: `${stats.dashPct * 100}%` }}
+                  />
                 </div>
               </div>
+
+              {(stats.magnet > 0 || stats.rapid > 0) && (
+                <div className="flex items-center gap-1">
+                  {stats.magnet > 0 && (
+                    <span className="hud-chip border-yellow-300/40 bg-yellow-300/10 text-yellow-200">
+                      <span className="material-symbols-outlined text-[13px]">attractions</span>
+                      <span className="tabular text-[10px] font-black">{Math.ceil(stats.magnet / 60)}s</span>
+                    </span>
+                  )}
+                  {stats.rapid > 0 && (
+                    <span className="hud-chip border-orange-300/40 bg-orange-300/10 text-orange-200">
+                      <span className="material-symbols-outlined text-[13px]">local_fire_department</span>
+                      <span className="tabular text-[10px] font-black">{Math.ceil(stats.rapid / 60)}s</span>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Center: level progress + XP bar */}
-            <div className="flex-1 max-w-md flex flex-col items-center gap-1.5">
-              <div className="w-full rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-3 py-1.5">
-                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1">
-                  <span className="text-primary">NIVÅ {currentLevel}</span>
-                  <span className="text-white/70">{stats.progress}%</span>
+            {/* CENTER: stage, progress, combo */}
+            <div className="flex-1 max-w-[420px] flex flex-col items-center gap-1.5">
+              <div className="hud-panel w-full px-2.5 py-2 md:px-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="tabular text-[13px] font-black leading-none text-white md:text-[15px]">NIVÅ {currentLevel}</span>
+                    <span
+                      className="hidden truncate text-[9px] font-black uppercase tracking-[0.2em] sm:inline"
+                      style={{ color: (LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).accent }}
+                    >
+                      {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).short}
+                    </span>
+                  </div>
+                  <span className="tabular text-[10px] font-black text-white/55">{stats.progress}%</span>
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary transition-[width] duration-300"
-                    style={{ width: `${stats.progress}%`, boxShadow: '0 0 10px rgba(43,238,121,0.7)' }}
-                  />
+                <div className="mt-1.5 flex h-1.5 gap-[2px] overflow-hidden rounded-full">
+                  {Array.from({ length: 14 }).map((_, i) => {
+                    const filled = stats.progress >= ((i + 1) / 14) * 100 - 0.5;
+                    return (
+                      <span
+                        key={i}
+                        className={`flex-1 rounded-[2px] transition-colors duration-300 ${filled ? 'bg-primary' : 'bg-white/12'}`}
+                        style={filled ? { boxShadow: '0 0 8px rgba(43,238,121,0.6)' } : undefined}
+                      />
+                    );
+                  })}
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[9px] font-black uppercase tracking-wider">
-                  <span className="text-white/50">Runnivå {stats.runLevel}</span>
-                  <span className="text-white/50">{stats.xp}/{stats.xpNeeded} XP</span>
-                </div>
-                <div className="mt-0.5 h-1 w-full rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-cyan-400/70 to-cyan-300 transition-[width] duration-300"
-                    style={{ width: `${Math.min(100, (stats.xp / Math.max(1, stats.xpNeeded)) * 100)}%` }}
-                  />
+                <div className="mt-1 hidden items-center justify-between gap-2 text-[8.5px] font-bold uppercase tracking-[0.14em] text-white/40 sm:flex">
+                  <span className="truncate">{(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}</span>
+                  <span className="tabular shrink-0">RANK {stats.runLevel} · {stats.xpIntoLevel}/{stats.xpNeeded} XP</span>
                 </div>
               </div>
-              {currentLevel % 5 === 0 && (
-                <div className="flex items-center gap-1.5 rounded-full border border-orange-400/35 bg-black/70 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-orange-200 shadow-[0_0_18px_rgba(255,140,60,0.18)]">
-                  <span aria-hidden="true">⚔</span>
-                  <span>Bossarena · boss {Math.floor(currentLevel / 5)}</span>
+
+              {stats.combo > 1 && (
+                <div className="w-full max-w-[260px] rounded-full bg-black/45 px-2.5 py-1 backdrop-blur-md">
+                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-[0.16em]">
+                    <span className="text-white/55">Combo</span>
+                    <span className="tabular text-primary">x{stats.combo}</span>
+                  </div>
+                  <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-primary to-yellow-300"
+                      style={{ width: `${Math.min(100, (stats.comboTimer / 150) * 100)}%` }}
+                    />
+                  </div>
                 </div>
               )}
               {stats.multiplier > 1 && (
                 <div
-                  className="rounded-full bg-black/55 backdrop-blur-md border border-yellow-400/40 px-3 py-1 text-xs font-black text-yellow-300 animate-pulse"
-                  style={{ boxShadow: '0 0 18px rgba(255,209,102,0.35)' }}
+                  className="rounded-full border border-yellow-400/40 bg-black/55 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-yellow-300 backdrop-blur-md"
+                  style={{ boxShadow: '0 0 18px rgba(255,209,102,0.28)' }}
                 >
-                  MULTIPLIKATOR x{stats.multiplier} · STREAK {stats.streak}
+                  Multiplikator x{stats.multiplier} · streak {stats.streak}
                 </div>
               )}
             </div>
 
-            {/* Right cluster: fish, coins, weather, controls */}
+            {/* RIGHT: resources and controls */}
             <div className="flex flex-col items-end gap-1.5">
               <div className="flex items-center gap-1.5">
-                <div className={`flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border px-2.5 py-1.5 ${stats.collectedCount === stats.totalFish ? 'border-primary/60' : 'border-white/10'}`}>
-                  <span className="material-symbols-outlined text-primary text-base">set_meal</span>
-                  <span className={`text-sm font-black ${stats.collectedCount === stats.totalFish ? 'text-primary' : 'text-white'}`}>
-                    {stats.collectedCount}/{stats.totalFish}
-                  </span>
+                <div
+                  className={`hud-chip ${
+                    stats.collectedCount === stats.totalFish ? 'border-primary/60 bg-primary/10 text-primary' : 'text-white'
+                  }`}
+                  title="Fiskar insamlade"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-primary">set_meal</span>
+                  <span className="tabular text-xs font-black">{stats.collectedCount}/{stats.totalFish}</span>
                 </div>
-                <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-yellow-500/20 px-2.5 py-1.5">
-                  <span className="material-symbols-outlined text-yellow-500 text-base">monetization_on</span>
-                  <span className="text-sm font-black text-yellow-400">{progress.coins}</span>
+                <div className="hud-chip hidden border-yellow-500/25 bg-yellow-500/10 sm:inline-flex">
+                  <span className="material-symbols-outlined text-[15px] text-yellow-400">monetization_on</span>
+                  <span className="tabular text-xs font-black text-yellow-300">{progress.coins}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 pointer-events-auto">
-                <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2.5 py-1.5">
-                  <span className={`material-symbols-outlined text-base ${stats.weather === 'SOLIGT' ? (stats.timeOfDay === 'DAY' ? 'text-orange-400' : 'text-yellow-400') : (stats.weather === 'REGNIGT' ? 'text-blue-400' : (stats.weather === 'SNÖIGT' ? 'text-white' : (stats.weather === 'DIMMIGT' ? 'text-gray-400' : 'text-purple-400')))}`}>
-                    {stats.weather === 'SOLIGT' ? (stats.timeOfDay === 'DAY' ? 'sunny' : 'nightlight') : (stats.weather === 'REGNIGT' ? 'rainy' : (stats.weather === 'SNÖIGT' ? 'ac_unit' : (stats.weather === 'DIMMIGT' ? 'foggy' : 'thunderstorm')))}
+
+              <div className="flex items-center gap-1.5">
+                <div className="hud-chip hidden sm:inline-flex" title="Väder">
+                  <span
+                    className={`material-symbols-outlined text-[15px] ${
+                      stats.weather === 'SOLIGT'
+                        ? stats.timeOfDay === 'DAY' ? 'text-orange-400' : 'text-yellow-400'
+                        : stats.weather === 'REGNIGT' ? 'text-blue-400'
+                        : stats.weather === 'SNÖIGT' ? 'text-white'
+                        : stats.weather === 'DIMMIGT' ? 'text-gray-300' : 'text-purple-400'
+                    }`}
+                  >
+                    {stats.weather === 'SOLIGT'
+                      ? stats.timeOfDay === 'DAY' ? 'sunny' : 'nightlight'
+                      : stats.weather === 'REGNIGT' ? 'rainy'
+                      : stats.weather === 'SNÖIGT' ? 'ac_unit'
+                      : stats.weather === 'DIMMIGT' ? 'foggy' : 'thunderstorm'}
                   </span>
-                  {stats.noHit && <span className="material-symbols-outlined text-primary text-base" title="Inga skador">verified</span>}
-                  {stats.nearMisses > 0 && <span className="text-[10px] font-black text-white/70">{stats.nearMisses}</span>}
+                  {stats.noHit && (
+                    <span className="material-symbols-outlined text-[13px] text-primary" title="Inga skador ännu">verified</span>
+                  )}
+                  {stats.nearMisses > 0 && (
+                    <span className="tabular text-[9px] font-black text-white/60" title="Nästan-träffar">{stats.nearMisses}</span>
+                  )}
                 </div>
+
                 {stats.levelType === 'Speed Run' && (
-                  <div className="flex items-center gap-1 rounded-xl bg-black/55 backdrop-blur-md border border-orange-400/30 px-2.5 py-1.5">
-                    <span className="material-symbols-outlined text-orange-300 text-base">timer</span>
-                    <span className="text-sm font-black text-orange-300">{Math.ceil(stats.timer)}s</span>
+                  <div className="hud-chip hidden border-orange-400/35 bg-orange-400/10 sm:inline-flex">
+                    <span className="material-symbols-outlined text-[15px] text-orange-300">timer</span>
+                    <span className="tabular text-xs font-black text-orange-200">{Math.ceil(stats.timer)}s</span>
                   </div>
                 )}
-                <button
-                  onClick={toggleMuted}
-                  aria-pressed={isMuted}
-                  aria-label={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
-                  title={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
-                  className={`flex items-center rounded-xl bg-black/55 backdrop-blur-md border px-2 py-1.5 hover:scale-110 transition-transform ${
-                    isMuted ? 'border-primary-red/40' : 'border-white/10'
-                  }`}
-                >
-                  <span className={`material-symbols-outlined text-base ${isMuted ? 'text-primary-red' : 'text-white/70'}`}>
-                    {isMuted ? 'volume_off' : 'volume_up'}
-                  </span>
-                </button>
-                <button
-                  onClick={toggleFullscreen}
-                  className="flex items-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 hover:scale-110 transition-transform"
-                >
-                  <span className="material-symbols-outlined text-base text-white/70">
-                    {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
-                  </span>
-                </button>
+
+                <div className="pointer-events-auto flex items-center gap-1">
+                  <button
+                    onClick={toggleMuted}
+                    aria-pressed={isMuted}
+                    aria-label={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
+                    title={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
+                    className={`hud-icon hidden sm:inline-flex ${isMuted ? 'text-primary-red' : 'text-white/65'}`}
+                  >
+                    <span className="material-symbols-outlined text-[17px]">
+                      {isMuted ? 'volume_off' : 'volume_up'}
+                    </span>
+                  </button>
+                  <button onClick={togglePause} aria-label="Pausa" title="Pausa (Esc)" className="hud-icon text-white/65">
+                    <span className="material-symbols-outlined text-[17px]">pause</span>
+                  </button>
+                  <button onClick={toggleFullscreen} aria-label="Helskärm" title="Helskärm" className="hud-icon hidden text-white/65 sm:inline-flex">
+                    <span className="material-symbols-outlined text-[17px]">
+                      {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Level intro card: a two-second cinematic title so each stage feels
+            like a place rather than a continuation of the last one. */}
+        {showIntro && !showLevelComplete && !isPaused && (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-4">
+            <div className="level-intro-card animate-level-intro text-center">
+              <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary/80">
+                Kapitel {Math.ceil(currentLevel / 5)} · {(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}
+              </p>
+              <h2 className="mt-2 text-5xl font-black uppercase leading-none tracking-tight text-white md:text-6xl">
+                Nivå {currentLevel}
+              </h2>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <span
+                  className="h-1 w-8 rounded-full"
+                  style={{ background: (LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).accent }}
+                />
+                <p className="text-[11px] font-black uppercase tracking-[0.28em] text-white/75">
+                  {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).label}
+                </p>
+                <span
+                  className="h-1 w-8 rounded-full"
+                  style={{ background: (LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).accent }}
+                />
+              </div>
+              <p className="mt-2 text-xs font-medium text-white/50">
+                {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).goal}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Pause menu */}
+        {isPaused && !showLevelComplete && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
+            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-6 shadow-[0_30px_90px_-30px_rgba(0,0,0,0.9)]">
+              <p className="eyebrow text-primary">Spelet pausat</p>
+              <h2 className="mt-1 font-display text-3xl font-black uppercase tracking-tight text-white">Andhämtning</h2>
+              <p className="mt-1 text-xs font-medium text-white/45">
+                Nivå {currentLevel} · {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).label} · {stats.progress}% klart
+              </p>
+
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Liv', value: lives, tone: 'text-[#ff7f9b]' },
+                  { label: 'Fiskar', value: `${stats.collectedCount}/${stats.totalFish}`, tone: 'text-primary' },
+                  { label: 'Poäng', value: stats.score.toLocaleString(), tone: 'text-white' },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2 py-2 text-center">
+                    <p className={`tabular text-base font-black ${s.tone}`}>{s.value}</p>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-white/35">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 flex flex-col gap-2">
+                <button onClick={togglePause} className="btn-primary w-full py-3.5 text-sm">
+                  <span className="material-symbols-outlined text-lg">play_arrow</span>
+                  Fortsätt
+                </button>
+                <button onClick={restartCurrentLevel} className="btn-ghost w-full py-3 text-xs uppercase tracking-wider">
+                  <span className="material-symbols-outlined text-base">restart_alt</span>
+                  Starta om nivån
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={toggleMuted} className="btn-ghost py-3 text-xs uppercase tracking-wider">
+                    <span className="material-symbols-outlined text-base">{isMuted ? 'volume_off' : 'volume_up'}</span>
+                    {isMuted ? 'Ljud av' : 'Ljud på'}
+                  </button>
+                  <button
+                    onClick={() => { togglePause(); onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0); }}
+                    className="btn-ghost py-3 text-xs uppercase tracking-wider"
+                  >
+                    <span className="material-symbols-outlined text-base">logout</span>
+                    Avsluta
+                  </button>
+                </div>
+              </div>
+
+              <p className="mt-4 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-white/25">
+                Esc eller P för att pausa
+              </p>
+            </div>
+          </div>
+        )}
 
         {progress.settings.debugOverlay && (
           <div className="absolute top-8 left-0 right-0 z-20 text-[10px] text-white/70 bg-black/40 px-3 py-1 pointer-events-none">
@@ -5911,7 +7262,7 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
 
         {/* Boss HP Bar - Large prominent bar shown during boss fights */}
         {stats.bossVisible && stats.bossHp > 0 && stats.bossMaxHp > 0 && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 pointer-events-none w-full max-w-xs px-3">
+          <div className="absolute top-[86px] left-1/2 z-20 w-full max-w-xs -translate-x-1/2 px-3 pointer-events-none md:top-[96px]">
             <div
               className="rounded-xl bg-black/80 backdrop-blur-md border border-red-500/40 px-3 py-2 text-center"
               style={{ boxShadow: '0 0 24px rgba(255,50,30,0.4)' }}
@@ -5944,6 +7295,28 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           </div>
         )}
 
+        {/* Objective pill: one always-current sentence that tells the player what
+            to do next, so a run never stalls on a full fish counter. */}
+        {!showLevelComplete && !isPaused && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center px-2">
+            <div className="hud-panel flex items-center gap-2 px-3 py-1.5">
+              <span className="material-symbols-outlined text-[15px] text-primary">
+                {stats.bossHp > 0 ? 'swords' : stats.collectedCount >= stats.totalFish ? 'near_me' : 'set_meal'}
+              </span>
+              <span className="max-w-[60vw] truncate text-[10px] font-black uppercase tracking-[0.14em] text-white/80">
+                {stats.bossHp > 0
+                  ? `Besegra ${stats.bossName || 'bossen'}`
+                  : stats.collectedCount >= stats.totalFish
+                    ? `Spring till Jerry · ${stats.goalDist} m`
+                    : `Samla ${Math.max(0, stats.totalFish - stats.collectedCount)} fiskar`}
+              </span>
+              {stats.collectedCount >= stats.totalFish && (
+                <span className="tabular rounded-md bg-primary/15 px-1.5 py-0.5 text-[9px] font-black text-primary">MÅL</span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Mobile Touch Controls Overlay */}
         {isTouchDevice && (
           <div className="absolute inset-0 pointer-events-none z-10">
@@ -5963,55 +7336,108 @@ export const PlayingView: React.FC<{ onEnd: (score: number, fishesCollected: num
           style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
         />
 
-        {showLevelComplete && (
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 animate-fade-in-up z-50 overflow-y-auto">
-            <span className="material-symbols-outlined text-4xl md:text-7xl text-primary mb-1 md:mb-3" style={{ filter: 'drop-shadow(0 0 20px rgba(43,238,121,0.6))' }}>stars</span>
-            {/* Inter, not Outfit: Outfit draws the ring of "Å" so small it reads as "Ä".
-                tracking-normal + leading-tight need the space between the words. */}
-            <h2 className="display-title mb-3 text-center font-sans text-2xl leading-tight tracking-normal md:mb-5 md:text-4xl">Nivå {currentLevel} klar!</h2>
+        {showLevelComplete && levelSummary && (() => {
+          const grade = levelSummary.grade || 'C';
+          const gradeTone = grade === 'S'
+            ? { ring: '#ffd166', text: '#ffe6a3', glow: 'rgba(255,209,102,0.55)' }
+            : grade === 'A'
+              ? { ring: '#2bee79', text: '#b6ffd4', glow: 'rgba(43,238,121,0.5)' }
+              : grade === 'B'
+                ? { ring: '#7ee7ff', text: '#c9f6ff', glow: 'rgba(126,231,255,0.45)' }
+                : { ring: '#a8b3c7', text: '#e2e8f0', glow: 'rgba(168,179,199,0.35)' };
+          const stars = grade === 'S' || grade === 'A' ? 3 : grade === 'B' ? 2 : 1;
+          return (
+            <div className="absolute inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
+              <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#101a2c] to-[#060b16] p-5 shadow-[0_40px_120px_-40px_rgba(0,0,0,1)] md:p-7">
+                {/* Accent light behind the grade */}
+                <div
+                  className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full blur-3xl"
+                  style={{ background: gradeTone.glow, opacity: 0.35 }}
+                  aria-hidden="true"
+                />
 
-            {levelSummary && (
-              <div className="w-full max-w-md grid grid-cols-2 gap-2 mb-4 md:mb-6">
-                <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-3 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Poäng</p>
-                  <p className="text-3xl md:text-4xl font-black text-primary tabular-nums">{levelSummary.score.toLocaleString()}</p>
+                <div className="relative flex items-start gap-4">
+                  <div
+                    className="flex size-20 shrink-0 flex-col items-center justify-center rounded-2xl border-2 md:size-24"
+                    style={{ borderColor: gradeTone.ring, boxShadow: `0 0 32px ${gradeTone.glow}`, background: 'rgba(255,255,255,0.03)' }}
+                  >
+                    <span className="font-display text-4xl font-black leading-none md:text-5xl" style={{ color: gradeTone.text }}>{grade}</span>
+                    <span className="mt-1 text-[8px] font-black uppercase tracking-[0.2em] text-white/40">Betyg</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="eyebrow text-primary">Nivå {currentLevel} klar</p>
+                    <h2 className="mt-1 font-display text-2xl font-black uppercase leading-tight tracking-tight text-white md:text-3xl">
+                      Snyggt jobbat!
+                    </h2>
+                    <div className="mt-1.5 flex items-center gap-1">
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="material-symbols-outlined text-lg"
+                          style={{
+                            color: i < stars ? gradeTone.ring : 'rgba(255,255,255,0.12)',
+                            filter: i < stars ? `drop-shadow(0 0 6px ${gradeTone.glow})` : 'none',
+                          }}
+                        >
+                          star
+                        </span>
+                      ))}
+                      <span className="ml-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                        {(LEVEL_MODE_META[levelSummary.levelType] || LEVEL_MODE_META.Classic).short} · {levelSummary.time}s
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Mynt</p>
-                  <p className="text-lg font-black text-yellow-400 tabular-nums">+{levelSummary.coins}</p>
+
+                <div className="relative mt-5 grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Poäng', value: levelSummary.score.toLocaleString(), tone: 'text-primary' },
+                    { label: 'Mynt', value: `+${levelSummary.coins}`, tone: 'text-yellow-300' },
+                    { label: 'Fiender', value: levelSummary.kills || 0, tone: 'text-orange-200' },
+                    { label: 'Bästa streak', value: levelSummary.streak, tone: 'text-cyan-300' },
+                    { label: 'Nästan', value: levelSummary.nearMisses, tone: 'text-[#7ef7c2]' },
+                    { label: 'Runnivå', value: levelSummary.runLevel, tone: 'text-white' },
+                  ].map((s) => (
+                    <div key={s.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2 py-2.5 text-center">
+                      <p className={`tabular text-lg font-black leading-none ${s.tone}`}>{s.value}</p>
+                      <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-white/35">{s.label}</p>
+                    </div>
+                  ))}
                 </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Runnivå</p>
-                  <p className="text-lg font-black text-cyan-300 tabular-nums">{levelSummary.runLevel}</p>
-                </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Bästa streak</p>
-                  <p className="text-lg font-black text-primary tabular-nums">{levelSummary.streak}</p>
-                </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Nästan-träffar</p>
-                  <p className="text-lg font-black text-[#7ef7c2] tabular-nums">{levelSummary.nearMisses}</p>
-                </div>
-                <div className={`col-span-2 flex items-center justify-center gap-2 rounded-xl p-2.5 border ${levelSummary.noHit ? 'bg-primary/10 border-primary/40' : 'bg-white/5 border-white/10'}`}>
-                  <span className={`material-symbols-outlined text-base ${levelSummary.noHit ? 'text-primary' : 'text-white/40'}`}>verified</span>
-                  <span className={`text-xs font-black uppercase tracking-wider ${levelSummary.noHit ? 'text-primary' : 'text-white/50'}`}>
-                    {levelSummary.noHit ? 'Utan skada +750' : levelSummary.perfect ? 'Perfekt nivå +500' : 'Nivå avslutad'}
+
+                <div className={`relative mt-3 flex items-center justify-center gap-2 rounded-2xl border p-2.5 ${levelSummary.noHit ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-white/[0.03]'}`}>
+                  <span className={`material-symbols-outlined text-base ${levelSummary.noHit ? 'text-primary' : 'text-white/35'}`}>verified</span>
+                  <span className={`text-[11px] font-black uppercase tracking-wider ${levelSummary.noHit ? 'text-primary' : 'text-white/45'}`}>
+                    {levelSummary.noHit ? 'Flawless · utan skada +750' : levelSummary.perfect ? 'Perfekt nivå +500' : 'Nivå avklarad'}
                   </span>
                 </div>
-              </div>
-            )}
 
-            <div className="flex flex-col sm:flex-row gap-2 md:gap-3 w-full max-w-xs md:max-w-md">
-              <button onClick={startNextLevel} className="bg-primary text-[#112218] px-8 md:px-12 py-3.5 md:py-4 rounded-full font-black text-base md:text-xl hover:scale-105 active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(43,238,121,0.35)] border-2 border-primary/80 w-full">
-                {currentLevel % 5 === 4
-                  ? `BOSSKAMP · NIVÅ ${currentLevel + 1}`
-                  : `NÄSTA NIVÅ (${currentLevel + 1})`}
-              </button>
-              <button onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)} className="bg-white/10 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold hover:bg-white/20 transition-all text-sm md:text-base w-full border border-white/20">Avsluta</button>
+                <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
+                  <button onClick={startNextLevel} className="btn-primary w-full py-3.5 text-sm md:text-base">
+                    <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                    {currentLevel % 5 === 4 ? `Bosskamp · nivå ${currentLevel + 1}` : `Nästa nivå · ${currentLevel + 1}`}
+                  </button>
+                  <button
+                    onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)}
+                    className="btn-ghost w-full py-3.5 text-xs uppercase tracking-wider sm:w-auto sm:px-6"
+                  >
+                    Avsluta
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
+
+      {/* Phones: the stage is letterboxed in portrait, so offer the landscape
+          player directly instead of hiding fullscreen in the HUD. */}
+      {isMobile && !showLevelComplete && !isFullscreen && (
+        <button onClick={toggleFullscreen} className="btn-ghost mt-1 px-4 py-2 text-[10px] uppercase tracking-wider">
+          <span className="material-symbols-outlined text-base text-primary">screen_rotation</span>
+          Spela i landskap
+        </button>
+      )}
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
@@ -6078,155 +7504,197 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const handleBuy = (type: 'maxAmmo' | 'jumpPower' | 'speed', cost: number) => {
     if (buyUpgrade(type, cost)) {
       setMessage('Uppgradering köpt!');
+      AudioEngine.playPowerup();
     } else {
       setMessage('Inte tillräckligt med mynt!');
     }
-    setTimeout(() => setMessage(''), 2000);
+    setTimeout(() => setMessage(''), 2200);
   };
 
-  return (
-    <div className="w-full max-w-2xl mx-auto animate-fade-in-up py-8 md:py-12 px-4">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-3">
-          <span className="material-symbols-outlined text-primary text-sm">store</span>            <span className="text-primary text-[10px] font-bold uppercase tracking-widest">Butik</span>
-        </div>
-        <h1 className="display-title text-3xl md:text-4xl">Uppgraderingar</h1>
-        <p className="mt-2 text-white/70 text-sm">Förbättra din katt med neon-teknologi</p>
-      </div>
+  const upgrades: Array<{
+    type: 'maxAmmo' | 'jumpPower' | 'speed';
+    icon: string;
+    title: string;
+    desc: string;
+    cost: number;
+    value: string;
+    gain: string;
+    tone: string;
+    ring: string;
+  }> = [
+    {
+      type: 'maxAmmo', icon: 'battery_charging_full', title: 'Ammokapacitet',
+      desc: 'Fler skott innan du måste hitta en ammolåda.',
+      cost: 500, value: `${progress.upgrades.maxAmmo.toFixed(0)} skott`, gain: '+1 skott',
+      tone: 'text-sky-300', ring: 'border-sky-400/25 bg-sky-400/10',
+    },
+    {
+      type: 'jumpPower', icon: 'rocket_launch', title: 'Hoppkraft',
+      desc: 'Högre hopp och längre dubbelhopp – når nya plattformar.',
+      cost: 750, value: progress.upgrades.jumpPower.toFixed(1), gain: '+0.5 kraft',
+      tone: 'text-emerald-300', ring: 'border-emerald-400/25 bg-emerald-400/10',
+    },
+    {
+      type: 'speed', icon: 'speed', title: 'Sprint',
+      desc: 'Snabbare markfart så du hinner före farorna.',
+      cost: 1000, value: progress.upgrades.speed.toFixed(1), gain: '+0.5 fart',
+      tone: 'text-violet-300', ring: 'border-violet-400/25 bg-violet-400/10',
+    },
+  ];
 
-      {/* Coins Display */}
-      <div className="glass-card rounded-2xl p-4 mb-6 border border-white/10">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center">
-              <span className="material-symbols-outlined text-yellow-500">monetization_on</span>
-            </div>
+  return (
+    <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-6 md:py-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow text-primary">Butik</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Uppgraderingar</h1>
+          <p className="mt-2 max-w-md text-sm text-white/50">Bygg din katt starkare med mynt du samlar i banorna.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/25 bg-yellow-400/10 px-3.5 py-2">
+            <span className="material-symbols-outlined text-xl text-yellow-300">monetization_on</span>
             <div>
-              <p className="text-white/60 text-xs uppercase tracking-widest">Dina mynt</p>
-              <p className="text-white text-xl font-black">{progress.coins}</p>
+              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-yellow-200/60">Dina mynt</p>
+              <p className="tabular text-lg font-black leading-none text-yellow-200">{progress.coins}</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-white/60 text-xs uppercase tracking-widest">Nivå</p>
-            <p className="text-white text-xl font-black">{progress.level}</p>
+          <div className="flex items-center gap-2 rounded-2xl border border-primary/25 bg-primary/10 px-3.5 py-2">
+            <span className="material-symbols-outlined text-xl text-primary">military_tech</span>
+            <div>
+              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">Rank</p>
+              <p className="tabular text-lg font-black leading-none text-primary">{progress.level}</p>
+            </div>
           </div>
         </div>
       </div>
 
       {message && (
-        <div className="mb-4 p-3 rounded-xl bg-primary/20 border border-primary/30 text-center text-white font-medium">
+        <div className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-center text-xs font-bold text-primary animate-fade-in-up">
           {message}
         </div>
       )}
 
-      {/* Skill Tree Light */}
-      <div className="glass-card rounded-2xl p-5 mb-6 border border-primary/20 bg-primary/5">
-        <h3 className="text-white font-bold uppercase mb-2">Förmåner</h3>
-        <p className="text-white/60 text-xs mb-3">Passiva förmåner låses upp automatiskt med din nivå.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-          <div className={`rounded-lg p-3 border ${progress.level >= 5 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 5: Smidiga tassar (+fart)</div>
-          <div className={`rounded-lg p-3 border ${progress.level >= 10 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 10: Ammoeffektiv</div>
-          <div className={`rounded-lg p-3 border ${progress.level >= 15 ? 'border-primary/40 bg-primary/10 text-white' : 'border-white/10 text-white/50'}`}>Nivå 15: Vaksintinkt</div>
-        </div>
+      <div className="mt-6 grid gap-3 md:grid-cols-3">
+        {upgrades.map((u) => {
+          const affordable = progress.coins >= u.cost;
+          return (
+            <div key={u.type} className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
+              <div className={`flex size-11 items-center justify-center rounded-xl border ${u.ring}`}>
+                <span className={`material-symbols-outlined text-xl ${u.tone}`}>{u.icon}</span>
+              </div>
+              <h3 className="mt-3 font-display text-lg font-black uppercase tracking-tight text-white">{u.title}</h3>
+              <p className="mt-1 min-h-[2.5rem] text-[11px] leading-relaxed text-white/45">{u.desc}</p>
+              <div className="mt-2 flex items-center justify-between rounded-lg border border-white/[0.07] bg-black/25 px-2.5 py-1.5">
+                <span className="text-[8px] font-black uppercase tracking-wider text-white/35">Nuvarande</span>
+                <span className="tabular text-xs font-black text-white/85">{u.value}</span>
+              </div>
+              <button
+                onClick={() => handleBuy(u.type, u.cost)}
+                disabled={!affordable}
+                className={`mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-black uppercase tracking-wider transition-all ${
+                  affordable
+                    ? 'border-primary/40 bg-primary/15 text-primary hover:bg-primary/25'
+                    : 'cursor-not-allowed border-white/10 bg-white/5 text-white/30'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">monetization_on</span>
+                {u.cost}
+                <span className="text-[9px] font-bold text-white/35">· {u.gain}</span>
+              </button>
+              {!affordable && (
+                <p className="mt-1.5 text-center text-[8px] font-bold uppercase tracking-wider text-white/25">
+                  Saknas {u.cost - progress.coins} mynt
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Upgrades */}
-      <div className="space-y-4">
-        {/* Max Ammo */}<div className="card-premium card-premium-hover p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-400/10">
-              <span className="material-symbols-outlined text-blue-400">battery_full</span>
-            </div>
-            <div className="flex-1">
-              <h3 className="text-white font-bold uppercase">Max ammunition</h3>
-              <p className="text-white/50 text-xs">Fler skott innan omladdning</p>
-              <p className="tabular mt-1 text-sm font-bold text-white/85">Nuvarande: {progress.upgrades.maxAmmo.toFixed(0)}</p>
-              <button
-                onClick={() => handleBuy('maxAmmo', 500)}
-                disabled={progress.coins < 500}
-                className="mt-2.5 rounded-lg border border-yellow-500/25 bg-yellow-500/10 px-4 py-2 text-sm font-bold text-yellow-300 transition-all duration-200 hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                Köp (500 mynt)
-              </button>
-            </div>
-          </div>
+      {/* Perks */}
+      <div className="mt-5 rounded-2xl border border-white/10 bg-[#0a1220]/72 p-4 backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-base text-primary">auto_awesome</span>
+          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Passiva förmåner</h2>
         </div>
-
-        {/* Jump Power */}<div className="card-premium card-premium-hover p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10">
-              <span className="material-symbols-outlined text-green-400">rocket</span>
-            </div>
-            <div className="flex-1">
-              <h3 className="text-white font-bold uppercase">Hoppkraft</h3>
-              <p className="text-white/50 text-xs">Högre hopp</p>
-              <p className="tabular mt-1 text-sm font-bold text-white/85">Nuvarande: {progress.upgrades.jumpPower.toFixed(1)}</p>
-              <button
-                onClick={() => handleBuy('jumpPower', 750)}
-                disabled={progress.coins < 750}
-                className="mt-2.5 rounded-lg border border-yellow-500/25 bg-yellow-500/10 px-4 py-2 text-sm font-bold text-yellow-300 transition-all duration-200 hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                Köp (750 mynt)
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Speed */}<div className="card-premium card-premium-hover p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/10">
-              <span className="material-symbols-outlined text-purple-400">speed</span>
-            </div>
-            <div className="flex-1">
-              <h3 className="text-white font-bold uppercase">Fart</h3>
-              <p className="text-white/50 text-xs">Snabbare rörelse</p>
-              <p className="tabular mt-1 text-sm font-bold text-white/85">Nuvarande: {progress.upgrades.speed.toFixed(1)}</p>
-              <button
-                onClick={() => handleBuy('speed', 1000)}
-                disabled={progress.coins < 1000}
-                className="mt-2.5 rounded-lg border border-yellow-500/25 bg-yellow-500/10 px-4 py-2 text-sm font-bold text-yellow-300 transition-all duration-200 hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                Köp (1000 mynt)
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Skins */}
-      <div className="glass-card rounded-2xl p-5 mt-6 border border-white/10">
-        <h3 className="text-white font-bold uppercase mb-3">Skinn</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.entries(SKINS).map(([id, skin]) => {
-            const unlocked = progress.unlockedSkins.includes(id);
-            const equipped = progress.equippedSkin === id;
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {[
+            { level: 5, label: 'Smidiga tassar', desc: '+fart', icon: 'directions_run' },
+            { level: 10, label: 'Ammoeffektiv', desc: '+2 skott per nivå', icon: 'bolt' },
+            { level: 15, label: 'Vaksintinkt', desc: 'Startar med sköld', icon: 'shield' },
+          ].map((perk) => {
+            const unlocked = progress.level >= perk.level;
             return (
-              <div key={id} className={`rounded-xl p-3 border ${equipped ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-black/20'}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-white font-bold text-sm">{skin.name}</p>
-                    <p className="text-white/50 text-xs">{unlocked ? 'Upplåst' : skin.unlockHint}</p>
-                  </div>
-                  <div className="w-7 h-7 rounded-full border border-white/20" style={{ backgroundColor: skin.color }} />
+              <div
+                key={perk.level}
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
+                  unlocked ? 'border-primary/30 bg-primary/[0.08]' : 'border-white/[0.07] bg-black/20'
+                }`}
+              >
+                <span className={`material-symbols-outlined text-base ${unlocked ? 'text-primary' : 'text-white/25'}`}>
+                  {unlocked ? perk.icon : 'lock'}
+                </span>
+                <div className="min-w-0">
+                  <p className={`truncate text-[11px] font-black ${unlocked ? 'text-white' : 'text-white/35'}`}>{perk.label}</p>
+                  <p className="truncate text-[9px] text-white/30">Nivå {perk.level} · {perk.desc}</p>
                 </div>
-                <button
-                  onClick={() => unlocked && equipSkin(id)}
-                  disabled={!unlocked || equipped}
-                  className="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white disabled:opacity-40"
-                >
-                  {equipped ? 'Aktiv' : 'Utrusta'}
-                </button>
               </div>
             );
           })}
         </div>
       </div>
 
-      <button
-        onClick={onBack}
-        className="w-full mt-6 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 transition-colors"
-      >
-        <span className="material-symbols-outlined">arrow_back</span>
+      {/* Skins */}
+      <div className="mt-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Skinn</h2>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">
+            {progress.unlockedSkins.length}/{Object.keys(SKINS).length} upplåsta
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {Object.entries(SKINS).map(([id, skin]) => {
+            const unlocked = progress.unlockedSkins.includes(id);
+            const equipped = progress.equippedSkin === id;
+            return (
+              <button
+                key={id}
+                onClick={() => unlocked && equipSkin(id)}
+                disabled={!unlocked}
+                className={`group relative overflow-hidden rounded-2xl border p-3 text-left transition-all ${
+                  equipped
+                    ? 'border-primary/50 bg-primary/[0.1]'
+                    : unlocked
+                      ? 'border-white/10 bg-white/[0.035] hover:border-white/20'
+                      : 'cursor-not-allowed border-white/[0.06] bg-black/20'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/20"
+                    style={{
+                      background: `radial-gradient(circle at 35% 30%, ${skin.color}, #0b1020 160%)`,
+                      boxShadow: equipped ? `0 0 18px ${skin.color}88` : 'none',
+                    }}
+                  >
+                    {!unlocked && <span className="material-symbols-outlined text-[14px] text-white/70">lock</span>}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className={`truncate text-xs font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{skin.name}</p>
+                    <p className="truncate text-[9px] text-white/30">{unlocked ? (equipped ? 'Aktivt skinn' : 'Upplåst') : skin.unlockHint}</p>
+                  </div>
+                  {equipped && (
+                    <span className="material-symbols-outlined text-base text-primary">check_circle</span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <button onClick={onBack} className="btn-ghost mt-6 w-full py-3 text-xs uppercase tracking-wider">
+        <span className="material-symbols-outlined text-base">arrow_back</span>
         Tillbaka
       </button>
     </div>
@@ -6236,134 +7704,148 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 /** QUESTS VIEW **/
 export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, claimQuestReward } = useProgress();
+  const xpInto = progress.xp % 1000;
+  const xpLeft = 1000 - xpInto;
+  const dailyDone = progress.dailyQuests.filter((q) => q.completed).length;
+  const weeklyDone = progress.weeklyQuests.filter((q) => q.completed).length;
+
+  const renderQuest = (
+    quest: { id: string; description: string; target: number; current: number; reward: number; completed: boolean; claimed: boolean },
+    tone: 'daily' | 'weekly'
+  ) => {
+    const accent = tone === 'daily' ? 'primary' : 'yellow';
+    const pct = Math.min(100, (quest.current / Math.max(1, quest.target)) * 100);
+    return (
+      <div
+        key={quest.id}
+        className={`rounded-2xl border p-3.5 transition-colors ${
+          quest.completed
+            ? tone === 'daily' ? 'border-primary/30 bg-[#0c1f18]/85' : 'border-yellow-400/30 bg-[#1d1a0b]/85'
+            : 'border-white/[0.08] bg-[#0a1220]/75'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${quest.completed ? (tone === 'daily' ? 'bg-primary/20' : 'bg-yellow-400/20') : 'bg-white/[0.05]'}`}>
+            <span className={`material-symbols-outlined text-lg ${quest.completed ? (tone === 'daily' ? 'text-primary' : 'text-yellow-300') : 'text-white/30'}`}>
+              {quest.completed ? 'check_circle' : tone === 'daily' ? 'radio_button_unchecked' : 'pending'}
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`truncate text-xs font-bold ${quest.completed ? 'text-white' : 'text-white/70'}`}>{quest.description}</p>
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full ${tone === 'daily' ? 'bg-gradient-to-r from-primary/60 to-primary' : 'bg-gradient-to-r from-yellow-500/60 to-yellow-300'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="tabular shrink-0 text-[9px] font-black text-white/40">{Math.min(quest.current, quest.target)}/{quest.target}</span>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className={`tabular text-xs font-black ${tone === 'daily' ? 'text-yellow-300' : 'text-yellow-200'}`}>+{quest.reward}</p>
+            {quest.completed && !quest.claimed && (
+              <button
+                onClick={() => claimQuestReward(quest.id)}
+                className={`mt-1 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${
+                  tone === 'daily' ? 'bg-primary text-[#06210f]' : 'bg-yellow-300 text-[#241a02]'
+                }`}
+              >
+                Hämta
+              </button>
+            )}
+            {quest.claimed && (
+              <span className="mt-1 inline-block rounded-lg bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-white/35">
+                Hämtad
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="w-full max-w-2xl mx-auto animate-fade-in-up py-8 md:py-12 px-4">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-3">
-          <span className="material-symbols-outlined text-primary text-sm">task_alt</span>            <span className="text-primary text-[10px] font-bold uppercase tracking-widest">Uppdrag</span>
+    <div className="mx-auto w-full max-w-4xl animate-fade-in-up px-4 py-6 md:py-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow text-primary">Uppdrag</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Dagligt & veckans</h1>
+          <p className="mt-2 max-w-md text-sm text-white/50">Utmaningar som roterar automatiskt. Hämta belöningen när du är klar.</p>
         </div>
-        <h1 className="display-title text-3xl md:text-4xl">Dagliga + Veckans</h1>
-        <p className="mt-2 text-white/70 text-sm">Gratis utmaningar som roterar automatiskt</p>
-      </div>
-
-      {/* XP Progress */}
-      <div className="glass-card rounded-2xl p-4 mb-6 border border-white/10">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-primary">military_tech</span>
-            <span className="text-white font-bold">Nivå {progress.level}</span>
-          </div>            <span className="text-white/60 text-sm">{progress.xp} XP</span>
-        </div>
-        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary rounded-full transition-all"
-            style={{ width: `${(progress.xp % 1000) / 10}%` }}
-          />
-        </div>
-        <p className="text-white/40 text-xs mt-2">{1000 - (progress.xp % 1000)} XP till nästa nivå</p>
-      </div>
-
-      {/* Daily Quests */}
-      <h3 className="text-white/80 font-bold uppercase tracking-wider text-xs mb-3">Dagliga</h3>
-      <div className="space-y-4">
-        {progress.dailyQuests.map((quest) => (
-          <div
-            key={quest.id}
-            className={`glass-card rounded-2xl p-5 border ${quest.completed ? 'border-primary/30 bg-primary/5' : 'border-white/10'}`}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${quest.completed ? 'bg-primary/20' : 'bg-white/5'}`}>
-                <span className={`material-symbols-outlined ${quest.completed ? 'text-primary' : 'text-white/40'}`}>
-                  {quest.completed ? 'check_circle' : 'radio_button_unchecked'}
-                </span>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-white font-bold">{quest.description}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full"
-                      style={{ width: `${Math.min(100, (quest.current / quest.target) * 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-white/60 text-xs">{quest.current}/{quest.target}</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-yellow-500 font-black">+{quest.reward} 🪙</p>
-                {quest.completed && !quest.claimed && (
-                  <button
-                    onClick={() => claimQuestReward(quest.id)}
-                    className="mt-1 px-3 py-1 rounded-lg bg-primary text-[#112218] text-xs font-bold"
-                  >
-                    Hämta
-                  </button>
-                )}
-                {quest.claimed && (
-                  <span className="mt-1 px-3 py-1 rounded-lg bg-white/10 text-white/40 text-xs font-bold">Hämtad</span>
-                )}
-              </div>
-            </div>
+        <div className="flex items-center gap-2 rounded-2xl border border-primary/25 bg-primary/[0.08] px-4 py-2.5">
+          <span className="material-symbols-outlined text-xl text-primary">military_tech</span>
+          <div>
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">Rank {progress.level}</p>
+            <p className="tabular text-sm font-black leading-none text-white">{progress.xp} XP</p>
           </div>
-        ))}
-      </div>
-
-      {/* Weekly Quests */}
-      <h3 className="text-white/80 font-bold uppercase tracking-wider text-xs mt-6 mb-3">Veckans</h3>
-      <div className="space-y-4">
-        {progress.weeklyQuests.map((quest) => (
-          <div
-            key={quest.id}
-            className={`glass-card rounded-2xl p-5 border ${quest.completed ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/10'}`}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${quest.completed ? 'bg-yellow-500/20' : 'bg-white/5'}`}>
-                <span className={`material-symbols-outlined ${quest.completed ? 'text-yellow-400' : 'text-white/40'}`}>
-                  {quest.completed ? 'workspace_premium' : 'pending'}
-                </span>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-white font-bold">{quest.description}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(100, (quest.current / quest.target) * 100)}%` }} />
-                  </div>
-                  <span className="text-white/60 text-xs">{quest.current}/{quest.target}</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-yellow-500 font-black">+{quest.reward} 🪙</p>
-                {quest.completed && !quest.claimed && (
-                  <button onClick={() => claimQuestReward(quest.id)} className="mt-1 px-3 py-1 rounded-lg bg-yellow-400 text-[#1a1f2a] text-xs font-black">
-                    Hämta
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Achievements + skins */}
-      <div className="glass-card rounded-2xl p-5 border border-white/10 mt-6">
-        <h3 className="text-white font-bold uppercase tracking-wider text-xs mb-3">Prestationer & skinn</h3>
-        <p className="text-white/60 text-xs mb-3">Upplåst: {progress.achievements.length} prestationer, {progress.unlockedSkins.length} skinn</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {Object.entries(SKINS).map(([id, skin]) => (
-            <div key={id} className={`rounded-xl border p-3 ${progress.unlockedSkins.includes(id) ? 'border-primary/30 bg-primary/5' : 'border-white/10 bg-black/20'}`}>
-              <p className="text-white font-bold text-sm">{skin.name}</p>
-              <p className="text-white/60 text-xs">{progress.unlockedSkins.includes(id) ? 'Unlocked' : skin.unlockHint}</p>
-            </div>
-          ))}
         </div>
       </div>
 
-      <button
-        onClick={onBack}
-        className="w-full mt-6 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 transition-colors"
-      >
-        <span className="material-symbols-outlined">arrow_back</span>
+      <div className="mt-4 rounded-2xl border border-white/10 bg-[#0a1220]/72 p-3 backdrop-blur-md">
+        <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-white/40">
+          <span>Nästa rank</span>
+          <span className="tabular">{xpLeft} XP kvar</span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full rounded-full bg-gradient-to-r from-primary/60 via-primary to-cyan-300" style={{ width: `${xpInto / 10}%` }} />
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-2 lg:grid-cols-2 lg:gap-4">
+        <section>
+          <div className="flex items-center justify-between">
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Dagliga</h2>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{dailyDone}/{progress.dailyQuests.length} klara</span>
+          </div>
+          <div className="mt-2.5 space-y-2">
+            {progress.dailyQuests.map((q) => renderQuest(q, 'daily'))}
+          </div>
+
+          <div className="mt-5 flex items-center justify-between">
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Veckans</h2>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{weeklyDone}/{progress.weeklyQuests.length} klara</span>
+          </div>
+          <div className="mt-2.5 space-y-2">
+            {progress.weeklyQuests.map((q) => renderQuest(q, 'weekly'))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-[#0a1220]/72 p-4 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-base text-primary">workspace_premium</span>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Prestationer</h2>
+          </div>
+          <p className="mt-1 text-[10px] text-white/35">
+            {progress.achievements.length} upplåsta · {progress.unlockedSkins.length}/{Object.keys(SKINS).length} skinn
+          </p>
+          <div className="mt-3 space-y-1.5">
+            {[
+              { id: 'flawless', label: 'Flawless', desc: 'Klara en nivå utan skada', icon: 'verified' },
+              { id: 'combo_10', label: 'Combo x10', desc: 'Kedja 10 aktioner', icon: 'local_fire_department' },
+              { id: 'enemy_60', label: 'Jägare', desc: 'Besegra 60 fiender', icon: 'swords' },
+              { id: 'fish_300', label: 'Fiskare', desc: 'Samla 300 fiskar', icon: 'set_meal' },
+              { id: 'boss_3', label: 'Bossjägare', desc: 'Besegra 3 bossar', icon: 'swords' },
+              { id: 'streak_20', label: 'Streak x20', desc: 'Håll en streak på 20', icon: 'bolt' },
+              { id: 'close_call', label: 'Nära ögat', desc: '5 nästan-träffar i en runda', icon: 'warning' },
+            ].map((a) => {
+              const unlocked = progress.achievements.includes(a.id);
+              return (
+                <div key={a.id} className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 ${unlocked ? 'border-primary/30 bg-primary/[0.07]' : 'border-white/[0.06] bg-black/20'}`}>
+                  <span className={`material-symbols-outlined text-base ${unlocked ? 'text-primary' : 'text-white/20'}`}>{unlocked ? a.icon : 'lock'}</span>
+                  <div className="min-w-0">
+                    <p className={`truncate text-[11px] font-black ${unlocked ? 'text-white' : 'text-white/35'}`}>{a.label}</p>
+                    <p className="truncate text-[9px] text-white/25">{a.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      <button onClick={onBack} className="btn-ghost mt-6 w-full py-3 text-xs uppercase tracking-wider">
+        <span className="material-symbols-outlined text-base">arrow_back</span>
         Tillbaka
       </button>
     </div>

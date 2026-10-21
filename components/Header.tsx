@@ -22,6 +22,14 @@ const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-[#04060f]/70 backdrop-blur-2xl">
+      {/* Hairline XP progress under the bar: quiet, but it makes every fish and
+          coin visibly move the account forward. */}
+      <div className="absolute bottom-0 left-0 z-10 h-[2px] w-full bg-white/[0.04]" aria-hidden="true">
+        <div
+          className="h-full bg-gradient-to-r from-primary/70 via-primary to-cyan-300 transition-[width] duration-500"
+          style={{ width: `${Math.max(2, (progress.xp % 1000) / 10)}%`, boxShadow: '0 0 10px rgba(43,238,121,0.6)' }}
+        />
+      </div>
       {/* Hairline highlight along the top edge. */}
       <div className="h-px w-full bg-gradient-to-r from-transparent via-white/15 to-transparent" />
 

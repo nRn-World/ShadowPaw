@@ -10,6 +10,9 @@ const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppVie
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.START);
+  // Level the next run starts on. 1 for a normal run, higher for the daily
+  // challenge card on the start screen.
+  const [startLevel, setStartLevel] = useState(1);
   const [lastScore, setLastScore] = useState(0);
   const [lastFishesCollected, setLastFishesCollected] = useState(0);
   const menuMusicRef = useRef<HTMLAudioElement | null>(null);
@@ -75,7 +78,14 @@ const App: React.FC = () => {
   // Memoised so a progress update (coins from every fish) does not hand the
   // views a new callback identity on every render.
   const handleNavigate = useCallback((view: AppView) => {
+    // Every menu entry into the game starts a fresh run from level 1.
+    if (view === AppView.PLAYING) setStartLevel(1);
     setCurrentView(view);
+  }, []);
+
+  const handleStart = useCallback((level: number = 1) => {
+    setStartLevel(level);
+    setCurrentView(AppView.PLAYING);
   }, []);
 
   const handleGameEnd = useCallback((score: number, fishesCollected: number) => {
@@ -87,7 +97,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case AppView.START:
-        return <StartMenuView onNavigate={handleNavigate} />;
+        return <StartMenuView onNavigate={handleNavigate} onStart={handleStart} />;
       case AppView.SETTINGS:
         return <SettingsView onBack={() => handleNavigate(AppView.START)} />;
       case AppView.HOW_TO_PLAY:
@@ -95,7 +105,7 @@ const App: React.FC = () => {
       case AppView.LEADERBOARD:
         return <LeaderboardView onBack={() => handleNavigate(AppView.START)} onPlay={() => handleNavigate(AppView.PLAYING)} />;
       case AppView.PLAYING:
-        return <PlayingView onEnd={handleGameEnd} />;
+        return <PlayingView key={startLevel} startLevel={startLevel} onEnd={handleGameEnd} />;
       case AppView.GAME_OVER:
         return <GameOverView score={lastScore} fishesCollected={lastFishesCollected} onRestart={() => handleNavigate(AppView.PLAYING)} onMenu={() => handleNavigate(AppView.START)} />;
       case AppView.SHOP:
@@ -120,9 +130,43 @@ const App: React.FC = () => {
 
       <Header currentView={currentView} onNavigate={handleNavigate} />
 
-      <main className="relative z-10 flex-1 flex flex-col items-center px-4 pb-16">
+      <main className="relative z-10 flex-1 flex flex-col items-center px-4 pb-24 md:pb-16">
         {renderView()}
       </main>
+
+      {/* Mobile tab bar: the desktop nav is hidden below md, so this is the
+          only way to move between the shop, quests and leaderboard on a phone. */}
+      {currentView !== AppView.PLAYING && currentView !== AppView.GAME_OVER && (
+        <nav
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-white/[0.07] bg-[#04060f]/90 backdrop-blur-2xl md:hidden"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          aria-label="Huvudnavigering"
+        >
+          <div className="mx-auto flex max-w-md items-stretch justify-around px-2 py-1.5">
+            {[
+              { view: AppView.START, icon: 'home', label: 'Hem' },
+              { view: AppView.SHOP, icon: 'store', label: 'Butik' },
+              { view: AppView.QUESTS, icon: 'task_alt', label: 'Uppdrag' },
+              { view: AppView.LEADERBOARD, icon: 'emoji_events', label: 'Topplista' },
+            ].map((item) => {
+              const active = currentView === item.view;
+              return (
+                <button
+                  key={item.view}
+                  onClick={() => handleNavigate(item.view)}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex min-w-16 flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 transition-colors ${
+                    active ? 'bg-primary/10 text-primary' : 'text-white/45 active:bg-white/5'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
     </div>
   );
 };
