@@ -222,6 +222,46 @@ export const StartMenuView: React.FC<{
             <span className="mt-1 block paw-title">Paw</span>
           </h1>
 
+          <div className="mt-5 lg:hidden">
+          <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
+            {/* Attract mode: a looping slice of real play. The cat sprints
+                through the park, hops a crate, shoots a drone, crosses the
+                rainy night and takes down a boss, so the first screen shows
+                what the game *is* before the visitor presses anything. */}
+            <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
+              <div className="absolute inset-0">
+                <LiveRunDemo />
+              </div>
+              <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
+                <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
+                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">Live run</span>
+              </div>
+              <button
+                onClick={() => onStart(1)}
+                className="absolute inset-0 z-10 flex items-end justify-end p-3"
+                aria-label="Spela Shadow Paw"
+              >
+                <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
+                  <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
+                  Spela själv
+                </span>
+              </button>
+            </div>
+
+            <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Nästa mål</p>
+                  <p className="text-xs font-bold text-white/85">Kapitel {Math.ceil(storyLevel / 5)} · nivå {storyLevel}</p>
+                </div>
+                <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
+                  Rank {progress.level}
+                </span>
+              </div>
+            </div>
+          </div>
+          </div>
+
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
             Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40+ handbyggda
             kapitel – bygg streaken, besegra bossarna och ta tillbaka natten.
@@ -270,6 +310,7 @@ export const StartMenuView: React.FC<{
 
         {/* ----------------------------------------------------- hero panel */}
         <div className="relative">
+          <div className="hidden lg:block">
           <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
             {/* Attract mode: a looping slice of real play. The cat sprints
                 through the park, hops a crate, shoots a drone, crosses the
@@ -306,6 +347,7 @@ export const StartMenuView: React.FC<{
                 </span>
               </div>
             </div>
+          </div>
           </div>
 
           {/* Career stats */}
