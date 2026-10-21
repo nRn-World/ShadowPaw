@@ -1,14 +1,18 @@
-# 🐱 Shadow Paw: Neon Mission
+<p align="center">
+  <img src="public/icon-512.png" width="120" height="120" alt="Shadow Paw app icon" />
+</p>
 
-A fast-paced neon platformer adventure where you play as a cat on a mission to save the day!
+<h1 align="center">Shadow Paw: Neon Mission</h1>
 
-[🚀 **Play Now on Vercel**](https://shadow-paw-game.vercel.app)
+<p align="center">A fast-paced neon platformer adventure where you play as a cat on a mission to save the day!</p>
+
+<p align="center">
+  <a href="https://shadow-paw-game.vercel.app"><strong>🚀 Play Now on Vercel</strong></a>
+</p>
 
 [![Vercel Deployment](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://shadow-paw-game.vercel.app)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/RobinAyzit/Shadow-Paw?style=social)](https://github.com/RobinAyzit/Shadow-Paw/stargazers)
-
-</div>
 
 ---
 

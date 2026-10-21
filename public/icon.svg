@@ -1,48 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shadow Paw">
   <defs>
-    <!-- Neon glow filters -->
-    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <linearGradient id="sp-bg" x1="0" y1="0" x2="0.55" y2="1">
+      <stop offset="0" stop-color="#16294f"/>
+      <stop offset="0.55" stop-color="#0a1226"/>
+      <stop offset="1" stop-color="#050810"/>
+    </linearGradient>
+    <radialGradient id="sp-halo" cx="50%" cy="92%" r="62%">
+      <stop offset="0" stop-color="#2bee79" stop-opacity="0.42"/>
+      <stop offset="0.5" stop-color="#2bee79" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#2bee79" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sp-fur" x1="0.18" y1="0" x2="0.86" y2="1">
+      <stop offset="0" stop-color="#7f9dff"/>
+      <stop offset="0.45" stop-color="#4a6cf0"/>
+      <stop offset="1" stop-color="#2a46b8"/>
+    </linearGradient>
+    <filter id="sp-soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="22"/>
     </filter>
-    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+    <filter id="sp-eyeglow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
       <feMerge>
-        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="b"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
   </defs>
-  
-  <!-- Background circle with neon effect -->
-  <circle cx="256" cy="256" r="240" fill="#0a0a1a" stroke="#00ffff" stroke-width="8" filter="url(#neonGlow)"/>
-  <circle cx="256" cy="256" r="225" fill="none" stroke="#ff00ff" stroke-width="3" opacity="0.6" filter="url(#softGlow)"/>
-  
-  <!-- Cat paw pad (main pad) -->
-  <ellipse cx="256" cy="310" rx="65" ry="55" fill="#1a1a2e" stroke="#00ffff" stroke-width="4" filter="url(#softGlow)"/>
-  
-  <!-- Cat paw toes -->
-  <ellipse cx="150" cy="180" rx="40" ry="50" fill="#1a1a2e" stroke="#00ffff" stroke-width="4" filter="url(#softGlow)" transform="rotate(-20, 150, 180)"/>
-  <ellipse cx="220" cy="130" rx="35" ry="45" fill="#1a1a2e" stroke="#00ffff" stroke-width="4" filter="url(#softGlow)" transform="rotate(-8, 220, 130)"/>
-  <ellipse cx="292" cy="130" rx="35" ry="45" fill="#1a1a2e" stroke="#00ffff" stroke-width="4" filter="url(#softGlow)" transform="rotate(8, 292, 130)"/>
-  <ellipse cx="362" cy="180" rx="40" ry="50" fill="#1a1a2e" stroke="#00ffff" stroke-width="4" filter="url(#softGlow)" transform="rotate(20, 362, 180)"/>
-  
-  <!-- Inner paw pads -->
-  <ellipse cx="150" cy="180" rx="25" ry="32" fill="#2d2d4a" transform="rotate(-20, 150, 180)"/>
-  <ellipse cx="220" cy="130" rx="22" ry="28" fill="#2d2d4a" transform="rotate(-8, 220, 130)"/>
-  <ellipse cx="292" cy="130" rx="22" ry="28" fill="#2d2d4a" transform="rotate(8, 292, 130)"/>
-  <ellipse cx="362" cy="180" rx="25" ry="32" fill="#2d2d4a" transform="rotate(20, 362, 180)"/>
-  <ellipse cx="256" cy="310" rx="45" ry="38" fill="#2d2d4a"/>
-  
-  <!-- Highlight accents -->
-  <ellipse cx="256" cy="400" rx="80" ry="20" fill="#ff00ff" opacity="0.3" filter="url(#softGlow)"/>
-  
-  <!-- Star/sparkle decorations -->
-  <g fill="#ffff00" filter="url(#softGlow)">
-    <polygon points="80,80 85,95 100,95 88,105 93,120 80,110 67,120 72,105 60,95 75,95" transform="scale(0.6) translate(100, 80)"/>
-    <polygon points="80,80 85,95 100,95 88,105 93,120 80,110 67,120 72,105 60,95 75,95" transform="scale(0.5) translate(750, 120)"/>
+
+  <rect width="512" height="512" rx="112" fill="url(#sp-bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#sp-halo)"/>
+  <ellipse cx="256" cy="372" rx="160" ry="46" fill="#2bee79" opacity="0.2" filter="url(#sp-soft)"/>
+
+  <path d="M132 224 L146 84 L240 170 Z" fill="url(#sp-fur)" stroke="#16255e" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M380 224 L366 84 L272 170 Z" fill="url(#sp-fur)" stroke="#16255e" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M160 198 L168 124 L214 176 Z" fill="#e88fb4" opacity="0.9"/>
+  <path d="M352 198 L344 124 L298 176 Z" fill="#e88fb4" opacity="0.9"/>
+
+  <path d="M256 130 C338 130 392 186 392 272 C392 360 336 424 256 424 C176 424 120 360 120 272 C120 186 174 130 256 130 Z" fill="url(#sp-fur)" stroke="#16255e" stroke-width="8"/>
+  <ellipse cx="190" cy="220" rx="46" ry="28" fill="#ffffff" opacity="0.08"/>
+
+  <g filter="url(#sp-eyeglow)">
+    <ellipse cx="204" cy="272" rx="30" ry="27" fill="#2bee79"/>
+    <ellipse cx="308" cy="272" rx="30" ry="27" fill="#2bee79"/>
   </g>
+  <ellipse cx="204" cy="273" rx="10" ry="21" fill="#06210f"/>
+  <ellipse cx="308" cy="273" rx="10" ry="21" fill="#06210f"/>
+  <circle cx="196" cy="262" r="7" fill="#ffffff" opacity="0.92"/>
+  <circle cx="300" cy="262" r="7" fill="#ffffff" opacity="0.92"/>
+
+  <path d="M256 324 L277 341 L235 341 Z" fill="#ff9ecb"/>
+  <path d="M256 341 V357 M256 357 Q236 372 218 358 M256 357 Q276 372 294 358" stroke="#0b1a3a" stroke-width="8" fill="none" stroke-linecap="round"/>
+
 </svg>
