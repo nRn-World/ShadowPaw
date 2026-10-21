@@ -2831,7 +2831,10 @@ export const PlayingView: React.FC<{
       screenShake: 0,
       hitStop: 0,
         miniEvent: {
-          type: level > 2 ? ['WIND', 'LOW_GRAVITY', 'BLACKOUT'][Math.floor(seededRandom(level * 13.5) * 3)] : 'NONE',
+          // No blackout event: dimming the whole stage for a few seconds read as
+          // a broken lamp rather than a mechanic, and daytime levels must stay
+          // daylight. Wind and low gravity still vary the feel of a stage.
+          type: level > 2 ? (['WIND', 'LOW_GRAVITY'] as const)[Math.floor(seededRandom(level * 13.5) * 2)] : 'NONE',
           active: false,
           timer: 540,
           duration: 260,
@@ -7648,11 +7651,6 @@ export const PlayingView: React.FC<{
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
         ctx.fillStyle = `rgba(232, 242, 255, ${wash * f})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-
-      if (game.miniEvent.active && game.miniEvent.type === 'BLACKOUT') {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
