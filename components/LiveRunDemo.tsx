@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useProgress } from '../context/ProgressContext';
+import { drawCatSprite } from './catSprite';
 
 /**
  * Attract mode for the start screen: a short, looping "live run" that shows
@@ -290,7 +291,6 @@ const drawDrone = (ctx: CanvasRenderingContext2D, x: number, y: number, alive: b
 };
 
 const drawCat = (ctx: CanvasRenderingContext2D, x: number, y: number, t: number, jumping: boolean, shooting: boolean) => {
-  const run = Math.sin(t * 14);
   ctx.save();
   ctx.translate(x, y);
   // Feet stay planted at the origin, so scaling up does not lift the cat off
@@ -304,104 +304,7 @@ const drawCat = (ctx: CanvasRenderingContext2D, x: number, y: number, t: number,
   ctx.beginPath();
   ctx.ellipse(2, -lift - 1, 17 - Math.min(8, lift * 0.1), 3.4, 0, 0, Math.PI * 2);
   ctx.fill();
-
-  // Tail
-  ctx.strokeStyle = '#2f4fbf';
-  ctx.lineWidth = 4;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(-13, -12);
-  ctx.quadraticCurveTo(-25, -16 + run * 3, -22, -26 + run * 2);
-  ctx.stroke();
-
-  // Legs
-  ctx.strokeStyle = '#3656c9';
-  ctx.lineWidth = 4.5;
-  const legSwing = jumping ? 4 : run * 5;
-  ctx.beginPath();
-  ctx.moveTo(-5, -10);
-  ctx.lineTo(-5 - legSwing, 0);
-  ctx.moveTo(6, -10);
-  ctx.lineTo(6 + legSwing, 0);
-  ctx.stroke();
-
-  // Body + head
-  ctx.fillStyle = '#4169E1';
-  ctx.beginPath();
-  ctx.ellipse(0, -15, 14, 13, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(6, -26, 12.5, 11.5, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Ears
-  ctx.beginPath();
-  ctx.moveTo(-2, -35);
-  ctx.lineTo(0, -44);
-  ctx.lineTo(6, -36);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(11, -35);
-  ctx.lineTo(16, -43);
-  ctx.lineTo(17, -33);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#e88fb4';
-  ctx.beginPath();
-  ctx.moveTo(1, -36);
-  ctx.lineTo(2, -41);
-  ctx.lineTo(5, -36);
-  ctx.closePath();
-  ctx.fill();
-
-  // Muzzle, eyes and whiskers
-  ctx.fillStyle = '#e8f4ff';
-  ctx.beginPath();
-  ctx.ellipse(11, -24, 7, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#0d2a18';
-  ctx.beginPath();
-  ctx.arc(5, -30, 3.4, 0, Math.PI * 2);
-  ctx.arc(14, -30, 3.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#2bee79';
-  ctx.beginPath();
-  ctx.arc(5.6, -30.4, 1.7, 0, Math.PI * 2);
-  ctx.arc(14.6, -30.4, 1.7, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ff9ecb';
-  ctx.beginPath();
-  ctx.moveTo(9.5, -23);
-  ctx.lineTo(12.5, -23);
-  ctx.lineTo(11, -21);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(240,248,255,0.7)';
-  ctx.lineWidth = 0.9;
-  for (let i = -1; i <= 1; i++) {
-    ctx.beginPath();
-    ctx.moveTo(15, -24 + i * 2);
-    ctx.lineTo(24, -25 + i * 3.4);
-    ctx.stroke();
-  }
-
-  // Weapon + muzzle flash. The gun lives on the cat's hip so the silhouette
-  // still reads at hero-card size.
-  ctx.fillStyle = '#dfe8f5';
-  ctx.fillRect(9, -19, 13, 3.4);
-  ctx.fillStyle = '#8fa3bd';
-  ctx.fillRect(9, -16, 5, 3);
-  if (shooting) {
-    ctx.fillStyle = 'rgba(255,236,150,0.95)';
-    ctx.beginPath();
-    ctx.arc(24, -17, 5.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.beginPath();
-    ctx.arc(25, -17, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  drawCatSprite(ctx, 0, 0, { color: '#4169E1', t, running: true, jumping, shooting });
   ctx.restore();
 };
 
@@ -646,7 +549,7 @@ const LiveRunDemo: React.FC = () => {
 
     const tick = (now: number) => {
       if (disposed) return;
-      if (running) render(now - start);
+      if (running) render((now - start) / 1000);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);

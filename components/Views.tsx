@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry } from '../types';
 import LiveRunDemo from './LiveRunDemo';
+import { drawCatSprite } from './catSprite';
 import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
@@ -7258,177 +7259,18 @@ export const PlayingView: React.FC<{
 
       ctx.save();
       if (game.player.invincible) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
-
-      // Kattens svans - Ritas bakom kroppen för att se ut som en riktig svans
-      const isMovingRight = game.player.facing === 1;
-      const tailX = isMovingRight ? px + 5 : px + pw - 5;
-      const tailDir = isMovingRight ? -1 : 1;
-      const tailWiggle = Math.sin(Date.now() / 150) * 5;
-
-      // Tail: dark silhouette first, then the body colour, then a thin highlight
-      // along the outer curve. Three strokes read as a rounded, lit tail.
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = 'rgba(6,10,22,0.55)'; ctx.lineWidth = 11;
-      ctx.beginPath();
-      ctx.moveTo(tailX, py + ph * 0.7);
-      ctx.bezierCurveTo(
-        tailX + tailDir * 25, py + ph * 0.8 + tailWiggle,
-        tailX + tailDir * 35, py + ph * 0.4 - tailWiggle,
-        tailX + tailDir * 15, py + ph * 0.2
-      );
-      ctx.stroke();
-      ctx.strokeStyle = game.player.color; ctx.lineWidth = 7.5;
-      ctx.beginPath();
-      ctx.moveTo(tailX, py + ph * 0.7);
-      ctx.bezierCurveTo(
-        tailX + tailDir * 25, py + ph * 0.8 + tailWiggle,
-        tailX + tailDir * 35, py + ph * 0.4 - tailWiggle,
-        tailX + tailDir * 15, py + ph * 0.2
-      );
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(tailX - 1.5, py + ph * 0.68);
-      ctx.bezierCurveTo(
-        tailX + tailDir * 22, py + ph * 0.76 + tailWiggle,
-        tailX + tailDir * 31, py + ph * 0.4 - tailWiggle,
-        tailX + tailDir * 13, py + ph * 0.22
-      );
-      ctx.stroke();
-
-      // Body: radial gradient lit from the upper left, dark outline and a warm
-      // neon bloom. This is the face of the game, so it gets the most detail.
-      const bodyGrad = ctx.createRadialGradient(
-        px + pw * 0.32, py + ph * 0.26, 2,
-        px + pw * 0.52, py + ph * 0.56, pw * 0.95
-      );
-      bodyGrad.addColorStop(0, '#d7e0ff');
-      bodyGrad.addColorStop(0.3, '#93a9ff');
-      bodyGrad.addColorStop(0.66, game.player.color);
-      bodyGrad.addColorStop(1, '#2a3a86');
-      ctx.save();
-      ctx.shadowColor = game.player.color;
-      ctx.shadowBlur = 22;
-      ctx.fillStyle = bodyGrad;
-      ctx.beginPath();
-      ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      ctx.strokeStyle = 'rgba(8,12,28,0.65)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Belly patch gives the flat silhouette a sense of volume.
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.beginPath();
-      ctx.ellipse(px + pw * 0.5, py + ph * 0.68, pw * 0.27, ph * 0.22, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Ears: rounded triangles with a dark edge and a soft inner ear.
-      const drawEar = (side: -1 | 1) => {
-        const baseX = px + (side === -1 ? 0.22 : 0.78) * pw;
-        const tipX = baseX + side * pw * 0.13;
-        ctx.beginPath();
-        ctx.moveTo(baseX - pw * 0.14, py + ph * 0.17);
-        ctx.quadraticCurveTo(tipX - side * pw * 0.02, py - ph * 0.14, tipX + side * pw * 0.02, py - ph * 0.15);
-        ctx.quadraticCurveTo(tipX + side * pw * 0.1, py - ph * 0.04, baseX + pw * 0.16, py + ph * 0.19);
-        ctx.closePath();
-        ctx.fillStyle = game.player.color;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(8,12,28,0.6)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(baseX - pw * 0.07, py + ph * 0.13);
-        ctx.quadraticCurveTo(tipX, py - ph * 0.06, baseX + pw * 0.08, py + ph * 0.15);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(255,158,187,0.85)';
-        ctx.fill();
-      };
-      drawEar(-1);
-      drawEar(1);
-
-      // Ögon med blink-logik & pupillriktning i rörelseriktningen
-      const lookOffset = (game.player.facing || 1) * 2.5;
-      if (game.player.isBlinking) {
-        ctx.strokeStyle = game.player.accent; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(px + pw * 0.22, py + ph * 0.4); ctx.lineTo(px + pw * 0.42, py + ph * 0.4); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(px + pw * 0.58, py + ph * 0.4); ctx.lineTo(px + pw * 0.78, py + ph * 0.4); ctx.stroke();
-      } else {
-        // Vit ögonvita
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(px + pw * 0.34, py + ph * 0.4, 8.5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(px + pw * 0.66, py + ph * 0.4, 8.5, 0, Math.PI * 2); ctx.fill();
-        // Iris (kattens accentfärg)
-        ctx.fillStyle = game.player.accent || '#2bee79';
-        ctx.beginPath(); ctx.arc(px + pw * 0.34 + lookOffset, py + ph * 0.4, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(px + pw * 0.66 + lookOffset, py + ph * 0.4, 5, 0, Math.PI * 2); ctx.fill();
-        // Pupill (svart kattöga)
-        ctx.fillStyle = '#060a12';
-        ctx.beginPath(); ctx.ellipse(px + pw * 0.34 + lookOffset, py + ph * 0.4, 2.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(px + pw * 0.66 + lookOffset, py + ph * 0.4, 2.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-        // Ljusblänk i ögonen
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(px + pw * 0.34 + lookOffset - 1.5, py + ph * 0.38 - 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(px + pw * 0.66 + lookOffset - 1.5, py + ph * 0.38 - 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
-      }
-
-      // Nos
-      ctx.fillStyle = '#ff88aa'; ctx.beginPath(); ctx.arc(px + pw * 0.5, py + ph * 0.55, 6, 0, Math.PI * 2); ctx.fill();
-
-      // Morrhår
-      ctx.fillStyle = 'black';
-      // Whiskers sprout from the whisker pads at the edges of the nose, then fan
-      // out level-to-downwards across the cheeks. The roots sit at the nose
-      // (pw * 0.39 / 0.61) rather than out on the cheeks, and stay below the eyes
-      // so they never cross the face. Each one is a fine taper - thin at the root,
-      // barely wider at the tip - so it reads as a whisker, not a bar.
-      const noseY = py + ph * 0.55;
-      const whisker = (rootX: number, tipX: number, rootY: number, tipY: number) => [
-        { x: rootX, y: rootY - 0.45 },
-        { x: rootX, y: rootY + 0.45 },
-        { x: tipX, y: tipY + 0.95 },
-        { x: tipX, y: tipY - 0.95 },
-      ];
-      const wl1 = whisker(px + pw * 0.39, px - 6, noseY + ph * 0.05, noseY + ph * 0.03);
-      const wl2 = whisker(px + pw * 0.38, px - 7, noseY + ph * 0.12, noseY + ph * 0.13);
-      const wl3 = whisker(px + pw * 0.39, px - 6, noseY + ph * 0.19, noseY + ph * 0.24);
-      const wr1 = whisker(px + pw * 0.61, px + pw + 6, noseY + ph * 0.05, noseY + ph * 0.03);
-      const wr2 = whisker(px + pw * 0.62, px + pw + 7, noseY + ph * 0.12, noseY + ph * 0.13);
-      const wr3 = whisker(px + pw * 0.61, px + pw + 6, noseY + ph * 0.19, noseY + ph * 0.24);
-      const drawPolygon = (pts: any[]) => {
-        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.closePath(); ctx.fill();
-      };
-      drawPolygon(wl1); drawPolygon(wl2); drawPolygon(wl3); drawPolygon(wr1); drawPolygon(wr2); drawPolygon(wr3);
-
-      // Mun
-      ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + pw * 0.5, py + ph * 0.55 + 6); ctx.lineTo(px + pw * 0.5, py + ph * 0.65); ctx.stroke(); ctx.beginPath(); ctx.arc(px + pw * 0.4, py + ph * 0.65, 5, 0, Math.PI); ctx.stroke(); ctx.beginPath(); ctx.arc(px + pw * 0.6, py + ph * 0.65, 5, 0, Math.PI); ctx.stroke();
-
-      // Tassar - Animerade spring-tassar med söta rosa trampdynor!
-      const isMoving = Math.abs(game.player.velocityX) > 0.4 && game.player.onGround;
-      const pawTrot1 = isMoving ? Math.sin(Date.now() / 70) * 4 : 0;
-      const pawTrot2 = isMoving ? -Math.sin(Date.now() / 70) * 4 : 0;
-
-      // Vänster tass
-      ctx.fillStyle = game.player.color;
-      ctx.beginPath();
-      ctx.ellipse(px + 14, py + ph - 2 + pawTrot1, 8, 6, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Höger tass
-      ctx.beginPath();
-      ctx.ellipse(px + pw - 14, py + ph - 2 + pawTrot2, 8, 6, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Rosa trampdynor (paw pads)
-      ctx.fillStyle = '#ff9ebb';
-      ctx.beginPath();
-      ctx.arc(px + 14, py + ph - 1 + pawTrot1, 3.5, 0, Math.PI * 2);
-      ctx.arc(px + pw - 14, py + ph - 1 + pawTrot2, 3.5, 0, Math.PI * 2);
-      ctx.fill();
+      // Same cat as the start-screen demo (components/catSprite.ts). Scaled per
+      // axis from the hitbox so squash and stretch still show.
+      drawCatSprite(ctx, px + pw / 2, py + ph, {
+        color: game.player.color,
+        accent: game.player.accent,
+        t: Date.now() / 1000,
+        running: Math.abs(game.player.velocityX) > 0.4 && game.player.onGround,
+        jumping: !game.player.onGround,
+        facing: game.player.facing === -1 ? -1 : 1,
+        sx: pw / 40,
+        sy: ph / 56,
+      });
       ctx.restore();
 
       // Buff auras. Shield is a solid bubble; magnet and rapid fire get a thin
