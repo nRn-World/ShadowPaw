@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry } from '../types';
 import LiveRunDemo from './LiveRunDemo';
 import { drawCatSprite } from './catSprite';
+import CatPreview from './CatPreview';
 import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
@@ -5811,9 +5812,7 @@ export const PlayingView: React.FC<{
           }
           ctx.beginPath();
           ctx.roundRect(platX, platY, plat.width, plat.height, plat.isGround ? 0 : 4);
-          ctx.fill();            // Turf detail: lit rim, a shadow just beneath it, and deterministic
-          // speckles/flowers. A flat green band was the least finished-looking
-          // part of the scene.
+          ctx.fill();            // Turf detail: lit rim and a shadow just beneath it.
           if (plat.isGround && !plat.bossWalkway && !plat.bossArena) {
             const groundNight = game.timeOfDay === 'NIGHT';
             const groundSnow = game.weather === 'SNÖIGT';
@@ -5823,26 +5822,6 @@ export const PlayingView: React.FC<{
             ctx.fillRect(platX, platY, plat.width, 2);
             ctx.fillStyle = 'rgba(0,0,0,0.2)';
             ctx.fillRect(platX, platY + 2, plat.width, 5);
-            const startX = Math.max(platX, -30);
-            const endX = Math.min(platX + plat.width, canvas.width + 30);
-            for (let gx = Math.floor(startX / 22) * 22; gx < endX; gx += 22) {
-              const r = skyHash(gx * 0.37 + 11);
-              if (groundSnow) {
-                ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                ctx.fillRect(gx + r * 10, platY + 8 + r * 10, 2, 2);
-              } else if (groundNight) {
-                ctx.fillStyle = 'rgba(120,220,160,0.35)';
-                ctx.fillRect(gx + r * 10, platY + 9 + r * 14, 2, 2);
-              } else if (r > 0.8) {
-                ctx.fillStyle = r > 0.93 ? '#ffe08a' : r > 0.86 ? '#ffa8d4' : '#fff6f6';
-                ctx.beginPath();
-                ctx.arc(gx + r * 10, platY + 9 + r * 5, 1.9, 0, Math.PI * 2);
-                ctx.fill();
-              } else {
-                ctx.fillStyle = 'rgba(0,0,0,0.14)';
-                ctx.fillRect(gx + r * 12, platY + 12 + r * 18, 2.5, 1.5);
-              }
-            }
           }
 
           // Grass fringe on solid ground. Deterministic sine-based blades keep
@@ -8162,18 +8141,26 @@ export const PlayingView: React.FC<{
 };
 
 /** SHOP VIEW **/
+type ShopTab = 'upgrades' | 'skins' | 'perks';
+
 export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, buyUpgrade, equipSkin } = useProgress();
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [tab, setTab] = useState<ShopTab>('upgrades');
+  const [preview, setPreview] = useState<string>(progress.equippedSkin);
+
+  const flash = (text: string, ok: boolean) => {
+    setMessage({ text, ok });
+    setTimeout(() => setMessage(null), 2200);
+  };
 
   const handleBuy = (type: 'maxAmmo' | 'jumpPower' | 'speed', cost: number) => {
     if (buyUpgrade(type, cost)) {
-      setMessage('Uppgradering köpt!');
+      flash('Uppgradering köpt!', true);
       AudioEngine.playPowerup();
     } else {
-      setMessage('Inte tillräckligt med mynt!');
+      flash('Inte tillräckligt med mynt!', false);
     }
-    setTimeout(() => setMessage(''), 2200);
   };
 
   const upgrades: Array<{
@@ -8182,186 +8169,202 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     title: string;
     desc: string;
     cost: number;
-    value: string;
-    gain: string;
+    now: number;
+    step: number;
+    unit: string;
+    digits: number;
     tone: string;
-    ring: string;
   }> = [
-    {
-      type: 'maxAmmo', icon: 'battery_charging_full', title: 'Ammokapacitet',
-      desc: 'Fler skott innan du måste hitta en ammolåda.',
-      cost: 500, value: `${progress.upgrades.maxAmmo.toFixed(0)} skott`, gain: '+1 skott',
-      tone: 'text-sky-300', ring: 'border-sky-400/25 bg-sky-400/10',
-    },
-    {
-      type: 'jumpPower', icon: 'rocket_launch', title: 'Hoppkraft',
-      desc: 'Högre hopp och längre dubbelhopp – når nya plattformar.',
-      cost: 750, value: progress.upgrades.jumpPower.toFixed(1), gain: '+0.5 kraft',
-      tone: 'text-emerald-300', ring: 'border-emerald-400/25 bg-emerald-400/10',
-    },
-    {
-      type: 'speed', icon: 'speed', title: 'Sprint',
-      desc: 'Snabbare markfart så du hinner före farorna.',
-      cost: 1000, value: progress.upgrades.speed.toFixed(1), gain: '+0.5 fart',
-      tone: 'text-violet-300', ring: 'border-violet-400/25 bg-violet-400/10',
-    },
+    { type: 'maxAmmo', icon: 'battery_charging_full', title: 'Ammokapacitet', desc: 'Fler skott innan du måste hitta en ammolåda.', cost: 500, now: progress.upgrades.maxAmmo, step: 1, unit: ' skott', digits: 0, tone: 'text-sky-300' },
+    { type: 'jumpPower', icon: 'rocket_launch', title: 'Hoppkraft', desc: 'Högre hopp och längre dubbelhopp.', cost: 750, now: progress.upgrades.jumpPower, step: 0.5, unit: '', digits: 1, tone: 'text-emerald-300' },
+    { type: 'speed', icon: 'speed', title: 'Sprint', desc: 'Snabbare markfart så du hinner före farorna.', cost: 1000, now: progress.upgrades.speed, step: 0.5, unit: '', digits: 1, tone: 'text-violet-300' },
+  ];
+
+  const skinEntries = Object.entries(SKINS);
+  const shown = SKINS[preview] ?? SKINS.default;
+  const shownUnlocked = progress.unlockedSkins.includes(preview);
+  const shownEquipped = progress.equippedSkin === preview;
+
+  const tabs: Array<{ id: ShopTab; label: string; icon: string }> = [
+    { id: 'upgrades', label: 'Uppgraderingar', icon: 'bolt' },
+    { id: 'skins', label: 'Skinn', icon: 'palette' },
+    { id: 'perks', label: 'Förmåner', icon: 'auto_awesome' },
   ];
 
   return (
-    <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-6 md:py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-5 md:py-8">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <p className="eyebrow text-primary">Butik</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Uppgraderingar</h1>
-          <p className="mt-2 max-w-md text-sm text-white/50">Bygg din katt starkare med mynt du samlar i banorna.</p>
+          <h1 className="mt-0.5 font-display text-2xl font-black uppercase tracking-tight md:text-4xl">Kattens verkstad</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/25 bg-yellow-400/10 px-3.5 py-2">
-            <span className="material-symbols-outlined text-xl text-yellow-300">monetization_on</span>
-            <div>
-              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-yellow-200/60">Dina mynt</p>
-              <p className="tabular text-lg font-black leading-none text-yellow-200">{progress.coins}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-2xl border border-primary/25 bg-primary/10 px-3.5 py-2">
-            <span className="material-symbols-outlined text-xl text-primary">military_tech</span>
-            <div>
-              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">Rank</p>
-              <p className="tabular text-lg font-black leading-none text-primary">{progress.level}</p>
-            </div>
-          </div>
+        <div className="flex items-center gap-2 rounded-full border border-yellow-400/25 bg-yellow-400/10 py-1.5 pl-2.5 pr-4">
+          <span className="material-symbols-outlined text-xl text-yellow-300">monetization_on</span>
+          <span className="tabular text-lg font-black leading-none text-yellow-200">{progress.coins}</span>
         </div>
       </div>
 
-      {message && (
-        <div className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-center text-xs font-bold text-primary animate-fade-in-up">
-          {message}
-        </div>
-      )}
-
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
-        {upgrades.map((u) => {
-          const affordable = progress.coins >= u.cost;
-          return (
-            <div key={u.type} className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
-              <div className={`flex size-11 items-center justify-center rounded-xl border ${u.ring}`}>
-                <span className={`material-symbols-outlined text-xl ${u.tone}`}>{u.icon}</span>
-              </div>
-              <h3 className="mt-3 font-display text-lg font-black uppercase tracking-tight text-white">{u.title}</h3>
-              <p className="mt-1 min-h-[2.5rem] text-[11px] leading-relaxed text-white/45">{u.desc}</p>
-              <div className="mt-2 flex items-center justify-between rounded-lg border border-white/[0.07] bg-black/25 px-2.5 py-1.5">
-                <span className="text-[8px] font-black uppercase tracking-wider text-white/35">Nuvarande</span>
-                <span className="tabular text-xs font-black text-white/85">{u.value}</span>
-              </div>
-              <button
-                onClick={() => handleBuy(u.type, u.cost)}
-                disabled={!affordable}
-                className={`mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-black uppercase tracking-wider transition-all ${
-                  affordable
-                    ? 'border-primary/40 bg-primary/15 text-primary hover:bg-primary/25'
-                    : 'cursor-not-allowed border-white/10 bg-white/5 text-white/30'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base">monetization_on</span>
-                {u.cost}
-                <span className="text-[9px] font-bold text-white/35">· {u.gain}</span>
-              </button>
-              {!affordable && (
-                <p className="mt-1.5 text-center text-[8px] font-bold uppercase tracking-wider text-white/25">
-                  Saknas {u.cost - progress.coins} mynt
+      <div className="mt-5 grid gap-4 lg:grid-cols-[300px_1fr]">
+        {/* Studio: the cat as it will look in the game */}
+        <aside className="overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/80 backdrop-blur-md lg:sticky lg:top-20 lg:self-start">
+          <div className="relative flex h-44 items-end justify-center bg-[radial-gradient(ellipse_at_50%_100%,rgba(43,238,121,0.16),transparent_70%)] lg:h-56">
+            <div className="absolute inset-x-6 bottom-6 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+            <CatPreview color={shown.color} accent={shown.accent} width={260} height={176} scale={2.6} animated className="relative max-w-full" />
+          </div>
+          <div className="space-y-3 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-display text-base font-black uppercase tracking-tight">{shown.name}</p>
+                <p className="truncate text-[10px] text-white/40">
+                  {shownEquipped ? 'Aktivt skinn' : shownUnlocked ? 'Upplåst' : shown.unlockHint}
                 </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Perks */}
-      <div className="mt-5 rounded-2xl border border-white/10 bg-[#0a1220]/72 p-4 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-base text-primary">auto_awesome</span>
-          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Passiva förmåner</h2>
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {[
-            { level: 5, label: 'Smidiga tassar', desc: '+fart', icon: 'directions_run' },
-            { level: 10, label: 'Ammoeffektiv', desc: '+2 skott per nivå', icon: 'bolt' },
-            { level: 15, label: 'Vaksintinkt', desc: 'Startar med sköld', icon: 'shield' },
-          ].map((perk) => {
-            const unlocked = progress.level >= perk.level;
-            return (
-              <div
-                key={perk.level}
-                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
-                  unlocked ? 'border-primary/30 bg-primary/[0.08]' : 'border-white/[0.07] bg-black/20'
-                }`}
-              >
-                <span className={`material-symbols-outlined text-base ${unlocked ? 'text-primary' : 'text-white/25'}`}>
-                  {unlocked ? perk.icon : 'lock'}
-                </span>
-                <div className="min-w-0">
-                  <p className={`truncate text-[11px] font-black ${unlocked ? 'text-white' : 'text-white/35'}`}>{perk.label}</p>
-                  <p className="truncate text-[9px] text-white/30">Nivå {perk.level} · {perk.desc}</p>
-                </div>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              {shownUnlocked && !shownEquipped && (
+                <button
+                  onClick={() => equipSkin(preview)}
+                  className="shrink-0 rounded-full bg-primary px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#06210f] transition-transform hover:scale-[1.04]"
+                >
+                  Utrusta
+                </button>
+              )}
+              {!shownUnlocked && <span className="material-symbols-outlined text-lg text-white/30">lock</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-2 border-t border-white/[0.07] pt-3 text-center">
+              {upgrades.map((u) => (
+                <div key={u.type}>
+                  <span className={`material-symbols-outlined text-base ${u.tone}`}>{u.icon}</span>
+                  <p className="tabular text-sm font-black text-white">{u.now.toFixed(u.digits)}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/30">{u.title.split(' ')[0]}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
 
-      {/* Skins */}
-      <div className="mt-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Skinn</h2>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">
-            {progress.unlockedSkins.length}/{Object.keys(SKINS).length} upplåsta
-          </span>
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(SKINS).map(([id, skin]) => {
-            const unlocked = progress.unlockedSkins.includes(id);
-            const equipped = progress.equippedSkin === id;
-            return (
+        {/* Market */}
+        <section className="min-w-0">
+          <div role="tablist" className="flex gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
+            {tabs.map((t) => (
               <button
-                key={id}
-                onClick={() => unlocked && equipSkin(id)}
-                disabled={!unlocked}
-                className={`group relative overflow-hidden rounded-2xl border p-3 text-left transition-all ${
-                  equipped
-                    ? 'border-primary/50 bg-primary/[0.1]'
-                    : unlocked
-                      ? 'border-white/10 bg-white/[0.035] hover:border-white/20'
-                      : 'cursor-not-allowed border-white/[0.06] bg-black/20'
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-colors sm:text-[11px] ${
+                  tab === t.id ? 'bg-primary text-[#06210f]' : 'text-white/50 hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/20"
-                    style={{
-                      background: `radial-gradient(circle at 35% 30%, ${skin.color}, #0b1020 160%)`,
-                      boxShadow: equipped ? `0 0 18px ${skin.color}88` : 'none',
-                    }}
-                  >
-                    {!unlocked && <span className="material-symbols-outlined text-[14px] text-white/70">lock</span>}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className={`truncate text-xs font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{skin.name}</p>
-                    <p className="truncate text-[9px] text-white/30">{unlocked ? (equipped ? 'Aktivt skinn' : 'Upplåst') : skin.unlockHint}</p>
-                  </div>
-                  {equipped && (
-                    <span className="material-symbols-outlined text-base text-primary">check_circle</span>
-                  )}
-                </div>
+                <span className="material-symbols-outlined hidden text-base sm:inline">{t.icon}</span>
+                {t.label}
               </button>
-            );
-          })}
-        </div>
-      </div>
+            ))}
+          </div>
 
-      <button onClick={onBack} className="btn-ghost mt-6 w-full py-3 text-xs uppercase tracking-wider">
-        <span className="material-symbols-outlined text-base">arrow_back</span>
-        Tillbaka
-      </button>
+          {message && (
+            <div className={`mt-3 rounded-xl border px-4 py-2 text-center text-xs font-bold animate-fade-in-up ${message.ok ? 'border-primary/30 bg-primary/10 text-primary' : 'border-red-400/30 bg-red-400/10 text-red-300'}`}>
+              {message.text}
+            </div>
+          )}
+
+          {tab === 'upgrades' && (
+            <ul className="mt-3 divide-y divide-white/[0.06] overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/75 backdrop-blur-md">
+              {upgrades.map((u) => {
+                const affordable = progress.coins >= u.cost;
+                return (
+                  <li key={u.type} className="flex items-center gap-3 p-3.5 sm:gap-4 sm:p-4">
+                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/[0.05] ${u.tone}`}>
+                      <span className="material-symbols-outlined text-2xl">{u.icon}</span>
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black text-white">{u.title}</p>
+                      <p className="truncate text-[11px] text-white/40">{u.desc}</p>
+                      <p className="tabular mt-1 text-[11px] font-bold text-white/70">
+                        {u.now.toFixed(u.digits)}{u.unit} <span className="text-primary">→ {(u.now + u.step).toFixed(u.digits)}{u.unit}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleBuy(u.type, u.cost)}
+                      disabled={!affordable}
+                      className={`flex shrink-0 items-center gap-1 rounded-full px-3.5 py-2 text-xs font-black transition-all ${
+                        affordable ? 'bg-yellow-300 text-[#241a02] hover:scale-[1.05]' : 'cursor-not-allowed bg-white/[0.06] text-white/30'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">monetization_on</span>
+                      {u.cost}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {tab === 'skins' && (
+            <>
+              <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/30">
+                {progress.unlockedSkins.length}/{skinEntries.length} upplåsta · tryck för förhandsvisning
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                {skinEntries.map(([id, skin]) => {
+                  const unlocked = progress.unlockedSkins.includes(id);
+                  const equipped = progress.equippedSkin === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setPreview(id)}
+                      className={`relative overflow-hidden rounded-2xl border p-2 text-left transition-all ${
+                        preview === id ? 'border-primary/60 bg-primary/[0.08]' : 'border-white/10 bg-white/[0.03] hover:border-white/25'
+                      }`}
+                    >
+                      <div className={`flex justify-center rounded-xl bg-black/25 pt-2 ${unlocked ? '' : 'opacity-40 grayscale'}`}>
+                        <CatPreview color={skin.color} accent={skin.accent} width={92} height={74} scale={1.1} />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-1 px-1">
+                        <p className={`truncate text-xs font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{skin.name}</p>
+                        {equipped ? (
+                          <span className="material-symbols-outlined text-base text-primary">check_circle</span>
+                        ) : !unlocked ? (
+                          <span className="material-symbols-outlined text-sm text-white/30">lock</span>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {tab === 'perks' && (
+            <ul className="mt-3 divide-y divide-white/[0.06] overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/75 backdrop-blur-md">
+              {[
+                { level: 5, label: 'Smidiga tassar', desc: 'Lite mer fart', icon: 'directions_run' },
+                { level: 10, label: 'Ammoeffektiv', desc: '+2 skott per nivå', icon: 'bolt' },
+                { level: 15, label: 'Vaksintinkt', desc: 'Startar med sköld', icon: 'shield' },
+              ].map((perk) => {
+                const unlocked = progress.level >= perk.level;
+                return (
+                  <li key={perk.level} className="flex items-center gap-3 p-3.5 sm:p-4">
+                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${unlocked ? 'bg-primary/15 text-primary' : 'bg-white/[0.05] text-white/25'}`}>
+                      <span className="material-symbols-outlined text-2xl">{unlocked ? perk.icon : 'lock'}</span>
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-sm font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{perk.label}</p>
+                      <p className="truncate text-[11px] text-white/35">{perk.desc}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${unlocked ? 'bg-primary/15 text-primary' : 'bg-white/[0.06] text-white/35'}`}>
+                      {unlocked ? 'Aktiv' : `Rank ${perk.level}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <button onClick={onBack} className="btn-ghost mt-4 w-full py-3 text-xs uppercase tracking-wider">
+            <span className="material-symbols-outlined text-base">arrow_back</span>
+            Tillbaka
+          </button>
+        </section>
+      </div>
     </div>
   );
 };
