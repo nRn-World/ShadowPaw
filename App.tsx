@@ -5,6 +5,7 @@ import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverVi
 import { AppView } from './types';
 import { ProgressProvider, useProgress } from './context/ProgressContext';
 import { AudioEngine } from './services/AudioEngine';
+import { useT } from './i18n';
 
 const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppView.LEADERBOARD, AppView.SHOP, AppView.QUESTS, AppView.GAME_OVER];
 
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   const [lastFishesCollected, setLastFishesCollected] = useState(0);
   const menuMusicRef = useRef<HTMLAudioElement | null>(null);
   const { progress } = useProgress();
+  const t = useT();
   const { muted, musicVolume } = progress.settings;
 
   const getMusicVolume = () => (muted ? 0 : Math.min(1, (musicVolume / 100) * 0.5));
@@ -163,7 +165,7 @@ const App: React.FC = () => {
         <nav
           className="fixed inset-x-0 bottom-0 z-50 border-t border-white/[0.07] bg-[#04060f]/90 backdrop-blur-2xl md:hidden"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-          aria-label="Huvudnavigering"
+          aria-label={t('Huvudnavigering')}
         >
           <div className="mx-auto flex max-w-md items-stretch justify-around px-2 py-1.5">
             {[
@@ -183,7 +185,7 @@ const App: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                  <span className="text-[9px] font-black uppercase tracking-wider">{item.label}</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider">{t(item.label)}</span>
                 </button>
               );
             })}

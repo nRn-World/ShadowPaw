@@ -61,6 +61,8 @@ export interface PlayerProgress {
   dailySeed: string;
   weeklySeed: string;
   settings: {
+    /** UI language; English unless the player picks another. */
+    language: "en" | "sv" | "tr" | "es" | "ar";
     uiScale: number;
     textScale: number;
     colorBlindMode: boolean;

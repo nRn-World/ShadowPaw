@@ -1,3 +1,5 @@
+import { tr } from '../i18n';
+
 // Statiska repliker från Jerry (bytet) på Game Over-skärmen. Inget nätverk, inga API-nycklar.
 
 const LOW_SCORE = [
@@ -21,7 +23,7 @@ const HIGH_SCORE = [
   "Det där var en rekordtyp av jakt. En runda till?",
 ];
 
-const pick = (list: string[]): string => list[Math.floor(Math.random() * list.length)];
+const pick = (list: string[]): string => tr(list[Math.floor(Math.random() * list.length)]);
 
 export const getJerryTaunt = (score: number): string => {
   if (score > 2000) return pick(HIGH_SCORE);

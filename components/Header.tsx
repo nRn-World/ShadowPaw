@@ -2,6 +2,7 @@
 import React from 'react';
 import { AppView } from '../types';
 import { useProgress } from '../context/ProgressContext';
+import { LanguageSwitch, useT } from '../i18n';
 
 interface HeaderProps {
   currentView: AppView;
@@ -18,6 +19,7 @@ const NAV_ITEMS: { view: AppView; icon: string; label: string }[] = [
 const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
   const isActive = (view: AppView) => currentView === view;
   const { progress, toggleMuted } = useProgress();
+  const t = useT();
   const muted = progress.settings.muted;
 
   return (
@@ -39,14 +41,12 @@ const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           <button
             onClick={() => onNavigate(AppView.START)}
             className="group flex shrink-0 items-center gap-2.5"
-            aria-label="Till startsidan"
+            aria-label={t('Till startsidan')}
           >
-            <span className="relative flex size-9 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 transition-all duration-200 group-hover:border-primary/50 group-hover:bg-primary/20">
-              <span
-                className="absolute inset-0 rounded-xl opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-                style={{ boxShadow: '0 0 18px rgba(43,238,121,0.55)' }}
-              />
-              <span className="material-symbols-outlined relative text-primary text-lg">pets</span>
+            {/* The app icon doubles as the brand mark: one drawing everywhere,
+                from the favicon to the header. */}
+            <span className="relative block size-9 overflow-hidden rounded-[10px] ring-1 ring-white/10 transition-all duration-200 group-hover:ring-primary/45 group-hover:shadow-[0_0_18px_rgba(43,238,121,0.45)]">
+              <img src="./icon.svg" alt="" className="size-full" draggable={false} />
             </span>
             <span className="hidden text-left leading-none sm:block">
               <span className="block font-display text-sm font-black tracking-[0.18em] text-white">SHADOW PAW</span>
@@ -70,19 +70,20 @@ const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
                 active={isActive(item.view)}
                 onClick={() => onNavigate(item.view)}
                 icon={item.icon}
-                label={item.label}
+                label={t(item.label)}
               />
             ))}
           </nav>
 
           {/* Right side */}
           <div className="flex shrink-0 items-center gap-2">
+            <LanguageSwitch />
             {/* One button mutes/unmutes music and every sound effect at once. */}
             <button
               onClick={toggleMuted}
               aria-pressed={muted}
-              aria-label={muted ? 'Slå på ljudet' : 'Stäng av ljudet'}
-              title={muted ? 'Slå på ljudet' : 'Stäng av ljudet'}
+              aria-label={muted ? t('Slå på ljudet') : t('Stäng av ljudet')}
+              title={muted ? t('Slå på ljudet') : t('Stäng av ljudet')}
               className={`relative flex size-9 items-center justify-center rounded-xl border transition-all duration-200 ${
                 muted
                   ? 'border-primary-red/40 bg-primary-red/10 text-primary-red hover:bg-primary-red/20'
@@ -113,7 +114,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
             {currentView !== AppView.START && (
               <button onClick={() => onNavigate(AppView.PLAYING)} className="btn-primary px-4 py-2 text-[13px] sm:px-5">
                 <span className="material-symbols-outlined text-base">play_arrow</span>
-                <span className="hidden sm:inline">Spela</span>
+                <span className="hidden sm:inline">{t('Spela')}</span>
               </button>
             )}
           </div>

@@ -8,6 +8,7 @@ import CatPreview from './CatPreview';
 import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
+import { useT, tr, renderRich, LanguageButtons } from '../i18n';
 
 const getSeasonTheme = () => {
   const month = new Date().getMonth();
@@ -119,7 +120,7 @@ const InjuredCatVisual: React.FC = () => (
         </svg>
       </div>
 
-      <svg viewBox="0 0 120 120" className="animate-dizzy h-full w-full" role="img" aria-label="Skadad katt">
+      <svg viewBox="0 0 120 120" className="animate-dizzy h-full w-full" role="img" aria-label="Cat">
         <defs>
           <radialGradient id="hurtBody" cx="38%" cy="30%" r="78%">
             <stop offset="0%" stopColor="#6d92ff" />
@@ -176,30 +177,8 @@ export const StartMenuView: React.FC<{
   onNavigate: (v: AppView) => void;
   onStart: (level?: number) => void;
 }> = ({ onNavigate, onStart }) => {
-  const [tip, setTip] = useState<string>('');
   const { progress } = useProgress();
-
-  const gameTips = [
-    'Använd dubbelhopp för att nå högre plattformar!',
-    'Samla fiskar för att få ammunition!',
-    'Hoppa på fiender för att besegra dem!',
-    'Håll kattens fart – dash med Shift ger extra fart!',
-    'Ju längre din streak håller, desto högre blir multiplikatorn!',
-    'Åk förbi fiender utan att träffa – det ger bonuspoäng!',
-    'Varje 10:e fisk ger dig ett mynt och ett extra skott!',
-    'Klara en nivå utan att ta skada för +750 poäng!',
-    'Sköldar, magneter och rapid fire gömmer sig i banorna!',
-    'Turret-drönare skjuter långsamt – lär dig deras rytm!',
-    'Samla fisk och besegra fiender för att fylla dagliga uppdrag!',
-    'Ju högre nivå, desto snårare är ammunitionen – planera!',
-    'Undvik att falla i hål – dubbelhopp räcker nästan alltid!',
-    'Kombinationer ger poäng – chained-action mot fiender är starkast!',
-  ];
-
-  useEffect(() => {
-    setTip(gameTips[Math.floor(Math.random() * gameTips.length)]);
-    // A stable per-day seed picks the daily challenge level.
-  }, []);
+  const t = useT();
 
   const dailyDigits = progress.dailySeed.replace(/\D/g, '');
   const dailyLevel = 3 + (Number(dailyDigits || 0) % 28);
@@ -211,11 +190,18 @@ export const StartMenuView: React.FC<{
       <div className="grid items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
         {/* ------------------------------------------------------- hero copy */}
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/[0.07] px-3 py-1.5">
-            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/90">
-              Ett neonäventyr från NRN World
-            </span>
+          <div className="flex items-center gap-3">
+            <img
+              src="./icon.svg"
+              alt=""
+              className="size-11 shrink-0 rounded-[13px] ring-1 ring-white/10 shadow-[0_12px_34px_-16px_rgba(43,238,121,0.85)]"
+            />
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/[0.07] px-3 py-1.5">
+              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+              <span className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/90">
+                {t('Ett neonäventyr från NRN World')}
+              </span>
+            </div>
           </div>
 
           <h1 className="mt-5 font-display text-[3.4rem] font-black uppercase leading-[0.86] tracking-tight md:text-[5.2rem]">
@@ -235,16 +221,16 @@ export const StartMenuView: React.FC<{
               </div>
               <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
                 <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">Live run</span>
+                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
               </div>
               <button
                 onClick={() => onStart(1)}
                 className="absolute inset-0 z-10 flex items-end justify-end p-3"
-                aria-label="Spela Shadow Paw"
+                aria-label={t('Spela Shadow Paw')}
               >
                 <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
                   <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
-                  Spela själv
+                  {t('Spela själv')}
                 </span>
               </button>
             </div>
@@ -252,11 +238,11 @@ export const StartMenuView: React.FC<{
             <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Nästa mål</p>
-                  <p className="text-xs font-bold text-white/85">Kapitel {Math.ceil(storyLevel / 5)} · nivå {storyLevel}</p>
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">{t('Nästa mål')}</p>
+                  <p className="text-xs font-bold text-white/85">{t('Kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}</p>
                 </div>
                 <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
-                  Rank {progress.level}
+                  {t('Rank {n}', { n: progress.level })}
                 </span>
               </div>
             </div>
@@ -264,8 +250,7 @@ export const StartMenuView: React.FC<{
           </div>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
-            Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40+ handbyggda
-            kapitel – bygg streaken, besegra bossarna och ta tillbaka natten.
+            {t('Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40+ handbyggda kapitel – bygg streaken, besegra bossarna och ta tillbaka natten.')}
           </p>
 
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
@@ -273,40 +258,18 @@ export const StartMenuView: React.FC<{
               <span className="material-symbols-outlined text-2xl transition-transform duration-200 group-hover:translate-x-0.5">
                 play_arrow
               </span>
-              <span>Spela nu</span>
+              <span>{t('Spela nu')}</span>
             </button>
             <button
               onClick={() => onStart(dailyLevel)}
               className="btn-ghost px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
-              title={`Starta direkt på nivå ${dailyLevel}`}
+              title={t('Starta direkt på nivå {n}', { n: dailyLevel })}
             >
               <span className="material-symbols-outlined text-lg text-primary">bolt</span>
-              Dagens runda · nivå {dailyLevel}
+              {t('Dagens runda · nivå {n}', { n: dailyLevel })}
             </button>
           </div>
 
-          <div className="mt-5 grid max-w-md grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              { k: 'A / D', v: 'Rör dig', icon: 'open_with' },
-              { k: 'Mellanslag', v: 'Hoppa', icon: 'arrow_upward' },
-              { k: 'Shift', v: 'Dash', icon: 'bolt' },
-              { k: 'Klick', v: 'Skjuta', icon: 'ads_click' },
-            ].map((c) => (
-              <div key={c.v} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2 text-center">
-                <span className="material-symbols-outlined text-[16px] text-white/45">{c.icon}</span>
-                <p className="mt-0.5 truncate text-[9px] font-black uppercase tracking-wider text-white/75">{c.k}</p>
-                <p className="truncate text-[8px] font-bold uppercase tracking-wider text-white/30">{c.v}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 flex max-w-md items-start gap-2.5 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3">
-            <span className="material-symbols-outlined text-base text-primary/80">lightbulb</span>
-            <div>
-              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Dagens tips</p>
-              <p className="mt-1 text-xs leading-relaxed text-white/70">{tip}</p>
-            </div>
-          </div>
         </div>
 
         {/* ----------------------------------------------------- hero panel */}
@@ -323,16 +286,16 @@ export const StartMenuView: React.FC<{
               </div>
               <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
                 <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">Live run</span>
+                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
               </div>
               <button
                 onClick={() => onStart(1)}
                 className="absolute inset-0 z-10 flex items-end justify-end p-3"
-                aria-label="Spela Shadow Paw"
+                aria-label={t('Spela Shadow Paw')}
               >
                 <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
                   <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
-                  Spela själv
+                  {t('Spela själv')}
                 </span>
               </button>
             </div>
@@ -340,11 +303,11 @@ export const StartMenuView: React.FC<{
             <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Nästa mål</p>
-                  <p className="text-xs font-bold text-white/85">Kapitel {Math.ceil(storyLevel / 5)} · nivå {storyLevel}</p>
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">{t('Nästa mål')}</p>
+                  <p className="text-xs font-bold text-white/85">{t('Kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}</p>
                 </div>
                 <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
-                  Rank {progress.level}
+                  {t('Rank {n}', { n: progress.level })}
                 </span>
               </div>
             </div>
@@ -354,12 +317,12 @@ export const StartMenuView: React.FC<{
           {/* Career stats */}
           <div className="mt-3 grid grid-cols-3 gap-2">
             {[
-              { icon: 'monetization_on', label: 'Mynt', value: progress.coins, tone: 'text-yellow-400' },
-              { icon: 'local_fire_department', label: 'Bästa combo', value: progress.stats.bestCombo, tone: 'text-cyan-300' },
-              { icon: 'emoji_events', label: 'Bossar', value: progress.stats.bossesDefeated, tone: 'text-orange-300' },
-              { icon: 'set_meal', label: 'Fiskar', value: progress.stats.totalFishCollected, tone: 'text-sky-300' },
-              { icon: 'swords', label: 'Fiender', value: progress.stats.totalEnemiesDefeated, tone: 'text-rose-300' },
-              { icon: 'stars', label: 'Perfekta', value: progress.stats.perfectLevels, tone: 'text-primary' },
+              { icon: 'monetization_on', label: t('Mynt'), value: progress.coins, tone: 'text-yellow-400' },
+              { icon: 'local_fire_department', label: t('Bästa combo'), value: progress.stats.bestCombo, tone: 'text-cyan-300' },
+              { icon: 'emoji_events', label: t('Bossar'), value: progress.stats.bossesDefeated, tone: 'text-orange-300' },
+              { icon: 'set_meal', label: t('Fiskar'), value: progress.stats.totalFishCollected, tone: 'text-sky-300' },
+              { icon: 'swords', label: t('Fiender'), value: progress.stats.totalEnemiesDefeated, tone: 'text-rose-300' },
+              { icon: 'stars', label: t('Perfekta'), value: progress.stats.perfectLevels, tone: 'text-primary' },
             ].map((s) => (
               <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2">
                 <div className="flex items-center gap-1">
@@ -376,13 +339,13 @@ export const StartMenuView: React.FC<{
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-primary">task_alt</span>
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/55">Dagliga uppdrag</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/55">{t('Dagliga uppdrag')}</p>
               </div>
               <button
                 onClick={() => onNavigate(AppView.QUESTS)}
                 className="text-[9px] font-black uppercase tracking-wider text-primary/80 transition-colors hover:text-primary"
               >
-                Alla {questsDone}/{progress.dailyQuests.length} →
+                {t('Alla {a}/{b} →', { a: questsDone, b: progress.dailyQuests.length })}
               </button>
             </div>
             <div className="mt-2.5 space-y-2">
@@ -392,7 +355,7 @@ export const StartMenuView: React.FC<{
                   <div key={q.id}>
                     <div className="flex items-center justify-between gap-2">
                       <p className={`truncate text-[10px] font-bold ${q.completed ? 'text-primary' : 'text-white/60'}`}>
-                        {q.description}
+                        {t(q.description)}
                       </p>
                       <span className="tabular shrink-0 text-[9px] font-black text-white/35">
                         {Math.min(q.current, q.target)}/{q.target}
@@ -414,18 +377,18 @@ export const StartMenuView: React.FC<{
 
       {/* ------------------------------------------------------- footer nav */}
       <div className="mt-6 grid grid-cols-2 gap-2 md:grid-cols-4">
-        <MenuButton icon="store" label="Butik" onClick={() => onNavigate(AppView.SHOP)} />
-        <MenuButton icon="task_alt" label="Uppdrag" onClick={() => onNavigate(AppView.QUESTS)} />
-        <MenuButton icon="help" label="Så spelar du" onClick={() => onNavigate(AppView.HOW_TO_PLAY)} subtle />
-        <MenuButton icon="emoji_events" label="Topplista" onClick={() => onNavigate(AppView.LEADERBOARD)} subtle />
+        <MenuButton icon="store" label={t('Butik')} onClick={() => onNavigate(AppView.SHOP)} />
+        <MenuButton icon="task_alt" label={t('Uppdrag')} onClick={() => onNavigate(AppView.QUESTS)} />
+        <MenuButton icon="help" label={t('Så spelar du')} onClick={() => onNavigate(AppView.HOW_TO_PLAY)} subtle />
+        <MenuButton icon="emoji_events" label={t('Topplista')} onClick={() => onNavigate(AppView.LEADERBOARD)} subtle />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">
         <button onClick={() => onNavigate(AppView.SETTINGS)} className="transition-colors hover:text-white/80">
-          Inställningar
+          {t('Inställningar')}
         </button>
         <span aria-hidden="true">·</span>
-        <span>Neon City · 40 kapitel</span>
+        <span>{t('Neon City · 40 kapitel')}</span>
         <span aria-hidden="true">·</span>
         <span className="text-white/20">v2.0</span>
       </div>
@@ -436,6 +399,7 @@ export const StartMenuView: React.FC<{
 /** SETTINGS **/
 export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, updateSettings, toggleMuted, exportProgressCode, importProgressCode } = useProgress();
+  const t = useT();
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [importCode, setImportCode] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
@@ -466,29 +430,38 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <div className="mx-auto w-full max-w-2xl animate-fade-in-up px-4 py-6 md:py-10">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="eyebrow text-primary">System</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-4xl">Inställningar</h1>
-          <p className="mt-1 text-xs text-white/40">Ljud, bild och säkerhetskopiering. Allt sparas lokalt.</p>
+          <p className="eyebrow text-primary">{t('System')}</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-4xl">{t('Inställningar')}</h1>
+          <p className="mt-1 text-xs text-white/40">{t('Ljud, bild och säkerhetskopiering. Allt sparas lokalt.')}</p>
         </div>
         <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
           <span className="material-symbols-outlined text-base">arrow_back</span>
-          Tillbaka
+          {t('Tillbaka')}
         </button>
       </div>
 
       <div className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/78 backdrop-blur-xl">
+        {/* Language */}
+        <div className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-primary">language</span>
+            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Språk')}</span>
+          </div>
+          <LanguageButtons />
+        </div>
+
         {/* Audio Section */}
         <div className="p-5">
           <div className="flex items-center gap-2 mb-5">
             <span className="material-symbols-outlined text-primary">equalizer</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">Audio</span>
+            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Audio')}</span>
           </div>
 
           <div className="space-y-5">
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-mute" className="text-white/80 text-sm font-medium">Ljud av/på</label>
-                <span className={`text-sm font-bold ${muted ? 'text-primary-red' : 'text-primary'}`}>{muted ? 'Av' : 'På'}</span>
+                <label htmlFor="settings-mute" className="text-white/80 text-sm font-medium">{t('Ljud av/på')}</label>
+                <span className={`text-sm font-bold ${muted ? 'text-primary-red' : 'text-primary'}`}>{muted ? t('Av') : t('På')}</span>
               </div>
               <button
                 id="settings-mute" type="button"
@@ -504,19 +477,19 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   {muted ? 'volume_off' : 'volume_up'}
                 </span>
                 <span className="flex-1 text-left text-sm font-semibold text-white/85">
-                  {muted ? 'Allt ljud är avstängt' : 'Allt ljud spelas'}
+                  {muted ? t('Allt ljud är avstängt') : t('Allt ljud spelas')}
                 </span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Mute</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">{t('Mute')}</span>
               </button>
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-music" className="text-white/80 text-sm font-medium">Musikvolym</label>
+                <label htmlFor="settings-music" className="text-white/80 text-sm font-medium">{t('Musikvolym')}</label>
                 <span className={`font-mono text-sm ${muted ? 'text-white/30' : 'text-primary'}`}>{muted ? '—' : `${music}%`}</span>
               </div>
               <input
-                id="settings-music" aria-label="Musikvolym"
+                id="settings-music" aria-label={t('Musikvolym')}
                 type="range" min="0" max="100" value={music}
                 onChange={(e) => updateSettings({ musicVolume: Number(e.target.value) })}
                 className="w-full h-4"
@@ -531,11 +504,11 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-sfx" className="text-white/80 text-sm font-medium">Audioeffekter</label>
+                <label htmlFor="settings-sfx" className="text-white/80 text-sm font-medium">{t('Audioeffekter')}</label>
                 <span className={`font-mono text-sm ${muted ? 'text-white/30' : 'text-primary'}`}>{muted ? '—' : `${sfx}%`}</span>
               </div>
               <input
-                id="settings-sfx" aria-label="Audioeffekter"
+                id="settings-sfx" aria-label={t('Audioeffekter')}
                 type="range" min="0" max="100" value={sfx}
                 onChange={(e) => updateSettings({ sfxVolume: Number(e.target.value) })}
                 className="w-full h-4"
@@ -550,11 +523,11 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-ui" className="text-white/80 text-sm font-medium">UI-skala</label>
+                <label htmlFor="settings-ui" className="text-white/80 text-sm font-medium">{t('UI-skala')}</label>
                 <span className="text-primary font-mono text-sm">{Math.round(progress.settings.uiScale * 100)}%</span>
               </div>
               <input
-                id="settings-ui" aria-label="UI-skala"
+                id="settings-ui" aria-label={t('UI-skala')}
                 type="range" min="80" max="120" value={Math.round(progress.settings.uiScale * 100)}
                 onChange={(e) => updateSettings({ uiScale: Number(e.target.value) / 100 })}
                 className="w-full h-4"
@@ -569,11 +542,11 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-text" className="text-white/80 text-sm font-medium">Textstorlek</label>
+                <label htmlFor="settings-text" className="text-white/80 text-sm font-medium">{t('Textstorlek')}</label>
                 <span className="text-primary font-mono text-sm">{Math.round(progress.settings.textScale * 100)}%</span>
               </div>
               <input
-                id="settings-text" aria-label="Textstorlek"
+                id="settings-text" aria-label={t('Textstorlek')}
                 type="range" min="90" max="130" value={Math.round(progress.settings.textScale * 100)}
                 onChange={(e) => updateSettings({ textScale: Number(e.target.value) / 100 })}
                 className="w-full h-4"
@@ -592,7 +565,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="p-5">
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-primary">fullscreen</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">Skärm</span>
+            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Skärm')}</span>
           </div>
 
           <button
@@ -602,8 +575,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <div className="flex items-center gap-3">
               <span className="material-symbols-outlined text-white/60">open_in_full</span>
               <div className="text-left">
-                <p className="text-white font-medium text-sm">Helskärmsläge</p>
-                <p className="text-white/40 text-xs">Maximal inlevelse</p>
+                <p className="text-white font-medium text-sm">{t('Helskärmsläge')}</p>
+                <p className="text-white/40 text-xs">{t('Maximal inlevelse')}</p>
               </div>
             </div>
             <div className={`w-10 h-5 rounded-full transition-colors relative ${isFullscreen ? 'bg-primary' : 'bg-white/20'}`}>
@@ -613,13 +586,13 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4">
             <button onClick={() => updateSettings({ colorBlindMode: !progress.settings.colorBlindMode })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
-              Färgblind: {progress.settings.colorBlindMode ? 'På' : 'Av'}
+              {t('Färgblind: {v}', { v: progress.settings.colorBlindMode ? t('På') : t('Av') })}
             </button>
             <button onClick={() => updateSettings({ reduceMotion: !progress.settings.reduceMotion })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
-              Reducera motion: {progress.settings.reduceMotion ? 'På' : 'Av'}
+              {t('Reducera motion: {v}', { v: progress.settings.reduceMotion ? t('På') : t('Av') })}
             </button>
             <button onClick={() => updateSettings({ debugOverlay: !progress.settings.debugOverlay })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
-              Debug HUD: {progress.settings.debugOverlay ? 'På' : 'Av'}
+              {t('Debug HUD: {v}', { v: progress.settings.debugOverlay ? t('På') : t('Av') })}
             </button>
           </div>
         </div>
@@ -628,7 +601,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="p-5">
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-primary">sync</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">Säkerhetskopiering</span>
+            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Säkerhetskopiering')}</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 mb-3">
             <button
@@ -636,29 +609,29 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 const code = exportProgressCode();
                 if (code) {
                   await navigator.clipboard.writeText(code);
-                  setSyncMessage('Exportkod kopierad!');
+                  setSyncMessage(t('Exportkod kopierad!'));
                   setTimeout(() => setSyncMessage(''), 2000);
                 }
               }}
               className="px-4 py-2 rounded-lg bg-primary text-[#112218] font-black text-xs uppercase"
             >
-              Exportera kod
+              {t('Exportera kod')}
             </button>
             <button
               onClick={() => {
                 const ok = importProgressCode(importCode);
-                setSyncMessage(ok ? 'Progress importerad!' : 'Ogiltig kod');
+                setSyncMessage(ok ? t('Progress importerad!') : t('Ogiltig kod'));
                 setTimeout(() => setSyncMessage(''), 2000);
               }}
               className="px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white font-black text-xs uppercase"
             >
-              Importera kod
+              {t('Importera kod')}
             </button>
           </div>
           <textarea
             value={importCode}
             onChange={(e) => setImportCode(e.target.value)}
-            placeholder="Klistra in exportkod här"
+            placeholder={t('Klistra in exportkod här')}
             className="w-full h-20 bg-black/30 rounded-xl border border-white/10 p-3 text-xs text-white/80"
           />
           {syncMessage && <p className="text-primary text-xs mt-2 font-bold">{syncMessage}</p>}
@@ -670,7 +643,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         className="btn-ghost mt-4 w-full py-3 text-xs uppercase tracking-wider"
       >
         <span className="material-symbols-outlined text-base">arrow_back</span>
-        Tillbaka till menyn
+        {t('Tillbaka till menyn')}
       </button>
     </div>
   );
@@ -678,6 +651,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
 /** HOW TO PLAY **/
 export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const t = useT();
   const powerups = [
     { icon: 'shield', name: 'Sköld', color: 'text-cyan-300', ring: 'border-cyan-300/30 bg-cyan-300/10', desc: 'Tar emot nästa smäll åt dig.' },
     { icon: 'attractions', name: 'Fiskmagnet', color: 'text-yellow-300', ring: 'border-yellow-300/30 bg-yellow-300/10', desc: 'Drar fiskar till dig i 10 sekunder.' },
@@ -698,31 +672,29 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-6 md:py-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow text-primary">Så spelar du</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Handboken</h1>
+          <p className="eyebrow text-primary">{t('Så spelar du')}</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Handboken')}</h1>
           <p className="mt-2 max-w-lg text-sm text-white/50">
-            Allt du behöver för att ta dig genom neonstaden, från första hoppet till sista bossen.
+            {t('Allt du behöver för att ta dig genom neonstaden, från första hoppet till sista bossen.')}
           </p>
         </div>
         <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
           <span className="material-symbols-outlined text-base">arrow_back</span>
-          Tillbaka
+          {t('Tillbaka')}
         </button>
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
           <span className="material-symbols-outlined text-2xl text-primary">flag</span>
-          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Målet</h2>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Målet')}</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-white/50">
-            Samla <strong className="text-white/80">fiskkvoten</strong> (60–72 % av banans fiskar) och nå
-            Jerry längst fram. Tar du alla fiskar väntar en bonus. Bossnivåer kräver att bossen
-            besegras först. Varje nivå ger XP, mynt och poäng.
+            {renderRich(t('Samla <b>fiskkvoten</b> (60–72 % av banans fiskar) och nå Jerry längst fram. Tar du alla fiskar väntar en bonus. Bossnivåer kräver att bossen besegras först. Varje nivå ger XP, mynt och poäng.'), 'text-white/80')}
           </p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
           <span className="material-symbols-outlined text-2xl text-cyan-300">gamepad</span>
-          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Kontroller</h2>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Kontroller')}</h2>
           <div className="mt-2 space-y-1.5">
             {[
               { k: 'A / D  ← →', v: 'Rör dig' },
@@ -732,62 +704,61 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               { k: 'Esc / P', v: 'Paus' },
             ].map((c) => (
               <div key={c.k} className="flex items-center justify-between gap-2">
-                <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold text-white/75">{c.k}</span>
-                <span className="text-[10px] text-white/45">{c.v}</span>
+                <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold text-white/75">{t(c.k)}</span>
+                <span className="text-[10px] text-white/45">{t(c.v)}</span>
               </div>
             ))}
           </div>
         </div>
         <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] p-4 backdrop-blur-md">
           <span className="material-symbols-outlined text-2xl text-yellow-300">local_fire_department</span>
-          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Streak</h2>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Streak')}</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-white/55">
-            Fiskar, fiender och bonusar bygger streaken. Var fjärde aktion höjer multiplikatorn
-            (upp till <strong className="text-yellow-200">x8</strong>). Skada nollställer den.
+            {renderRich(t('Fiskar, fiender och bonusar bygger streaken. Var fjärde aktion höjer multiplikatorn (upp till <b>x8</b>). Skada nollställer den.'), 'text-yellow-200')}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">UTAN SKADA +750</span>
-            <span className="rounded-md border border-yellow-300/25 bg-yellow-300/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-200">NÄSTAN +75</span>
+            <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">{t('UTAN SKADA +750')}</span>
+            <span className="rounded-md border border-yellow-300/25 bg-yellow-300/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-200">{t('NÄSTAN +75')}</span>
           </div>
         </div>
       </div>
 
-      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Power-ups</h2>
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Power-ups')}</h2>
       <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
         {powerups.map((p) => (
           <div key={p.name} className="rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
             <span className={`material-symbols-outlined text-xl ${p.color}`}>{p.icon}</span>
-            <p className="mt-1 text-[11px] font-black text-white">{p.name}</p>
-            <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{p.desc}</p>
+            <p className="mt-1 text-[11px] font-black text-white">{t(p.name)}</p>
+            <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{t(p.desc)}</p>
           </div>
         ))}
       </div>
 
-      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Fiender</h2>
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Fiender')}</h2>
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {enemies.map((e) => (
           <div key={e.name} className="flex items-start gap-2.5 rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
             <span className={`material-symbols-outlined text-xl ${e.color}`}>{e.icon}</span>
             <div>
-              <p className="text-[11px] font-black text-white">{e.name}</p>
-              <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{e.desc}</p>
+              <p className="text-[11px] font-black text-white">{t(e.name)}</p>
+              <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{t(e.desc)}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Nivåtyper</h2>
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Nivåtyper')}</h2>
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {Object.entries(LEVEL_MODE_META).map(([key, meta]) => (
           <div key={key} className="rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
-            <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: meta.accent }}>{meta.short}</span>
-            <p className="mt-1 text-[9px] leading-relaxed text-white/35">{meta.goal}</p>
+            <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: meta.accent }}>{t(meta.short)}</span>
+            <p className="mt-1 text-[9px] leading-relaxed text-white/35">{t(meta.goal)}</p>
           </div>
         ))}
       </div>
 
       <div className="mt-6 rounded-2xl border border-white/10 bg-[#0a1220]/70 p-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Proffstips</h2>
+        <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Proffstips')}</h2>
         <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
           {[
             'Dubbelhoppet räddar liv – tryck en gång till i luften.',
@@ -799,7 +770,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           ].map((tip) => (
             <div key={tip} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-white/45">
               <span className="text-primary">•</span>
-              <span>{tip}</span>
+              <span>{t(tip)}</span>
             </div>
           ))}
         </div>
@@ -807,7 +778,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       <button onClick={onBack} className="btn-primary mt-6 w-full max-w-xs py-3.5 text-sm">
         <span className="material-symbols-outlined text-lg">check</span>
-        Jag förstår
+        {t('Jag förstår')}
       </button>
     </div>
   );
@@ -816,6 +787,9 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 /** LEADERBOARD **/
 export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void }> = ({ onBack, onPlay }) => {
   const [scores, setScores] = useState<ScoreEntry[]>([]);
+  const t = useT();
+  const lvl = (label: string) => t('Nivå {n}', { n: label.replace(/\D/g, '') });
+  const dt = (d: string) => d.replace('okt', t('okt'));
 
   useEffect(() => {
     // Offline-friendly ghosts so the board is never empty for a new player.
@@ -873,13 +847,13 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
     <div className="mx-auto w-full max-w-3xl animate-fade-in-up px-4 py-6 md:py-10">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="eyebrow text-primary">Rangordning</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Topplista</h1>
-          <p className="mt-1 text-xs text-white/40">Lokala rekord och legendariska neonlöpare.</p>
+          <p className="eyebrow text-primary">{t('Rangordning')}</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Topplista')}</h1>
+          <p className="mt-1 text-xs text-white/40">{t('Lokala rekord och legendariska neonlöpare.')}</p>
         </div>
         <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
           <span className="material-symbols-outlined text-base">arrow_back</span>
-          Tillbaka
+          {t('Tillbaka')}
         </button>
       </div>
 
@@ -889,8 +863,8 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
             {initial(userBest.name)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">Ditt bästa resultat</p>
-            <p className="truncate text-sm font-black text-white">{userBest.name} · rank #{userBest.rank}</p>
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">{t('Ditt bästa resultat')}</p>
+            <p className="truncate text-sm font-black text-white">{t('{name} · rank #{n}', { name: userBest.name, n: userBest.rank })}</p>
           </div>
           <p className="tabular text-lg font-black text-primary">{userBest.score.toLocaleString()}</p>
         </div>
@@ -944,7 +918,7 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
                     {s.score.toLocaleString()}
                   </span>
                   <span className="text-[8px] font-black uppercase tracking-[0.18em] text-white/35">
-                    {s.isUser ? 'Du' : s.level}
+                    {s.isUser ? t('Du') : lvl(s.level)}
                   </span>
                 </div>
               </div>
@@ -969,9 +943,9 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
               </div>
               <div className="min-w-0 flex-1">
                 <p className={`truncate text-xs font-bold ${s.isUser ? 'text-primary' : 'text-white/80'}`}>
-                  {s.name} {s.isUser && <span className="text-[8px] font-black uppercase tracking-wider text-primary/60">du</span>}
+                  {s.name} {s.isUser && <span className="text-[8px] font-black uppercase tracking-wider text-primary/60">{t('du')}</span>}
                 </p>
-                <p className="text-[9px] text-white/30">{s.level} · {s.date}</p>
+                <p className="text-[9px] text-white/30">{lvl(s.level)} · {dt(s.date)}</p>
               </div>
               <p className={`tabular text-sm font-black ${s.isUser ? 'text-primary' : 'text-white/85'}`}>{s.score.toLocaleString()}</p>
             </div>
@@ -981,11 +955,11 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
 
       <div className="mt-4 flex gap-2">
         <button onClick={onBack} className="btn-ghost flex-1 py-3 text-xs uppercase tracking-wider">
-          Tillbaka
+          {t('Tillbaka')}
         </button>
         <button onClick={onPlay} className="btn-primary flex-1 py-3 text-sm">
           <span className="material-symbols-outlined text-lg">play_arrow</span>
-          Spela nu
+          {t('Spela nu')}
         </button>
       </div>
     </div>
@@ -994,7 +968,8 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
 
 /** GAME OVER **/
 export const GameOverView: React.FC<{ score: number, fishesCollected?: number, onRestart: () => void, onMenu: () => void }> = ({ score, fishesCollected = 0, onRestart, onMenu }) => {
-  const [taunt, setTaunt] = useState<string>('Bättre lycka nästa gång!');
+  const t = useT();
+  const [taunt, setTaunt] = useState<string>(() => tr('Bättre lycka nästa gång!'));
   const [name, setName] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
@@ -1093,8 +1068,8 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     ctx.fillText('SHADOW PAW', 48, 90);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 42px Outfit, sans-serif';
-    ctx.fillText(`Poäng: ${score.toLocaleString()}`, 48, 180);
-    ctx.fillText(`Fiskar: ${fishesCollected}`, 48, 240);
+    ctx.fillText(t('Poäng: {n}', { n: score.toLocaleString() }), 48, 180);
+    ctx.fillText(t('Fiskar: {n}', { n: fishesCollected }), 48, 240);
     ctx.fillText(`Combo: x${lastRun.bestCombo || 0}`, 48, 300);
     ctx.fillStyle = '#95a3b8';
     ctx.font = 'bold 24px Outfit, sans-serif';
@@ -1106,7 +1081,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     a.download = `shadow-paw-score-${score}.png`;
     a.click();
 
-    const summary = `Jag fick ${score} poäng i Shadow Paw!`;
+    const summary = t('Jag fick {n} poäng i Shadow Paw!', { n: score });
     // The clipboard is blocked in insecure contexts and by some permission
     // settings, so a failed copy must not swallow the confirmation.
     let copied = false;
@@ -1116,7 +1091,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     } catch {
       copied = false;
     }
-    setShareMessage(copied ? 'Bild nedladdad + text kopierad!' : 'Bild nedladdad!');
+    setShareMessage(copied ? t('Bild nedladdad + text kopierad!') : t('Bild nedladdad!'));
     setTimeout(() => setShareMessage(''), 2500);
   };
 
@@ -1136,16 +1111,16 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
             <div className="flex items-center gap-2 rounded-2xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2">
               <span className="material-symbols-outlined text-base text-red-300">warning</span>
               <div className="min-w-0">
-                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">Status</p>
-                <p className="truncate text-xs font-black uppercase tracking-wide text-white/90">Uppdraget misslyckades</p>
+                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">{t('Status')}</p>
+                <p className="truncate text-xs font-black uppercase tracking-wide text-white/90">{t('Uppdraget misslyckades')}</p>
               </div>
             </div>
             <div className="mt-2 flex items-center justify-between px-1 text-[9px] font-black uppercase tracking-wider text-white/30">
-              <span>Nivåer klara</span>
+              <span>{t('Nivåer klara')}</span>
               <span className="tabular text-white/70">{lastRun.levelsCompleted || 0}</span>
             </div>
             <div className="mt-1 flex items-center justify-between px-1 text-[9px] font-black uppercase tracking-wider text-white/30">
-              <span>Bossar</span>
+              <span>{t('Bossar')}</span>
               <span className="tabular text-white/70">{lastRun.bossDefeated ? '1' : '0'}</span>
             </div>
           </div>
@@ -1156,18 +1131,18 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1">
               <span className="material-symbols-outlined text-sm text-red-300">sentiment_dissatisfied</span>
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-red-200">Rundan är över</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-red-200">{t('Rundan är över')}</span>
             </span>
             {isRecord && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/35 bg-yellow-300/10 px-3 py-1">
                 <span className="material-symbols-outlined text-sm text-yellow-300">emoji_events</span>
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-yellow-200">Nytt rekord</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-yellow-200">{t('Nytt rekord')}</span>
               </span>
             )}
           </div>
 
           <h1 className="mt-3 font-display text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-6xl">
-            Spelet <span className="text-red-400">över</span>
+            {renderRich(t('Spelet <b>över</b>'), 'text-red-400')}
           </h1>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/55 md:text-base">{taunt}</p>
 
@@ -1175,22 +1150,22 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
             <div className="col-span-3 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.14] to-transparent px-4 py-3">
               <div className="flex items-end justify-between gap-2">
                 <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.22em] text-primary/70">Slutpoäng</p>
+                  <p className="text-[8px] font-black uppercase tracking-[0.22em] text-primary/70">{t('Slutpoäng')}</p>
                   <p className="tabular text-3xl font-black leading-none text-white md:text-4xl">{score.toLocaleString()}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/30">XP intjänat</p>
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/30">{t('XP intjänat')}</p>
                   <p className="tabular text-lg font-black text-cyan-300">+{Math.floor(score / 10)}</p>
                 </div>
               </div>
             </div>
             {[
-              { label: 'Fiskar', value: fishesCollected, tone: 'text-sky-300', icon: 'set_meal' },
-              { label: 'Bästa combo', value: lastRun.bestCombo || 0, tone: 'text-cyan-300', icon: 'local_fire_department' },
-              { label: 'Bästa streak', value: lastRun.bestStreak || 0, tone: 'text-primary', icon: 'bolt' },
-              { label: 'Fiender', value: lastRun.enemiesDefeated || 0, tone: 'text-orange-300', icon: 'swords' },
-              { label: 'Mynt i rundan', value: `+${coinsEarned}`, tone: 'text-yellow-300', icon: 'monetization_on' },
-              { label: 'Mynt totalt', value: totalCoins, tone: 'text-yellow-200', icon: 'account_balance_wallet' },
+              { label: t('Fiskar'), value: fishesCollected, tone: 'text-sky-300', icon: 'set_meal' },
+              { label: t('Bästa combo'), value: lastRun.bestCombo || 0, tone: 'text-cyan-300', icon: 'local_fire_department' },
+              { label: t('Bästa streak'), value: lastRun.bestStreak || 0, tone: 'text-primary', icon: 'bolt' },
+              { label: t('Fiender'), value: lastRun.enemiesDefeated || 0, tone: 'text-orange-300', icon: 'swords' },
+              { label: t('Mynt i rundan'), value: `+${coinsEarned}`, tone: 'text-yellow-300', icon: 'monetization_on' },
+              { label: t('Mynt totalt'), value: totalCoins, tone: 'text-yellow-200', icon: 'account_balance_wallet' },
             ].map((s) => (
               <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.035] px-2.5 py-2">
                 <span className={`material-symbols-outlined text-[14px] ${s.tone}`}>{s.icon}</span>
@@ -1203,7 +1178,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
           <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3.5">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-base text-yellow-300">emoji_events</span>
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/45">Spara till topplistan</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/45">{t('Spara till topplistan')}</p>
             </div>
             <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
@@ -1213,7 +1188,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={isSaved}
-                  placeholder="Ditt namn"
+                  placeholder={t('Ditt namn')}
                   maxLength={15}
                   className={`w-full rounded-xl border border-white/10 bg-white/[0.04] py-3 pl-10 pr-3 text-sm text-white placeholder-white/25 transition-colors focus:border-primary/50 focus:outline-none ${isSaved ? 'cursor-not-allowed opacity-50' : ''}`}
                 />
@@ -1223,7 +1198,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
                 disabled={isSaved || !name.trim()}
                 className="btn-primary shrink-0 px-6 py-3 text-xs"
               >
-                {isSaved ? 'Sparat!' : 'Spara'}
+                {isSaved ? t('Sparat!') : t('Spara')}
               </button>
             </div>
           </div>
@@ -1231,15 +1206,15 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <button onClick={onRestart} className="btn-primary flex-1 py-3.5 text-sm">
               <span className="material-symbols-outlined text-lg">replay</span>
-              Spela igen
+              {t('Spela igen')}
             </button>
             <button onClick={onMenu} className="btn-ghost flex-1 py-3.5 text-xs uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">home</span>
-              Huvudmeny
+              {t('Huvudmeny')}
             </button>
             <button onClick={handleShareCard} className="btn-ghost flex-1 py-3.5 text-xs uppercase tracking-wider">
               <span className="material-symbols-outlined text-base text-primary">ios_share</span>
-              Dela
+              {t('Dela')}
             </button>
           </div>
           {shareMessage && <p className="mt-3 text-center text-xs font-bold text-primary">{shareMessage}</p>}
@@ -1844,7 +1819,7 @@ const fireBossAttack = (
           });
         }
       }
-      game.toasts.push({ text: 'BOSS TILLKALLAR HJÄLP!', color: '#ff9f43', life: 90, maxLife: 90 });
+      game.toasts.push({ text: tr('BOSS TILLKALLAR HJÄLP!'), color: '#ff9f43', life: 90, maxLife: 90 });
       if (game.toasts.length > 3) game.toasts.shift();
       AudioEngine.playBossRoar();
       break;
@@ -2650,6 +2625,7 @@ export const PlayingView: React.FC<{
   const [combo, setCombo] = useState(0);
   const [seasonTheme] = useState(getSeasonTheme());
   const { progress, addCoins, toggleMuted } = useProgress();
+  const t = useT();
   const isMuted = progress.settings.muted;
 
   const gameRef = useRef<any>(null);
@@ -2989,11 +2965,11 @@ export const PlayingView: React.FC<{
       const bossTypeIndex = (Math.floor(level / 5) - 1) % bossTypes.length;
       const bossType = bossTypes[bossTypeIndex];
       const bossNames: Record<string, string> = {
-        'rat_king': 'RÅTTE-KUNG',
-        'cyber_dog': 'CYBER-HUND',
-        'storm_eagle': 'STORM-ÖRN',
-        'void_dragon': 'TOMRUMS-DRAKEN',
-        'shadow_titan': 'SKUGG-TITAN'
+        'rat_king': tr('RÅTTE-KUNG'),
+        'cyber_dog': tr('CYBER-HUND'),
+        'storm_eagle': tr('STORM-ÖRN'),
+        'void_dragon': tr('TOMRUMS-DRAKEN'),
+        'shadow_titan': tr('SKUGG-TITAN')
       };
       // A guaranteed, purpose-built arena avoids bosses spawning on random
       // floating platforms or in the middle of a level.
@@ -3376,15 +3352,15 @@ export const PlayingView: React.FC<{
     const multiplierBonus = Math.round(baseScore * (game.multiplier - 1) * 0.5);
     const comboBonus = Math.min(100, Math.max(0, (game.combo - 1) * 6));
     if (comboBonus > 0) {
-      game.floatingTexts.push({ x, y: y - 18, text: `COMBO x${game.combo} +${comboBonus}`, life: 35, color: '#7ef7c2' });
+      game.floatingTexts.push({ x, y: y - 18, text: tr('COMBO x{n} +{b}', { n: game.combo, b: comboBonus }), life: 35, color: '#7ef7c2' });
     }
     if (multiplierBonus > 0) {
-      game.floatingTexts.push({ x, y: y - 44, text: `x${game.multiplier} MULTIPLIER +${multiplierBonus}`, life: 45, color: '#ffd166' });
+      game.floatingTexts.push({ x, y: y - 44, text: tr('x{n} MULTIPLIER +{b}', { n: game.multiplier, b: multiplierBonus }), life: 45, color: '#ffd166' });
     }
     if (game.multiplier > 1 && game.multiplier !== (game.lastMilestoneMultiplier || 1)) {
       game.lastMilestoneMultiplier = game.multiplier;
       AudioEngine.playCombo(game.multiplier);
-      pushToast(game, `MULTIPLIKATOR x${game.multiplier}`, '#ffd166');
+      pushToast(game, tr('MULTIPLIKATOR x{n}', { n: game.multiplier }), '#ffd166');
     }
     game.score += baseScore + comboBonus + multiplierBonus;
   };
@@ -3399,7 +3375,7 @@ export const PlayingView: React.FC<{
       game.xpNeeded = Math.round(game.xpNeeded * 1.35);
       game.ammo += 2;
       game.score += 500;
-      pushToast(game, `NIVÅ ${game.runLevel}! +2 SKOTT`, '#2bee79');
+      pushToast(game, tr('NIVÅ {n}! +2 SKOTT', { n: game.runLevel }), '#2bee79');
       game.slowMo = 18;
     }
   };
@@ -3491,7 +3467,7 @@ export const PlayingView: React.FC<{
           life: 30, color: i % 2 ? '#7ee7ff' : '#ffffff', size: Math.random() * 3 + 2,
         });
       }
-      pushToast(game, 'SKÖLDEN TOG SMÄLLEN!', '#7ee7ff');
+      pushToast(game, tr('SKÖLDEN TOG SMÄLLEN!'), '#7ee7ff');
       if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(20);
       AudioEngine.playShieldBreak();
       return 'shielded';
@@ -3533,28 +3509,28 @@ export const PlayingView: React.FC<{
     switch (pickup.type) {
       case 'shield':
         game.shield = true;
-        label = 'SKÖLD AKTIVERAD';
+        label = tr('SKÖLD AKTIVERAD');
         color = '#7ee7ff';
         break;
       case 'magnet':
         game.buffs.magnet = 620;
-        label = 'FISKMAGNET · 10s';
+        label = tr('FISKMAGNET · 10s');
         color = '#ffd166';
         break;
       case 'rapid':
         game.buffs.rapid = 540;
-        label = 'RAPID ELD · 9s';
+        label = tr('RAPID ELD · 9s');
         color = '#ff8f6b';
         break;
       case 'heart':
         game.lives = Math.min(6, game.lives + 1);
-        label = '+1 LIV';
+        label = tr('+1 LIV');
         color = '#ff5f8a';
         break;
       case 'ammo':
         game.ammo += 6;
         game.score += 50;
-        label = '+6 SKOTT';
+        label = tr('+6 SKOTT');
         color = '#9fb6ff';
         // Arena ammo crates are a renewable resource, so a boss fight can never
         // soft-lock with an empty gun.
@@ -3906,7 +3882,7 @@ export const PlayingView: React.FC<{
                 life: 25, color: bossCol, size: Math.random()*5+2
               });
             }
-            game.floatingTexts.push({ x: boss.x + boss.width/2, y: boss.y - 10, text: `BOSS HP ${boss.hp}/${boss.maxHp}`, life: 30, color: '#ff6b6b' });
+            game.floatingTexts.push({ x: boss.x + boss.width/2, y: boss.y - 10, text: tr('BOSS HP {a}/{b}', { a: boss.hp, b: boss.maxHp }), life: 30, color: '#ff6b6b' });
             if (boss.hp <= 0) {
               registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
               grantXp(game, 200 + boss.phase * 100);
@@ -3924,7 +3900,7 @@ export const PlayingView: React.FC<{
                   size: Math.random()*8+3
                 });
               }
-              pushToast(game, `${boss.name} BESEGRAD! +${50 + boss.phase * 20} MYNT`, '#ff9f43');
+              pushToast(game, tr('{name} BESEGRAD! +{n} MYNT', { name: boss.name, n: 50 + boss.phase * 20 }), '#ff9f43');
               AudioEngine.playExplosion();
               AudioEngine.playLevelUp();
             }
@@ -3985,7 +3961,7 @@ export const PlayingView: React.FC<{
           game.player.invincible = true;
           game.player.invincibleTimer = 90;
           game.screenShake = 10;
-          pushToast(game, 'TIDEN UTE! -1 LIV', '#ff8888');
+          pushToast(game, tr('TIDEN UTE! -1 LIV'), '#ff8888');
           AudioEngine.playLifeLost();
         }
       }
@@ -4101,7 +4077,7 @@ export const PlayingView: React.FC<{
             e.nearMissed = true;
             game.nearMisses = (game.nearMisses || 0) + 1;
             game.score += 75;
-            game.floatingTexts.push({ x: e.x, y: e.y - 20, text: 'NÄSTAN! +75', life: 40, color: '#7ef7c2' });
+            game.floatingTexts.push({ x: e.x, y: e.y - 20, text: tr('NÄSTAN! +75'), life: 40, color: '#7ef7c2' });
             AudioEngine.playNearMiss();
           }
         }
@@ -4199,7 +4175,7 @@ export const PlayingView: React.FC<{
         const attackProfile = BOSS_ATTACK_PROFILES[boss.type] || BOSS_ATTACK_PROFILES.rat_king;
         if (!boss.encountered && Math.abs(boss.x - game.player.x) < canvas.width * 0.8) {
           boss.encountered = true;
-          pushToast(game, `BOSS INKOMMER · ${boss.name}`, '#ff9f43');
+          pushToast(game, tr('BOSS INKOMMER · {name}', { name: boss.name }), '#ff9f43');
           game.screenShake = Math.max(game.screenShake, 14);
           game.slowMo = 24;
           game.zoomPunch = 16;
@@ -4214,7 +4190,7 @@ export const PlayingView: React.FC<{
           boss.phase = newPhase;
           game.screenShake = 20;
           game.slowMo = 30;
-          pushToast(game, `${boss.name} FAS ${boss.phase + 1}!`, '#ff6b35');
+          pushToast(game, tr('{name} FAS {n}!', { name: boss.name, n: boss.phase + 1 }), '#ff6b35');
           AudioEngine.playBossRoar();
           game.zoomPunch = 12;
           boss.attackTimer = 30; // Kortare cooldown i högre faser
@@ -4330,7 +4306,7 @@ export const PlayingView: React.FC<{
         game.player.invincible = true;
         game.player.invincibleTimer = 70;
         AudioEngine.playLifeLost();
-        pushToast(game, '-1 LIV · TILLBAKA PÅ SPÅRET', '#ff8888');
+        pushToast(game, tr('-1 LIV · TILLBAKA PÅ SPÅRET'), '#ff8888');
         if (game.lives <= 0) endRun(game, 'hole');
       }
 
@@ -4438,8 +4414,8 @@ export const PlayingView: React.FC<{
             if (game.totalCollectedInLevel % 10 === 0) {
               game.ammo += 1;
               awardCoins(game, 5);
-              pushToast(game, '+5 MYNT! +1 SKOTT!', '#ffd700');
-              game.floatingTexts.push({ x: f.x, y: f.y - 30, text: '+5 MYNT! +1 SKOTT!', life: 60, color: '#ffd700' });
+              pushToast(game, tr('+5 MYNT! +1 SKOTT!'), '#ffd700');
+              game.floatingTexts.push({ x: f.x, y: f.y - 30, text: tr('+5 MYNT! +1 SKOTT!'), life: 60, color: '#ffd700' });
             }
 
             // Floating score text
@@ -7114,9 +7090,9 @@ export const PlayingView: React.FC<{
           const fullCatchBonus = allFishesCollected ? 400 : 0;
           game.levelsCompletedInRun = (game.levelsCompletedInRun || 0) + 1;
           game.score += 1000 + perfectBonus + noHitBonus + nearMissBonus + fullCatchBonus;
-          if (fullCatchBonus > 0) pushToast(game, `ALLA FISKAR! +${fullCatchBonus}`, '#ffd166');
-          if (noHitBonus > 0) pushToast(game, 'OHIT! +750', '#2bee79');
-          if (nearMissBonus > 0) pushToast(game, `${game.nearMisses} NÄSTAN! +${nearMissBonus}`, '#7ef7c2');
+          if (fullCatchBonus > 0) pushToast(game, tr('ALLA FISKAR! +{n}', { n: fullCatchBonus }), '#ffd166');
+          if (noHitBonus > 0) pushToast(game, tr('OHIT! +750'), '#2bee79');
+          if (nearMissBonus > 0) pushToast(game, tr('{a} NÄSTAN! +{b}', { a: game.nearMisses, b: nearMissBonus }), '#7ef7c2');
           awardCoins(game, 25 + (perfectLevel ? 15 : 0) + (game.noHit ? 15 : 0));
           grantXp(game, 150);
           persistRunSummary(game, perfectLevel);
@@ -7239,7 +7215,7 @@ export const PlayingView: React.FC<{
         ctx.fillStyle = '#ffd700';
         ctx.shadowColor = '#ffa500';
         ctx.shadowBlur = 8;
-        ctx.fillText('RÄDDAS! ⭐', jxs + jw2/2, jy2 - 18 + textBob);
+        ctx.fillText(tr('RÄDDAS! ⭐'), jxs + jw2/2, jy2 - 18 + textBob);
         ctx.shadowBlur = 0;
       }
       if (game.showFishWarning) {
@@ -7558,12 +7534,16 @@ export const PlayingView: React.FC<{
   // A portrait phone letterboxes the 16:9 stage, so centring it would leave the
   // thumb buttons floating in the middle of the screen. Pin the stage to the
   // top and let the controls sit at the bottom where thumbs expect them.
-  const stackControlsAtBottom = isMobile && !isFullscreen && touchControlsVisible;
+  // A phone turned sideways gets the whole screen: stage fills it and the
+  // buttons float over the corners instead of eating a strip underneath.
+  const immersive = isFullscreen || (isTouchDevice && isMobile && !isPortrait);
+  const stackControlsAtBottom = isMobile && !immersive && touchControlsVisible;
 
   return (
     <div
+      dir="ltr"
       className={`flex w-full flex-col items-center overflow-hidden animate-fade-in-up ${
-        isFullscreen
+        immersive
           ? 'fixed inset-0 z-[100] justify-center gap-3 bg-background-dark px-2 py-2 md:gap-5 md:py-4'
           : isMobile
             ? `h-[100dvh] gap-1.5 px-1 ${stackControlsAtBottom ? 'justify-start pt-2 pb-1' : 'justify-center py-1'}`
@@ -7578,8 +7558,8 @@ export const PlayingView: React.FC<{
         style={{
           // Fill the available viewport height without ever exceeding the
           // screen width, so the stage never leaves a dead gap underneath.
-          height: isFullscreen
-            ? '100dvh'
+          height: immersive
+            ? 'min(100dvh, calc(100vw * 9 / 16))'
             : isMobile
               ? `min(calc(100dvh - ${reservedForControls}px), calc((100vw - 0.5rem) * 9 / 16))`
               : 'min(78vh, calc((100vw - 2rem) * 9 / 16))',
@@ -7610,12 +7590,12 @@ export const PlayingView: React.FC<{
                         favorite
                       </span>
                     ))}
-                    {lives <= 0 && <span className="text-[10px] font-black text-primary-red">TOMT</span>}
+                    {lives <= 0 && <span className="text-[10px] font-black text-primary-red">{t('TOMT')}</span>}
                     {lives > 6 && <span className="ml-1 text-[10px] font-black text-[#ff9db0]">+{lives - 6}</span>}
                   </span>
                 </div>
                 {stats.shield && (
-                  <span className="hud-chip border-cyan-300/45 bg-cyan-300/10 text-cyan-200" title="Sköld aktiv">
+                  <span className="hud-chip border-cyan-300/45 bg-cyan-300/10 text-cyan-200" title={t('Sköld aktiv')}>
                     <span className="material-symbols-outlined text-[14px]">shield</span>
                   </span>
                 )}
@@ -7625,11 +7605,11 @@ export const PlayingView: React.FC<{
                 <div className={`hud-chip ${stats.ammo <= 0 ? 'border-[#ff5f7a]/60 bg-[#ff5f7a]/10 animate-pulse' : ''}`}>
                   <span className="material-symbols-outlined text-[15px] text-[#ff9d9d]">bolt</span>
                   <span className={`tabular text-xs font-black ${stats.ammo <= 0 ? 'text-[#ff8b8b]' : 'text-white'}`}>{stats.ammo}</span>
-                  <span className="hidden text-[8px] font-black uppercase tracking-wider text-white/35 sm:inline">skott</span>
+                  <span className="hidden text-[8px] font-black uppercase tracking-wider text-white/35 sm:inline">{t('skott')}</span>
                 </div>
                 <div className={`hud-chip relative hidden overflow-hidden sm:inline-flex ${stats.dashReady ? 'border-primary/50 text-primary' : 'text-white/40'}`}>
                   <span className="material-symbols-outlined text-[15px]">bolt</span>
-                  <span className="text-[10px] font-black tracking-wider">DASH</span>
+                  <span className="text-[10px] font-black tracking-wider">{t('DASH')}</span>
                   <span
                     className="absolute inset-x-0 bottom-0 h-[2px] bg-primary transition-[width] duration-150"
                     style={{ width: `${stats.dashPct * 100}%` }}
@@ -7660,12 +7640,12 @@ export const PlayingView: React.FC<{
               <div className="hud-panel w-full px-2.5 py-2 md:px-3">
                 <div className="flex items-baseline justify-between gap-2">
                   <div className="flex items-baseline gap-2 min-w-0">
-                    <span className="tabular text-[13px] font-black leading-none text-white md:text-[15px]">NIVÅ {currentLevel}</span>
+                    <span className="tabular text-[13px] font-black leading-none text-white md:text-[15px]">{t('NIVÅ {n}', { n: currentLevel })}</span>
                     <span
                       className={`truncate text-[9px] font-black uppercase tracking-[0.2em] ${isMobile ? 'hidden' : 'hidden sm:inline'}`}
                       style={{ color: (LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).accent }}
                     >
-                      {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).short}
+                      {t((LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).short)}
                     </span>
                   </div>
                   <span className="tabular text-[10px] font-black text-white/55">{stats.progress}%</span>
@@ -7683,15 +7663,15 @@ export const PlayingView: React.FC<{
                   })}
                 </div>
                 <div className={`mt-1 items-center justify-between gap-2 text-[8.5px] font-bold uppercase tracking-[0.14em] text-white/40 ${isMobile ? 'hidden' : 'hidden sm:flex'}`}>
-                  <span className="truncate">{(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}</span>
-                  <span className="tabular shrink-0">RANK {stats.runLevel} · {stats.xpIntoLevel}/{stats.xpNeeded} XP</span>
+                  <span className="truncate">{t(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}</span>
+                  <span className="tabular shrink-0">{t('RANK {r} · {a}/{b} XP', { r: stats.runLevel, a: stats.xpIntoLevel, b: stats.xpNeeded })}</span>
                 </div>
               </div>
 
               {stats.combo > 1 && (
                 <div className="w-full max-w-[260px] rounded-full bg-black/45 px-2.5 py-1 backdrop-blur-md">
                   <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-[0.16em]">
-                    <span className="text-white/55">Combo</span>
+                    <span className="text-white/55">{t('Combo')}</span>
                     <span className="tabular text-primary">x{stats.combo}</span>
                   </div>
                   <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-white/10">
@@ -7707,7 +7687,7 @@ export const PlayingView: React.FC<{
                   className="rounded-full border border-yellow-400/40 bg-black/55 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-yellow-300 backdrop-blur-md"
                   style={{ boxShadow: '0 0 18px rgba(255,209,102,0.28)' }}
                 >
-                  Multiplikator x{stats.multiplier} · streak {stats.streak}
+                  {t('Multiplikator x{m} · streak {s}', { m: stats.multiplier, s: stats.streak })}
                 </div>
               )}
             </div>
@@ -7719,7 +7699,7 @@ export const PlayingView: React.FC<{
                   className={`hud-chip ${
                     stats.collectedCount >= stats.fishGoal ? 'border-primary/60 bg-primary/10 text-primary' : 'text-white'
                   }`}
-                  title={`Fiskar: ${stats.collectedCount} av ${stats.totalFish} (m\u00e5l ${stats.fishGoal})`}
+                  title={t('Fiskar: {a} av {b} (mål {c})', { a: stats.collectedCount, b: stats.totalFish, c: stats.fishGoal })}
                 >
                   <span className="material-symbols-outlined text-[15px] text-primary">set_meal</span>
                   <span className="tabular text-xs font-black">
@@ -7736,7 +7716,7 @@ export const PlayingView: React.FC<{
               </div>
 
               <div className="flex items-center gap-1.5">
-                <div className={`hud-chip ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`} title="Väder">
+                <div className={`hud-chip ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`} title={t('Väder')}>
                   <span
                     className={`material-symbols-outlined text-[15px] ${
                       stats.weather === 'SOLIGT'
@@ -7753,10 +7733,10 @@ export const PlayingView: React.FC<{
                       : stats.weather === 'DIMMIGT' ? 'foggy' : 'thunderstorm'}
                   </span>
                   {stats.noHit && (
-                    <span className="material-symbols-outlined text-[13px] text-primary" title="Inga skador ännu">verified</span>
+                    <span className="material-symbols-outlined text-[13px] text-primary" title={t('Inga skador ännu')}>verified</span>
                   )}
                   {stats.nearMisses > 0 && (
-                    <span className="tabular text-[9px] font-black text-white/60" title="Nästan-träffar">{stats.nearMisses}</span>
+                    <span className="tabular text-[9px] font-black text-white/60" title={t('Nästan-träffar')}>{stats.nearMisses}</span>
                   )}
                 </div>
 
@@ -7771,18 +7751,18 @@ export const PlayingView: React.FC<{
                   <button
                     onClick={toggleMuted}
                     aria-pressed={isMuted}
-                    aria-label={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
-                    title={isMuted ? 'Slå på ljudet' : 'Stäng av ljudet'}
+                    aria-label={isMuted ? t('Slå på ljudet') : t('Stäng av ljudet')}
+                    title={isMuted ? t('Slå på ljudet') : t('Stäng av ljudet')}
                     className={`hud-icon hidden sm:inline-flex ${isMuted ? 'text-primary-red' : 'text-white/65'}`}
                   >
                     <span className="material-symbols-outlined text-[17px]">
                       {isMuted ? 'volume_off' : 'volume_up'}
                     </span>
                   </button>
-                  <button onClick={togglePause} aria-label="Pausa" title="Pausa (Esc)" className="hud-icon text-white/65">
+                  <button onClick={togglePause} aria-label={t('Pausa')} title={t('Pausa (Esc)')} className="hud-icon text-white/65">
                     <span className="material-symbols-outlined text-[17px]">pause</span>
                   </button>
-                  <button onClick={toggleFullscreen} aria-label="Helskärm" title="Helskärm" className={`hud-icon text-white/65 ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`}>
+                  <button onClick={toggleFullscreen} aria-label={t('Helskärm')} title={t('Helskärm')} className={`hud-icon text-white/65 ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`}>
                     <span className="material-symbols-outlined text-[17px]">
                       {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
                     </span>
@@ -7799,10 +7779,10 @@ export const PlayingView: React.FC<{
           <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-4">
             <div className="level-intro-card animate-level-intro text-center">
               <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary/80">
-                {(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}
+                {t(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}
               </p>
               <h2 className="mt-2 text-5xl font-black uppercase leading-none tracking-tight text-white md:text-6xl">
-                Nivå {currentLevel}
+                {t('Nivå {n}', { n: currentLevel })}
               </h2>
               <div className="mt-3 flex items-center justify-center gap-2">
                 <span
@@ -7810,7 +7790,7 @@ export const PlayingView: React.FC<{
                   style={{ background: (LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).accent }}
                 />
                 <p className="text-[11px] font-black uppercase tracking-[0.28em] text-white/75">
-                  {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).label}
+                  {t((LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).label)}
                 </p>
                 <span
                   className="h-1 w-8 rounded-full"
@@ -7818,10 +7798,10 @@ export const PlayingView: React.FC<{
                 />
               </div>
               <p className="mt-2 text-xs font-medium text-white/50">
-                {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).goal}
+                {t((LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).goal)}
               </p>
               <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
-                {LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name}
+                {t(LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name)}
               </p>
             </div>
           </div>
@@ -7838,17 +7818,17 @@ export const PlayingView: React.FC<{
           <div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
             <div className="flex min-h-full items-center justify-center">
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-6 shadow-[0_30px_90px_-30px_rgba(0,0,0,0.9)]">
-              <p className="eyebrow text-primary">Spelet pausat</p>
-              <h2 className="mt-1 font-display text-3xl font-black uppercase tracking-tight text-white">Andhämtning</h2>
+              <p className="eyebrow text-primary">{t('Spelet pausat')}</p>
+              <h2 className="mt-1 font-display text-3xl font-black uppercase tracking-tight text-white">{t('Andhämtning')}</h2>
               <p className="mt-1 text-xs font-medium text-white/45">
-                Nivå {currentLevel} · {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).label} · {stats.progress}% klart
+                {t('Nivå {n} · {m} · {p}% klart', { n: currentLevel, m: t((LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).label), p: stats.progress })}
               </p>
 
               <div className="mt-5 grid grid-cols-3 gap-2">
                 {[
-                  { label: 'Liv', value: lives, tone: 'text-[#ff7f9b]' },
-                  { label: 'Fiskar', value: `${stats.collectedCount}/${stats.totalFish}`, tone: 'text-primary' },
-                  { label: 'Poäng', value: stats.score.toLocaleString(), tone: 'text-white' },
+                  { label: t('Liv'), value: lives, tone: 'text-[#ff7f9b]' },
+                  { label: t('Fiskar'), value: `${stats.collectedCount}/${stats.totalFish}`, tone: 'text-primary' },
+                  { label: t('Poäng'), value: stats.score.toLocaleString(), tone: 'text-white' },
                 ].map((s) => (
                   <div key={s.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2 py-2 text-center">
                     <p className={`tabular text-base font-black ${s.tone}`}>{s.value}</p>
@@ -7860,29 +7840,29 @@ export const PlayingView: React.FC<{
               <div className="mt-5 flex flex-col gap-2">
                 <button onClick={togglePause} className="btn-primary w-full py-3.5 text-sm">
                   <span className="material-symbols-outlined text-lg">play_arrow</span>
-                  Fortsätt
+                  {t('Fortsätt')}
                 </button>
                 <button onClick={restartCurrentLevel} className="btn-ghost w-full py-3 text-xs uppercase tracking-wider">
                   <span className="material-symbols-outlined text-base">restart_alt</span>
-                  Starta om nivån
+                  {t('Starta om nivån')}
                 </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={toggleMuted} className="btn-ghost py-3 text-xs uppercase tracking-wider">
                     <span className="material-symbols-outlined text-base">{isMuted ? 'volume_off' : 'volume_up'}</span>
-                    {isMuted ? 'Ljud av' : 'Ljud på'}
+                    {isMuted ? t('Ljud av') : t('Ljud på')}
                   </button>
                   <button
                     onClick={() => { togglePause(); onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0); }}
                     className="btn-ghost py-3 text-xs uppercase tracking-wider"
                   >
                     <span className="material-symbols-outlined text-base">logout</span>
-                    Avsluta
+                    {t('Avsluta')}
                   </button>
                 </div>
               </div>
 
               <p className="mt-4 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-white/25">
-                {isTouchDevice ? 'Pausknappen sitter i hörnet' : 'Esc eller P för att fortsätta'}
+                {isTouchDevice ? t('Pausknappen sitter i hörnet') : t('Esc eller P för att fortsätta')}
               </p>
             </div>
             </div>
@@ -7906,7 +7886,7 @@ export const PlayingView: React.FC<{
               <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
                 stats.bossPhase >= 2 ? 'text-pink-400' : stats.bossPhase === 1 ? 'text-red-400' : 'text-orange-400'
               }`}>
-                ⚔️ {stats.bossName || 'BOSS'} – FAS {(stats.bossPhase || 0) + 1}
+                ⚔️ {t('{name} – FAS {n}', { name: stats.bossName || t('BOSS'), n: (stats.bossPhase || 0) + 1 })}
               </p>
               <div className="h-3 w-full rounded-full bg-black/50 overflow-hidden border border-white/10">
                 <div
@@ -7941,13 +7921,13 @@ export const PlayingView: React.FC<{
               </span>
               <span className="max-w-[60vw] truncate text-[10px] font-black uppercase tracking-[0.14em] text-white/80">
                 {stats.bossHp > 0
-                  ? `Besegra ${stats.bossName || 'bossen'}`
+                  ? t('Besegra {name}', { name: stats.bossName || t('bossen') })
                   : stats.collectedCount >= stats.fishGoal
-                    ? `Spring till Jerry · ${stats.goalDist} m`
-                    : `Samla ${Math.max(0, stats.fishGoal - stats.collectedCount)} fiskar till`}
+                    ? t('Spring till Jerry · {n} m', { n: stats.goalDist })
+                    : t('Samla {n} fiskar till', { n: Math.max(0, stats.fishGoal - stats.collectedCount) })}
               </span>
               {stats.collectedCount >= stats.fishGoal && (
-                <span className="tabular rounded-md bg-primary/15 px-1.5 py-0.5 text-[9px] font-black text-primary">MÅL</span>
+                <span className="tabular rounded-md bg-primary/15 px-1.5 py-0.5 text-[9px] font-black text-primary">{t('MÅL')}</span>
               )}
             </div>
           </div>
@@ -7992,12 +7972,12 @@ export const PlayingView: React.FC<{
                     style={{ borderColor: gradeTone.ring, boxShadow: `0 0 32px ${gradeTone.glow}`, background: 'rgba(255,255,255,0.03)' }}
                   >
                     <span className="font-display text-4xl font-black leading-none md:text-5xl" style={{ color: gradeTone.text }}>{grade}</span>
-                    <span className="mt-1 text-[8px] font-black uppercase tracking-[0.2em] text-white/40">Betyg</span>
+                    <span className="mt-1 text-[8px] font-black uppercase tracking-[0.2em] text-white/40">{t('Betyg')}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="eyebrow text-primary">Nivå {currentLevel} klar</p>
+                    <p className="eyebrow text-primary">{t('Nivå {n} klar', { n: currentLevel })}</p>
                     <h2 className="mt-1 font-display text-2xl font-black uppercase leading-tight tracking-tight text-white md:text-3xl">
-                      Snyggt jobbat!
+                      {t('Snyggt jobbat!')}
                     </h2>
                     <div className="mt-1.5 flex items-center gap-1">
                       {[0, 1, 2].map((i) => (
@@ -8013,7 +7993,7 @@ export const PlayingView: React.FC<{
                         </span>
                       ))}
                       <span className="ml-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
-                        {(LEVEL_MODE_META[levelSummary.levelType] || LEVEL_MODE_META.Classic).short} · {levelSummary.time}s
+                        {t((LEVEL_MODE_META[levelSummary.levelType] || LEVEL_MODE_META.Classic).short)} · {levelSummary.time}s
                       </span>
                     </div>
                   </div>
@@ -8021,12 +8001,12 @@ export const PlayingView: React.FC<{
 
                 <div className="relative mt-5 grid grid-cols-3 gap-2">
                   {[
-                    { label: 'Poäng', value: levelSummary.score.toLocaleString(), tone: 'text-primary' },
-                    { label: 'Mynt', value: `+${levelSummary.coins}`, tone: 'text-yellow-300' },
-                    { label: 'Fiender', value: levelSummary.kills || 0, tone: 'text-orange-200' },
-                    { label: 'Bästa streak', value: levelSummary.streak, tone: 'text-cyan-300' },
-                    { label: 'Nästan', value: levelSummary.nearMisses, tone: 'text-[#7ef7c2]' },
-                    { label: 'Runnivå', value: levelSummary.runLevel, tone: 'text-white' },
+                    { label: t('Poäng'), value: levelSummary.score.toLocaleString(), tone: 'text-primary' },
+                    { label: t('Mynt'), value: `+${levelSummary.coins}`, tone: 'text-yellow-300' },
+                    { label: t('Fiender'), value: levelSummary.kills || 0, tone: 'text-orange-200' },
+                    { label: t('Bästa streak'), value: levelSummary.streak, tone: 'text-cyan-300' },
+                    { label: t('Nästan'), value: levelSummary.nearMisses, tone: 'text-[#7ef7c2]' },
+                    { label: t('Runnivå'), value: levelSummary.runLevel, tone: 'text-white' },
                   ].map((s) => (
                     <div key={s.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2 py-2.5 text-center">
                       <p className={`tabular text-lg font-black leading-none ${s.tone}`}>{s.value}</p>
@@ -8038,20 +8018,20 @@ export const PlayingView: React.FC<{
                 <div className={`relative mt-3 flex items-center justify-center gap-2 rounded-2xl border p-2.5 ${levelSummary.noHit ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-white/[0.03]'}`}>
                   <span className={`material-symbols-outlined text-base ${levelSummary.noHit ? 'text-primary' : 'text-white/35'}`}>verified</span>
                   <span className={`text-[11px] font-black uppercase tracking-wider ${levelSummary.noHit ? 'text-primary' : 'text-white/45'}`}>
-                    {levelSummary.noHit ? 'Felfri · utan skada +750' : levelSummary.perfect ? 'Perfekt nivå +500' : 'Nivå avklarad'}
+                    {levelSummary.noHit ? t('Felfri · utan skada +750') : levelSummary.perfect ? t('Perfekt nivå +500') : t('Nivå avklarad')}
                   </span>
                 </div>
 
                 <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
                   <button onClick={startNextLevel} className="btn-primary w-full py-3.5 text-sm md:text-base">
                     <span className="material-symbols-outlined text-xl">arrow_forward</span>
-                    {currentLevel % 5 === 4 ? `Bosskamp · nivå ${currentLevel + 1}` : `Nästa nivå · ${currentLevel + 1}`}
+                    {currentLevel % 5 === 4 ? t('Bosskamp · nivå {n}', { n: currentLevel + 1 }) : t('Nästa nivå · {n}', { n: currentLevel + 1 })}
                   </button>
                   <button
                     onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)}
                     className="btn-ghost w-full py-3.5 text-xs uppercase tracking-wider sm:w-auto sm:px-6"
                   >
-                    Avsluta
+                    {t('Avsluta')}
                   </button>
                 </div>
               </div>
@@ -8072,9 +8052,9 @@ export const PlayingView: React.FC<{
           }`}
         >
           <span className="material-symbols-outlined text-3xl text-primary">screen_rotation</span>
-          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">Spela i landskap</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">{t('Spela i helskärm')}</span>
           <span className="max-w-[210px] text-[10px] leading-relaxed text-white/35">
-            Vrid telefonen för full bredd på banan – då hamnar styrknapparna under tummarna.
+            {t('Vrid telefonen för att spela i helskärm – banan fyller hela skärmen och knapparna ligger ovanpå.')}
           </span>
         </button>
       )}
@@ -8082,12 +8062,14 @@ export const PlayingView: React.FC<{
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
         <div
-          className={`flex w-full max-w-4xl shrink-0 items-center justify-between px-3 py-1 select-none pointer-events-auto lg:px-4 lg:py-2 ${
-            stackControlsAtBottom ? 'mt-auto' : ''
+          className={`flex w-full shrink-0 items-center justify-between select-none ${
+            immersive
+              ? 'pointer-events-none fixed inset-x-0 bottom-0 z-[110] px-4 pb-3'
+              : `max-w-4xl pointer-events-auto px-3 py-1 lg:px-4 lg:py-2 ${stackControlsAtBottom ? 'mt-auto' : ''}`
           }`}
         >
           {/* Vänster sida: Styrning (Move vänster/höger) */}
-          <div className="flex items-center gap-3">
+          <div className="pointer-events-auto flex items-center gap-3">
             <button
               className="size-14 lg:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               onTouchStart={(e) => { e.preventDefault(); setKeyState(65, true); }}
@@ -8105,7 +8087,7 @@ export const PlayingView: React.FC<{
           </div>
 
           {/* Höger sida: Handlingar (Jump/Shoot) */}
-          <div className="flex items-center gap-3">
+          <div className="pointer-events-auto flex items-center gap-3">
             {/* Hopp-knapp */}
             <button
               className="size-16 lg:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
@@ -8113,7 +8095,7 @@ export const PlayingView: React.FC<{
               onTouchEnd={(e) => { e.preventDefault(); releaseJump(); }}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">arrow_upward</span>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">HOPPA</span>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">{t('HOPPA')}</span>
             </button>
 
             {/* Dash-knapp */}
@@ -8122,7 +8104,7 @@ export const PlayingView: React.FC<{
               onTouchStart={(e) => { e.preventDefault(); triggerDash(); }}
             >
               <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
-              <span className="text-[9px] font-black uppercase tracking-widest opacity-90">DASH</span>
+              <span className="text-[9px] font-black uppercase tracking-widest opacity-90">{t('DASH')}</span>
             </button>
 
             {/* Shoot-knapp */}
@@ -8131,7 +8113,7 @@ export const PlayingView: React.FC<{
               onTouchStart={(e) => { e.preventDefault(); fireBullet(); }}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">SKJUT</span>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-90">{t('SKJUT')}</span>
             </button>
           </div>
         </div>
@@ -8145,6 +8127,7 @@ type ShopTab = 'upgrades' | 'skins' | 'perks';
 
 export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, buyUpgrade, equipSkin } = useProgress();
+  const t = useT();
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [tab, setTab] = useState<ShopTab>('upgrades');
   const [preview, setPreview] = useState<string>(progress.equippedSkin);
@@ -8156,10 +8139,10 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleBuy = (type: 'maxAmmo' | 'jumpPower' | 'speed', cost: number) => {
     if (buyUpgrade(type, cost)) {
-      flash('Uppgradering köpt!', true);
+      flash(t('Uppgradering köpt!'), true);
       AudioEngine.playPowerup();
     } else {
-      flash('Inte tillräckligt med mynt!', false);
+      flash(t('Inte tillräckligt med mynt!'), false);
     }
   };
 
@@ -8167,6 +8150,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     type: 'maxAmmo' | 'jumpPower' | 'speed';
     icon: string;
     title: string;
+    short: string;
     desc: string;
     cost: number;
     now: number;
@@ -8175,9 +8159,9 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     digits: number;
     tone: string;
   }> = [
-    { type: 'maxAmmo', icon: 'battery_charging_full', title: 'Ammokapacitet', desc: 'Fler skott innan du måste hitta en ammolåda.', cost: 500, now: progress.upgrades.maxAmmo, step: 1, unit: ' skott', digits: 0, tone: 'text-sky-300' },
-    { type: 'jumpPower', icon: 'rocket_launch', title: 'Hoppkraft', desc: 'Högre hopp och längre dubbelhopp.', cost: 750, now: progress.upgrades.jumpPower, step: 0.5, unit: '', digits: 1, tone: 'text-emerald-300' },
-    { type: 'speed', icon: 'speed', title: 'Sprint', desc: 'Snabbare markfart så du hinner före farorna.', cost: 1000, now: progress.upgrades.speed, step: 0.5, unit: '', digits: 1, tone: 'text-violet-300' },
+    { type: 'maxAmmo', icon: 'battery_charging_full', title: 'Ammokapacitet', short: 'Ammo', desc: 'Fler skott innan du måste hitta en ammolåda.', cost: 500, now: progress.upgrades.maxAmmo, step: 1, unit: 'skott', digits: 0, tone: 'text-sky-300' },
+    { type: 'jumpPower', icon: 'rocket_launch', title: 'Hoppkraft', short: 'Hopp', desc: 'Högre hopp och längre dubbelhopp.', cost: 750, now: progress.upgrades.jumpPower, step: 0.5, unit: '', digits: 1, tone: 'text-emerald-300' },
+    { type: 'speed', icon: 'speed', title: 'Sprint', short: 'Fart', desc: 'Snabbare markfart så du hinner före farorna.', cost: 1000, now: progress.upgrades.speed, step: 0.5, unit: '', digits: 1, tone: 'text-violet-300' },
   ];
 
   const skinEntries = Object.entries(SKINS);
@@ -8195,8 +8179,8 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-5 md:py-8">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="eyebrow text-primary">Butik</p>
-          <h1 className="mt-0.5 font-display text-2xl font-black uppercase tracking-tight md:text-4xl">Kattens verkstad</h1>
+          <p className="eyebrow text-primary">{t('Butik')}</p>
+          <h1 className="mt-0.5 font-display text-2xl font-black uppercase tracking-tight md:text-4xl">{t('Kattens verkstad')}</h1>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-yellow-400/25 bg-yellow-400/10 py-1.5 pl-2.5 pr-4">
           <span className="material-symbols-outlined text-xl text-yellow-300">monetization_on</span>
@@ -8216,7 +8200,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <div className="min-w-0">
                 <p className="truncate font-display text-base font-black uppercase tracking-tight">{shown.name}</p>
                 <p className="truncate text-[10px] text-white/40">
-                  {shownEquipped ? 'Aktivt skinn' : shownUnlocked ? 'Upplåst' : shown.unlockHint}
+                  {shownEquipped ? t('Aktivt skinn') : shownUnlocked ? t('Upplåst') : t(shown.unlockHint)}
                 </p>
               </div>
               {shownUnlocked && !shownEquipped && (
@@ -8224,7 +8208,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   onClick={() => equipSkin(preview)}
                   className="shrink-0 rounded-full bg-primary px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#06210f] transition-transform hover:scale-[1.04]"
                 >
-                  Utrusta
+                  {t('Utrusta')}
                 </button>
               )}
               {!shownUnlocked && <span className="material-symbols-outlined text-lg text-white/30">lock</span>}
@@ -8234,7 +8218,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <div key={u.type}>
                   <span className={`material-symbols-outlined text-base ${u.tone}`}>{u.icon}</span>
                   <p className="tabular text-sm font-black text-white">{u.now.toFixed(u.digits)}</p>
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/30">{u.title.split(' ')[0]}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/30">{t(u.short)}</p>
                 </div>
               ))}
             </div>
@@ -8244,18 +8228,18 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {/* Market */}
         <section className="min-w-0">
           <div role="tablist" className="flex gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
-            {tabs.map((t) => (
+            {tabs.map((tb) => (
               <button
-                key={t.id}
+                key={tb.id}
                 role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
+                aria-selected={tab === tb.id}
+                onClick={() => setTab(tb.id)}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-colors sm:text-[11px] ${
-                  tab === t.id ? 'bg-primary text-[#06210f]' : 'text-white/50 hover:text-white'
+                  tab === tb.id ? 'bg-primary text-[#06210f]' : 'text-white/50 hover:text-white'
                 }`}
               >
-                <span className="material-symbols-outlined hidden text-base sm:inline">{t.icon}</span>
-                {t.label}
+                <span className="material-symbols-outlined hidden text-base sm:inline">{tb.icon}</span>
+                {t(tb.label)}
               </button>
             ))}
           </div>
@@ -8276,10 +8260,10 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                       <span className="material-symbols-outlined text-2xl">{u.icon}</span>
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-black text-white">{u.title}</p>
-                      <p className="truncate text-[11px] text-white/40">{u.desc}</p>
+                      <p className="truncate text-sm font-black text-white">{t(u.title)}</p>
+                      <p className="truncate text-[11px] text-white/40">{t(u.desc)}</p>
                       <p className="tabular mt-1 text-[11px] font-bold text-white/70">
-                        {u.now.toFixed(u.digits)}{u.unit} <span className="text-primary">→ {(u.now + u.step).toFixed(u.digits)}{u.unit}</span>
+                        {u.now.toFixed(u.digits)}{u.unit ? ' ' + t(u.unit) : ''} <span className="text-primary">→ {(u.now + u.step).toFixed(u.digits)}{u.unit ? ' ' + t(u.unit) : ''}</span>
                       </p>
                     </div>
                     <button
@@ -8301,7 +8285,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           {tab === 'skins' && (
             <>
               <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/30">
-                {progress.unlockedSkins.length}/{skinEntries.length} upplåsta · tryck för förhandsvisning
+                {t('{a}/{b} upplåsta · tryck för förhandsvisning', { a: progress.unlockedSkins.length, b: skinEntries.length })}
               </p>
               <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                 {skinEntries.map(([id, skin]) => {
@@ -8347,11 +8331,11 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                       <span className="material-symbols-outlined text-2xl">{unlocked ? perk.icon : 'lock'}</span>
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className={`truncate text-sm font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{perk.label}</p>
-                      <p className="truncate text-[11px] text-white/35">{perk.desc}</p>
+                      <p className={`truncate text-sm font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{t(perk.label)}</p>
+                      <p className="truncate text-[11px] text-white/35">{t(perk.desc)}</p>
                     </div>
                     <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${unlocked ? 'bg-primary/15 text-primary' : 'bg-white/[0.06] text-white/35'}`}>
-                      {unlocked ? 'Aktiv' : `Rank ${perk.level}`}
+                      {unlocked ? t('Aktiv') : t('Rank {n}', { n: perk.level })}
                     </span>
                   </li>
                 );
@@ -8361,7 +8345,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
           <button onClick={onBack} className="btn-ghost mt-4 w-full py-3 text-xs uppercase tracking-wider">
             <span className="material-symbols-outlined text-base">arrow_back</span>
-            Tillbaka
+            {t('Tillbaka')}
           </button>
         </section>
       </div>
@@ -8372,6 +8356,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 /** QUESTS VIEW **/
 export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, claimQuestReward } = useProgress();
+  const t = useT();
   const xpInto = progress.xp % 1000;
   const xpLeft = 1000 - xpInto;
   const dailyDone = progress.dailyQuests.filter((q) => q.completed).length;
@@ -8399,7 +8384,7 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`truncate text-xs font-bold ${quest.completed ? 'text-white' : 'text-white/70'}`}>{quest.description}</p>
+            <p className={`truncate text-xs font-bold ${quest.completed ? 'text-white' : 'text-white/70'}`}>{t(quest.description)}</p>
             <div className="mt-1.5 flex items-center gap-2">
               <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
                 <div
@@ -8419,12 +8404,12 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   tone === 'daily' ? 'bg-primary text-[#06210f]' : 'bg-yellow-300 text-[#241a02]'
                 }`}
               >
-                Hämta
+                {t('Hämta')}
               </button>
             )}
             {quest.claimed && (
               <span className="mt-1 inline-block rounded-lg bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-white/35">
-                Hämtad
+                {t('Hämtad')}
               </span>
             )}
           </div>
@@ -8437,23 +8422,23 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <div className="mx-auto w-full max-w-4xl animate-fade-in-up px-4 py-6 md:py-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow text-primary">Uppdrag</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">Dagligt & veckans</h1>
-          <p className="mt-2 max-w-md text-sm text-white/50">Utmaningar som roterar automatiskt. Hämta belöningen när du är klar.</p>
+          <p className="eyebrow text-primary">{t('Uppdrag')}</p>
+          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Dagligt & veckans')}</h1>
+          <p className="mt-2 max-w-md text-sm text-white/50">{t('Utmaningar som roterar automatiskt. Hämta belöningen när du är klar.')}</p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-primary/25 bg-primary/[0.08] px-4 py-2.5">
           <span className="material-symbols-outlined text-xl text-primary">military_tech</span>
           <div>
-            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">Rank {progress.level}</p>
-            <p className="tabular text-sm font-black leading-none text-white">{progress.xp} XP</p>
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">{t('Rank {n}', { n: progress.level })}</p>
+            <p className="tabular text-sm font-black leading-none text-white">{t('{n} XP', { n: progress.xp })}</p>
           </div>
         </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-white/10 bg-[#0a1220]/72 p-3 backdrop-blur-md">
         <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-white/40">
-          <span>Nästa rank</span>
-          <span className="tabular">{xpLeft} XP kvar</span>
+          <span>{t('Nästa rank')}</span>
+          <span className="tabular">{t('{n} XP kvar', { n: xpLeft })}</span>
         </div>
         <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-gradient-to-r from-primary/60 via-primary to-cyan-300" style={{ width: `${xpInto / 10}%` }} />
@@ -8463,16 +8448,16 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="mt-6 grid gap-2 lg:grid-cols-2 lg:gap-4">
         <section>
           <div className="flex items-center justify-between">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Dagliga</h2>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{dailyDone}/{progress.dailyQuests.length} klara</span>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">{t('Dagliga')}</h2>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{t('{a}/{b} klara', { a: dailyDone, b: progress.dailyQuests.length })}</span>
           </div>
           <div className="mt-2.5 space-y-2">
             {progress.dailyQuests.map((q) => renderQuest(q, 'daily'))}
           </div>
 
           <div className="mt-5 flex items-center justify-between">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Veckans</h2>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{weeklyDone}/{progress.weeklyQuests.length} klara</span>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">{t('Veckans')}</h2>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{t('{a}/{b} klara', { a: weeklyDone, b: progress.weeklyQuests.length })}</span>
           </div>
           <div className="mt-2.5 space-y-2">
             {progress.weeklyQuests.map((q) => renderQuest(q, 'weekly'))}
@@ -8482,10 +8467,10 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <section className="rounded-2xl border border-white/10 bg-[#0a1220]/72 p-4 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base text-primary">workspace_premium</span>
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Prestationer</h2>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">{t('Prestationer')}</h2>
           </div>
           <p className="mt-1 text-[10px] text-white/35">
-            {progress.achievements.length} av {ACHIEVEMENTS.length} upplåsta
+            {t('{a} av {b} upplåsta', { a: progress.achievements.length, b: ACHIEVEMENTS.length })}
           </p>
           <div className="mt-3 space-y-1.5">
             {ACHIEVEMENTS.map((a) => {
@@ -8494,8 +8479,8 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <div key={a.id} className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 ${unlocked ? 'border-primary/30 bg-primary/[0.07]' : 'border-white/[0.06] bg-black/20'}`}>
                   <span className={`material-symbols-outlined text-base ${unlocked ? 'text-primary' : 'text-white/20'}`}>{unlocked ? a.icon : 'lock'}</span>
                   <div className="min-w-0">
-                    <p className={`truncate text-[11px] font-black ${unlocked ? 'text-white' : 'text-white/35'}`}>{a.label}</p>
-                    <p className="truncate text-[9px] text-white/25">{a.desc}</p>
+                    <p className={`truncate text-[11px] font-black ${unlocked ? 'text-white' : 'text-white/35'}`}>{t(a.label)}</p>
+                    <p className="truncate text-[9px] text-white/25">{t(a.desc)}</p>
                   </div>
                 </div>
               );
@@ -8506,7 +8491,7 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       <button onClick={onBack} className="btn-ghost mt-6 w-full py-3 text-xs uppercase tracking-wider">
         <span className="material-symbols-outlined text-base">arrow_back</span>
-        Tillbaka
+        {t('Tillbaka')}
       </button>
     </div>
   );

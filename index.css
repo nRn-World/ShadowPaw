@@ -729,3 +729,14 @@ canvas {
   -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%);
   mask-image: linear-gradient(to top, #000 10%, transparent 85%);
 }
+
+/* Arabic: system Arabic faces (the bundled fonts are Latin only), and no
+   letter-spacing/uppercase, which would break the joined letterforms. */
+html[lang='ar'] body,
+html[lang='ar'] .font-display {
+  font-family: 'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Geeza Pro', Arial, sans-serif;
+}
+html[lang='ar'] :where(*):not(.material-symbols-outlined) {
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}

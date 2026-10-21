@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useProgress } from '../context/ProgressContext';
 import { drawCatSprite } from './catSprite';
+import { useT, tr } from '../i18n';
 
 /**
  * Attract mode for the start screen: a short, looping "live run" that shows
@@ -394,12 +395,14 @@ const drawBoss = (ctx: CanvasRenderingContext2D, t: number, hp: number, dead: bo
   ctx.fillStyle = 'rgba(255,255,255,0.72)';
   ctx.font = 'bold 7px Outfit, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('BOSS · SKUGGHUNDEN', barX - 2, barY - 8);
+  ctx.fillText(tr('BOSS · SKUGGHUNDEN'), barX - 2, barY - 8);
 };
 
 const LiveRunDemo: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { progress } = useProgress();
+  const t = useT();
+  const lang = progress.settings.language;
   const reduceMotion = progress.settings.reduceMotion;
   const [supported, setSupported] = useState(true);
 
@@ -509,7 +512,7 @@ const LiveRunDemo: React.FC = () => {
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
       ctx.font = 'bold 11px Outfit, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(scene.label, 45, H - 19);
+      ctx.fillText(tr(scene.label), 45, H - 19);
 
       if (t > BOSS_DIES + 0.5 && t < 19.8) {
         const p = clamp01((t - BOSS_DIES - 0.5) / 0.4);
@@ -523,7 +526,7 @@ const LiveRunDemo: React.FC = () => {
         ctx.fillStyle = '#2bee79';
         ctx.font = 'bold 13px Outfit, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('BOSS BESEGRAD', W / 2, 118);
+        ctx.fillText(tr('BOSS BESEGRAD'), W / 2, 118);
         ctx.globalAlpha = 1;
       }
 
@@ -572,7 +575,7 @@ const LiveRunDemo: React.FC = () => {
       document.removeEventListener('visibilitychange', onVisibility);
       observer?.disconnect();
     };
-  }, [reduceMotion]);
+  }, [reduceMotion, lang]);
 
   if (!supported) return null;
 
@@ -583,7 +586,7 @@ const LiveRunDemo: React.FC = () => {
       // The card is wider than 16:9; cover from the bottom keeps the ground
       // and the cat in frame and crops sky instead of squashing the drawing.
       style={{ display: 'block', objectFit: 'cover', objectPosition: 'center bottom' }}
-      aria-label="Demoloop: katten springer, hoppar, skjuter och besegrar en boss"
+      aria-label={t('Demoloop: katten springer, hoppar, skjuter och besegrar en boss')}
       role="img"
     />
   );

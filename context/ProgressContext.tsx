@@ -59,6 +59,7 @@ const defaultProgress: PlayerProgress = {
   dailySeed: getTodaySeed(),
   weeklySeed: getWeekSeed(),
   settings: {
+    language: 'en',
     uiScale: 1,
     textScale: 1,
     colorBlindMode: false,
@@ -133,6 +134,10 @@ const migrateLegacyAudio = (settings: PlayerProgress['settings']): PlayerProgres
   }
 };
 
+const LANG_CODES = ['en', 'sv', 'tr', 'es', 'ar'];
+const cleanLang = (s: PlayerProgress['settings']): PlayerProgress['settings'] =>
+  LANG_CODES.includes(s.language) ? s : { ...s, language: 'en' };
+
 const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 50);
 
 export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -146,7 +151,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
             ...defaultProgress,
             ...parsed,
             upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-            settings: migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }),
+            settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
             stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
             dailyQuests: parsed.dailyQuests || defaultProgress.dailyQuests,
             weeklyQuests: parsed.weeklyQuests || defaultProgress.weeklyQuests,
@@ -384,7 +389,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
         ...defaultProgress,
         ...parsed,
         upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-        settings: migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }),
+        settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
         stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
         dailySeed: parsed.dailySeed || defaultProgress.dailySeed,
         weeklySeed: parsed.weeklySeed || defaultProgress.weeklySeed,
