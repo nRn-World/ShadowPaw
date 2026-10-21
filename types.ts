@@ -79,5 +79,6 @@ export interface PlayerProgress {
     perfectLevels: number;
     bestCombo: number;
     bossesDefeated: number;
+    shadowPasses?: number;
   };
 }

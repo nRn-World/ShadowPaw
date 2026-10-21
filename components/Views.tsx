@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppView, ScoreEntry } from '../types';
-import { getJerryTaunt } from '../services/geminiService';
+import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
 import { AudioEngine } from '../services/AudioEngine';
 
@@ -1074,7 +1074,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   const isRecord = score > storedBest && score > 0;
 
   useEffect(() => {
-    getJerryTaunt(score).then(setTaunt);
+    setTaunt(getJerryTaunt(score));
     addXP(Math.floor(score / 10));
     applyRunResults({
       fishesCollected,
@@ -1084,6 +1084,9 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       bestCombo: lastRun.bestCombo || 0,
       bossDefeated: !!lastRun.bossDefeated,
       deaths: 1,
+      // Near misses are this game's version of a shadow pass: skimming a hazard
+      // without touching it. They feed the weekly quest and the lifetime stat.
+      shadowPasses: lastRun.nearMisses || 0,
     });
 
     if ((lastRun.bestCombo || 0) >= 10) {
