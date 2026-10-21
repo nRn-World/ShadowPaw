@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry } from '../types';
 import { getJerryTaunt } from '../services/taunts';
 import { useProgress } from '../context/ProgressContext';
@@ -16,7 +17,7 @@ const getSeasonTheme = () => {
 /** Human-facing labels and goals for the five level modes. Kept in one place
     so the intro card, HUD and results screen always agree. */
 const LEVEL_MODE_META: Record<string, { label: string; short: string; goal: string; accent: string }> = {
-  Classic: { label: 'Klassisk runda', short: 'KLASSISK', goal: 'Rädda Jerry och samla alla fiskar', accent: '#2bee79' },
+  Classic: { label: 'Klassisk runda', short: 'KLASSISK', goal: 'Nå fiskkvoten och rädda Jerry', accent: '#2bee79' },
   Collection: { label: 'Insamling', short: 'INSAMLING', goal: 'Extra många fiskar · varje fisk ger mynt', accent: '#ffd166' },
   Survival: { label: 'Överlevnad', short: 'ÖVERLEVNAD', goal: 'Tätare faror · håll streaken vid liv', accent: '#ff8f6b' },
   'Speed Run': { label: 'Tidsjakt', short: 'TIDSJAKT', goal: 'Klockan tickar · varje fisk köper tid', accent: '#7ee7ff' },
@@ -35,12 +36,22 @@ const CHAPTER_NAMES = [
 ];
 
 const SKINS: Record<string, { name: string; color: string; accent: string; unlockHint: string }> = {
-  default: { name: 'Neon Blue', color: '#4169E1', accent: '#333', unlockHint: 'Default' },
-  ember: { name: 'Ember', color: '#e85d2c', accent: '#4a1d0d', unlockHint: 'Defeat 60 enemies' },
-  frost: { name: 'Frost', color: '#62b7ff', accent: '#27415f', unlockHint: 'Collect 300 fish' },
-  shadow: { name: 'Shadow', color: '#4f5d75', accent: '#141b2d', unlockHint: 'Reach combo x10' },
-  aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Beat 3 bosses' },
+  default: { name: 'Neon Blue', color: '#4169E1', accent: '#333', unlockHint: 'Standardskinn' },
+  ember: { name: 'Ember', color: '#e85d2c', accent: '#4a1d0d', unlockHint: 'Besegra 60 fiender' },
+  frost: { name: 'Frost', color: '#62b7ff', accent: '#27415f', unlockHint: 'Samla 300 fiskar' },
+  shadow: { name: 'Shadow', color: '#4f5d75', accent: '#141b2d', unlockHint: 'Nå combo x10' },
+  aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Besegra 3 bossar' },
 };
+
+const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: string }> = [
+  { id: 'flawless', label: 'Felfri', desc: 'Klara en nivå utan skada', icon: 'verified' },
+  { id: 'combo_10', label: 'Combo x10', desc: 'Kedja 10 aktioner', icon: 'local_fire_department' },
+  { id: 'enemy_60', label: 'Jägare', desc: 'Besegra 60 fiender', icon: 'swords' },
+  { id: 'fish_300', label: 'Fiskare', desc: 'Samla 300 fiskar', icon: 'set_meal' },
+  { id: 'boss_3', label: 'Bossjägare', desc: 'Besegra 3 bossar', icon: 'swords' },
+  { id: 'streak_20', label: 'Streak x20', desc: 'Håll en streak på 20', icon: 'bolt' },
+  { id: 'close_call', label: 'Nära ögat', desc: '5 nästan-träffar i en runda', icon: 'warning' },
+];
 
 /** Hero cat mark. Inline SVG keeps it crisp at any size and matches the
     in-game character (blue body, green eyes, pink nose) without clip-path hacks. */
@@ -162,8 +173,8 @@ const MenuButton: React.FC<{
 }> = ({ icon, label, onClick, subtle, accent }) => (
   <button
     onClick={onClick}
-    className={`group relative flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-2xl px-4 font-bold uppercase tracking-wider transition-all duration-200 active:scale-[0.98] ${
-      subtle ? 'py-3 text-sm text-white/70' : 'py-4 text-white'
+    className={`group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-3 font-bold uppercase tracking-wide transition-all duration-200 active:scale-[0.98] sm:gap-2.5 sm:px-4 sm:tracking-wider ${
+      subtle ? 'py-3 text-[12px] text-white/70 sm:text-sm' : 'py-4 text-white'
     } card-premium card-premium-hover`}
   >
     {accent && (
@@ -732,7 +743,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const powerups = [
     { icon: 'shield', name: 'Sköld', color: 'text-cyan-300', ring: 'border-cyan-300/30 bg-cyan-300/10', desc: 'Tar emot nästa smäll åt dig.' },
     { icon: 'attractions', name: 'Fiskmagnet', color: 'text-yellow-300', ring: 'border-yellow-300/30 bg-yellow-300/10', desc: 'Drar fiskar till dig i 10 sekunder.' },
-    { icon: 'local_fire_department', name: 'Rapid fire', color: 'text-orange-300', ring: 'border-orange-300/30 bg-orange-300/10', desc: 'Trespångseld utan ammokostnad i 9 sekunder.' },
+    { icon: 'local_fire_department', name: 'Rapid fire', color: 'text-orange-300', ring: 'border-orange-300/30 bg-orange-300/10', desc: 'Tredubbel eld utan ammokostnad i 9 sekunder.' },
     { icon: 'favorite', name: 'Hjärta', color: 'text-rose-300', ring: 'border-rose-300/30 bg-rose-300/10', desc: 'Ger ett extra liv, upp till sex.' },
     { icon: 'bolt', name: 'Ammolåda', color: 'text-indigo-300', ring: 'border-indigo-300/30 bg-indigo-300/10', desc: 'Sex skott. Dyker upp igen i bossarenan.' },
   ];
@@ -740,8 +751,8 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const enemies = [
     { icon: 'pets', name: 'Vakthund & råtta', color: 'text-orange-300', desc: 'Patrullerar plattformar. Hoppa på dem eller skjut.' },
     { icon: 'cyclone', name: 'Sågdrönare', color: 'text-red-300', desc: 'Roterande taggar – håll avstånd.' },
-    { icon: 'smart_toy', name: 'Sentry-torn', color: 'text-amber-300', desc: 'Står still och skjuter långsamma orbs. Rör dig i sidled.' },
-    { icon: 'bug_report', name: 'Laddare', color: 'text-violet-300', desc: 'Lyser rött innan den rusar. Hoppa över eller dasha undan.' },
+    { icon: 'smart_toy', name: 'Sentry-torn', color: 'text-amber-300', desc: 'Står still och skjuter långsamma projektiler. Rör dig i sidled.' },
+    { icon: 'bug_report', name: 'Laddare', color: 'text-violet-300', desc: 'Lyser rött innan de rusar. Hoppa över eller dasha undan.' },
     { icon: 'military_tech', name: 'Bossar', color: 'text-pink-300', desc: 'Var femte nivå. Tre faser, nya attacker och unik design.' },
   ];
 
@@ -766,8 +777,9 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <span className="material-symbols-outlined text-2xl text-primary">flag</span>
           <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">Målet</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-white/50">
-            Samla <strong className="text-white/80">alla fiskar</strong> och nå Jerry längst fram.
-            Bossnivåer kräver att bossen besegras först. Varje nivå ger XP, mynt och poäng.
+            Samla <strong className="text-white/80">fiskkvoten</strong> (60–72 % av banans fiskar) och nå
+            Jerry längst fram. Tar du alla fiskar väntar en bonus. Bossnivåer kräver att bossen
+            besegras först. Varje nivå ger XP, mynt och poäng.
           </p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
@@ -796,7 +808,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             (upp till <strong className="text-yellow-200">x8</strong>). Skada nollställer den.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">OHIT +750</span>
+            <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">UTAN SKADA +750</span>
             <span className="rounded-md border border-yellow-300/25 bg-yellow-300/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-200">NÄSTAN +75</span>
           </div>
         </div>
@@ -1157,8 +1169,16 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     a.click();
 
     const summary = `Jag fick ${score} poäng i Shadow Paw!`;
-    await navigator.clipboard.writeText(summary);
-    setShareMessage('Bild nedladdad + text kopierad!');
+    // The clipboard is blocked in insecure contexts and by some permission
+    // settings, so a failed copy must not swallow the confirmation.
+    let copied = false;
+    try {
+      await navigator.clipboard?.writeText(summary);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+    setShareMessage(copied ? 'Bild nedladdad + text kopierad!' : 'Bild nedladdad!');
     setTimeout(() => setShareMessage(''), 2500);
   };
 
@@ -2688,6 +2708,7 @@ export const PlayingView: React.FC<{
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(true);
   const [combo, setCombo] = useState(0);
   const [seasonTheme] = useState(getSeasonTheme());
   const { progress, addCoins, toggleMuted } = useProgress();
@@ -2736,11 +2757,20 @@ export const PlayingView: React.FC<{
   };
 
   useEffect(() => {
-    const syncViewport = () => setIsMobile(window.innerWidth < 768);
+    // Width alone misses a phone held sideways (844x390 is wider than md), so a
+    // short viewport counts as mobile too.
+    const syncViewport = () => {
+      setIsMobile(window.innerWidth < 768 || window.innerHeight < 520);
+      setIsPortrait(window.innerHeight >= window.innerWidth);
+    };
     setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
     syncViewport();
     window.addEventListener('resize', syncViewport);
-    return () => window.removeEventListener('resize', syncViewport);
+    window.addEventListener('orientationchange', syncViewport);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('orientationchange', syncViewport);
+    };
   }, []);
 
   const setupLevel = (level: number, existingScore: number, existingLives: number) => {
@@ -7706,9 +7736,27 @@ export const PlayingView: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLevel, isTouchDevice, runId]);
 
+  // Room the on-screen buttons need. The stage has to shrink by exactly this
+  // much, otherwise the controls get pushed under the fold and a landscape
+  // phone has no way to move at all.
+  const touchControlsVisible = isTouchDevice && !showLevelComplete;
+  // Includes the row's own padding and the gap above it, so the stage can use
+  // every remaining pixel without the flexbox shrinking it behind our back.
+  const reservedForControls = touchControlsVisible ? (isPortrait ? 152 : 84) : 12;
+  // A portrait phone letterboxes the 16:9 stage, so centring it would leave the
+  // thumb buttons floating in the middle of the screen. Pin the stage to the
+  // top and let the controls sit at the bottom where thumbs expect them.
+  const stackControlsAtBottom = isMobile && !isFullscreen && touchControlsVisible;
+
   return (
     <div
-      className={`flex w-full flex-col items-center justify-center gap-3 overflow-hidden px-2 py-2 animate-fade-in-up md:gap-5 md:py-4 ${isFullscreen ? 'fixed inset-0 z-[100] bg-background-dark' : 'min-h-[calc(100dvh-4rem)]'}`}
+      className={`flex w-full flex-col items-center overflow-hidden animate-fade-in-up ${
+        isFullscreen
+          ? 'fixed inset-0 z-[100] justify-center gap-3 bg-background-dark px-2 py-2 md:gap-5 md:py-4'
+          : isMobile
+            ? `h-[100dvh] gap-1.5 px-1 ${stackControlsAtBottom ? 'justify-start pt-2 pb-1' : 'justify-center py-1'}`
+            : 'min-h-[calc(100dvh-4rem)] justify-center gap-3 px-2 py-2 md:gap-5 md:py-4'
+      }`}
       style={{ fontSize: `${progress.settings.textScale}em`, transform: `scale(${progress.settings.uiScale})`, transformOrigin: 'top center' }}
     >
       {/* GAME AREA */}
@@ -7718,7 +7766,11 @@ export const PlayingView: React.FC<{
         style={{
           // Fill the available viewport height without ever exceeding the
           // screen width, so the stage never leaves a dead gap underneath.
-          height: isFullscreen ? '100dvh' : 'min(78vh, calc((100vw - 2rem) * 9 / 16))',
+          height: isFullscreen
+            ? '100dvh'
+            : isMobile
+              ? `min(calc(100dvh - ${reservedForControls}px), calc((100vw - 0.5rem) * 9 / 16))`
+              : 'min(78vh, calc((100vw - 2rem) * 9 / 16))',
           boxShadow: '0 0 0 1px rgba(43,238,121,0.15), 0 30px 90px -30px rgba(0,0,0,0.9), 0 0 80px -30px rgba(43,238,121,0.5)',
         }}
       >
@@ -7798,7 +7850,7 @@ export const PlayingView: React.FC<{
                   <div className="flex items-baseline gap-2 min-w-0">
                     <span className="tabular text-[13px] font-black leading-none text-white md:text-[15px]">NIVÅ {currentLevel}</span>
                     <span
-                      className="hidden truncate text-[9px] font-black uppercase tracking-[0.2em] sm:inline"
+                      className={`truncate text-[9px] font-black uppercase tracking-[0.2em] ${isMobile ? 'hidden' : 'hidden sm:inline'}`}
                       style={{ color: (LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).accent }}
                     >
                       {(LEVEL_MODE_META[stats.levelType] || LEVEL_MODE_META.Classic).short}
@@ -7818,7 +7870,7 @@ export const PlayingView: React.FC<{
                     );
                   })}
                 </div>
-                <div className="mt-1 hidden items-center justify-between gap-2 text-[8.5px] font-bold uppercase tracking-[0.14em] text-white/40 sm:flex">
+                <div className={`mt-1 items-center justify-between gap-2 text-[8.5px] font-bold uppercase tracking-[0.14em] text-white/40 ${isMobile ? 'hidden' : 'hidden sm:flex'}`}>
                   <span className="truncate">{(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}</span>
                   <span className="tabular shrink-0">RANK {stats.runLevel} · {stats.xpIntoLevel}/{stats.xpNeeded} XP</span>
                 </div>
@@ -7865,14 +7917,14 @@ export const PlayingView: React.FC<{
                     )}
                   </span>
                 </div>
-                <div className="hud-chip hidden border-yellow-500/25 bg-yellow-500/10 sm:inline-flex">
+                <div className={`hud-chip border-yellow-500/25 bg-yellow-500/10 ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`}>
                   <span className="material-symbols-outlined text-[15px] text-yellow-400">monetization_on</span>
                   <span className="tabular text-xs font-black text-yellow-300">{progress.coins}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5">
-                <div className="hud-chip hidden sm:inline-flex" title="Väder">
+                <div className={`hud-chip ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`} title="Väder">
                   <span
                     className={`material-symbols-outlined text-[15px] ${
                       stats.weather === 'SOLIGT'
@@ -7897,7 +7949,7 @@ export const PlayingView: React.FC<{
                 </div>
 
                 {stats.levelType === 'Speed Run' && (
-                  <div className="hud-chip hidden border-orange-400/35 bg-orange-400/10 sm:inline-flex">
+                  <div className="hud-chip border-orange-400/35 bg-orange-400/10 sm:inline-flex">
                     <span className="material-symbols-outlined text-[15px] text-orange-300">timer</span>
                     <span className="tabular text-xs font-black text-orange-200">{Math.ceil(stats.timer)}s</span>
                   </div>
@@ -7918,7 +7970,7 @@ export const PlayingView: React.FC<{
                   <button onClick={togglePause} aria-label="Pausa" title="Pausa (Esc)" className="hud-icon text-white/65">
                     <span className="material-symbols-outlined text-[17px]">pause</span>
                   </button>
-                  <button onClick={toggleFullscreen} aria-label="Helskärm" title="Helskärm" className="hud-icon hidden text-white/65 sm:inline-flex">
+                  <button onClick={toggleFullscreen} aria-label="Helskärm" title="Helskärm" className={`hud-icon text-white/65 ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`}>
                     <span className="material-symbols-outlined text-[17px]">
                       {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
                     </span>
@@ -7935,7 +7987,7 @@ export const PlayingView: React.FC<{
           <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-4">
             <div className="level-intro-card animate-level-intro text-center">
               <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary/80">
-                Kapitel {Math.ceil(currentLevel / 5)} · {(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}
+                {(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}
               </p>
               <h2 className="mt-2 text-5xl font-black uppercase leading-none tracking-tight text-white md:text-6xl">
                 Nivå {currentLevel}
@@ -7964,8 +8016,11 @@ export const PlayingView: React.FC<{
         )}
 
         {/* Pause menu */}
-        {isPaused && !showLevelComplete && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
+        {isPaused && !showLevelComplete && createPortal(
+          // Portalled to the body: the stage box is transform-scaled and clips
+          // its children, so a phone's small letterboxed canvas would cut the
+          // pause card in half.
+          <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-6 shadow-[0_30px_90px_-30px_rgba(0,0,0,0.9)]">
               <p className="eyebrow text-primary">Spelet pausat</p>
               <h2 className="mt-1 font-display text-3xl font-black uppercase tracking-tight text-white">Andhämtning</h2>
@@ -8011,10 +8066,11 @@ export const PlayingView: React.FC<{
               </div>
 
               <p className="mt-4 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-white/25">
-                Esc eller P för att pausa
+                {isTouchDevice ? 'Pausknappen sitter i hörnet' : 'Esc eller P för att fortsätta'}
               </p>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
 
         {progress.settings.debugOverlay && (
@@ -8080,19 +8136,6 @@ export const PlayingView: React.FC<{
           </div>
         )}
 
-        {/* Mobile Touch Controls Overlay */}
-        {isTouchDevice && (
-          <div className="absolute inset-0 pointer-events-none z-10">
-            <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center pointer-events-auto">
-              <div className="bg-black/50 backdrop-blur-sm rounded-2xl px-4 py-2 border border-white/20">
-                <p className="text-white/80 text-xs font-medium">Vänster: Jump</p>
-                <p className="text-white/80 text-xs font-medium">Höger: Shoota</p>
-                <p className="text-white/80 text-xs font-medium">Svep: Rörelse</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         <canvas
           ref={canvasRef}
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
@@ -8109,8 +8152,7 @@ export const PlayingView: React.FC<{
                 ? { ring: '#7ee7ff', text: '#c9f6ff', glow: 'rgba(126,231,255,0.45)' }
                 : { ring: '#a8b3c7', text: '#e2e8f0', glow: 'rgba(168,179,199,0.35)' };
           const stars = grade === 'S' || grade === 'A' ? 3 : grade === 'B' ? 2 : 1;
-          return (
-            <div className="absolute inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
+          return createPortal(<div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
               <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#101a2c] to-[#060b16] p-5 shadow-[0_40px_120px_-40px_rgba(0,0,0,1)] md:p-7">
                 {/* Accent light behind the grade */}
                 <div
@@ -8171,7 +8213,7 @@ export const PlayingView: React.FC<{
                 <div className={`relative mt-3 flex items-center justify-center gap-2 rounded-2xl border p-2.5 ${levelSummary.noHit ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-white/[0.03]'}`}>
                   <span className={`material-symbols-outlined text-base ${levelSummary.noHit ? 'text-primary' : 'text-white/35'}`}>verified</span>
                   <span className={`text-[11px] font-black uppercase tracking-wider ${levelSummary.noHit ? 'text-primary' : 'text-white/45'}`}>
-                    {levelSummary.noHit ? 'Flawless · utan skada +750' : levelSummary.perfect ? 'Perfekt nivå +500' : 'Nivå avklarad'}
+                    {levelSummary.noHit ? 'Felfri · utan skada +750' : levelSummary.perfect ? 'Perfekt nivå +500' : 'Nivå avklarad'}
                   </span>
                 </div>
 
@@ -8188,34 +8230,47 @@ export const PlayingView: React.FC<{
                   </button>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body,
           );
         })()}
       </div>
 
-      {/* Phones: the stage is letterboxed in portrait, so offer the landscape
-          player directly instead of hiding fullscreen in the HUD. */}
-      {isMobile && !showLevelComplete && !isFullscreen && (
-        <button onClick={toggleFullscreen} className="btn-ghost mt-1 px-4 py-2 text-[10px] uppercase tracking-wider">
-          <span className="material-symbols-outlined text-base text-primary">screen_rotation</span>
-          Spela i landskap
+      {/* Phones: the stage is letterboxed in portrait, so the empty half of the
+          screen carries the landscape hint instead of dead space. */}
+      {isMobile && isPortrait && !showLevelComplete && !isFullscreen && (
+        <button
+          onClick={toggleFullscreen}
+          className={`flex flex-col items-center gap-1.5 rounded-2xl border border-dashed border-white/12 bg-white/[0.02] px-6 py-5 text-center transition-colors active:bg-white/[0.06] ${
+            stackControlsAtBottom ? 'my-auto' : 'mt-1'
+          }`}
+        >
+          <span className="material-symbols-outlined text-3xl text-primary">screen_rotation</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">Spela i landskap</span>
+          <span className="max-w-[210px] text-[10px] leading-relaxed text-white/35">
+            Vrid telefonen för full bredd på banan – då hamnar styrknapparna under tummarna.
+          </span>
         </button>
       )}
 
       {/* TOUCH CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
-        <div className="flex w-full max-w-4xl justify-between items-center px-4 py-2 mt-auto select-none pointer-events-auto">
+        <div
+          className={`flex w-full max-w-4xl shrink-0 items-center justify-between px-3 py-1 select-none pointer-events-auto lg:px-4 lg:py-2 ${
+            stackControlsAtBottom ? 'mt-auto' : ''
+          }`}
+        >
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="flex items-center gap-3">
             <button
-              className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
+              className="size-14 lg:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               onTouchStart={(e) => { e.preventDefault(); setKeyState(65, true); }}
               onTouchEnd={(e) => { e.preventDefault(); setKeyState(65, false); }}
             >
               <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_back</span>
             </button>
             <button
-              className="size-14 md:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
+              className="size-14 lg:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
               onTouchStart={(e) => { e.preventDefault(); setKeyState(68, true); }}
               onTouchEnd={(e) => { e.preventDefault(); setKeyState(68, false); }}
             >
@@ -8227,7 +8282,7 @@ export const PlayingView: React.FC<{
           <div className="flex items-center gap-3">
             {/* Hopp-knapp */}
             <button
-              className="size-16 md:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
+              className="size-16 lg:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
               onTouchStart={(e) => { e.preventDefault(); requestJump(); }}
               onTouchEnd={(e) => { e.preventDefault(); releaseJump(); }}
             >
@@ -8237,7 +8292,7 @@ export const PlayingView: React.FC<{
 
             {/* Dash-knapp */}
             <button
-              className="size-14 md:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
+              className="size-12 sm:size-14 lg:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
               onTouchStart={(e) => { e.preventDefault(); triggerDash(); }}
             >
               <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
@@ -8246,7 +8301,7 @@ export const PlayingView: React.FC<{
 
             {/* Shoot-knapp */}
             <button
-              className="size-16 md:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
+              className="size-16 lg:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
               onTouchStart={(e) => { e.preventDefault(); fireBullet(); }}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
@@ -8580,18 +8635,10 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">Prestationer</h2>
           </div>
           <p className="mt-1 text-[10px] text-white/35">
-            {progress.achievements.length} upplåsta · {progress.unlockedSkins.length}/{Object.keys(SKINS).length} skinn
+            {progress.achievements.length} av {ACHIEVEMENTS.length} upplåsta
           </p>
           <div className="mt-3 space-y-1.5">
-            {[
-              { id: 'flawless', label: 'Flawless', desc: 'Klara en nivå utan skada', icon: 'verified' },
-              { id: 'combo_10', label: 'Combo x10', desc: 'Kedja 10 aktioner', icon: 'local_fire_department' },
-              { id: 'enemy_60', label: 'Jägare', desc: 'Besegra 60 fiender', icon: 'swords' },
-              { id: 'fish_300', label: 'Fiskare', desc: 'Samla 300 fiskar', icon: 'set_meal' },
-              { id: 'boss_3', label: 'Bossjägare', desc: 'Besegra 3 bossar', icon: 'swords' },
-              { id: 'streak_20', label: 'Streak x20', desc: 'Håll en streak på 20', icon: 'bolt' },
-              { id: 'close_call', label: 'Nära ögat', desc: '5 nästan-träffar i en runda', icon: 'warning' },
-            ].map((a) => {
+            {ACHIEVEMENTS.map((a) => {
               const unlocked = progress.achievements.includes(a.id);
               return (
                 <div key={a.id} className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 ${unlocked ? 'border-primary/30 bg-primary/[0.07]' : 'border-white/[0.06] bg-black/20'}`}>

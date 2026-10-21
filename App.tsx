@@ -10,6 +10,11 @@ const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppVie
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.START);
+  // A phone in landscape is wider than the md breakpoint, so width alone is not
+  // enough to recognise it. Short viewports are phones too.
+  const [isPhone, setIsPhone] = useState(
+    () => window.innerWidth < 768 || window.innerHeight < 520,
+  );
   // Level the next run starts on. 1 for a normal run, higher for the daily
   // challenge card on the start screen.
   const [startLevel, setStartLevel] = useState(1);
@@ -64,6 +69,16 @@ const App: React.FC = () => {
       }, 25);
     }
   }, [currentView, muted, musicVolume]);
+
+  useEffect(() => {
+    const syncPhone = () => setIsPhone(window.innerWidth < 768 || window.innerHeight < 520);
+    window.addEventListener('resize', syncPhone);
+    window.addEventListener('orientationchange', syncPhone);
+    return () => {
+      window.removeEventListener('resize', syncPhone);
+      window.removeEventListener('orientationchange', syncPhone);
+    };
+  }, []);
 
   useEffect(() => {
     const isPlaying = currentView === AppView.PLAYING;
@@ -128,9 +143,17 @@ const App: React.FC = () => {
         <div className="app-vignette" />
       </div>
 
-      <Header currentView={currentView} onNavigate={handleNavigate} />
+      {/* On phones the site chrome gives way to the game: every pixel counts in
+          landscape, and the pause menu already offers a way out. */}
+      {!(isPhone && currentView === AppView.PLAYING) && (
+        <Header currentView={currentView} onNavigate={handleNavigate} />
+      )}
 
-      <main className="relative z-10 flex-1 flex flex-col items-center px-4 pb-24 md:pb-16">
+      <main
+        className={`relative z-10 flex-1 flex flex-col items-center ${
+          isPhone && currentView === AppView.PLAYING ? 'p-0' : 'px-4 pb-24 md:pb-16'
+        }`}
+      >
         {renderView()}
       </main>
 
