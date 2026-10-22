@@ -34,6 +34,25 @@ const App: React.FC = () => {
     AudioEngine.setMuted(muted);
   }, [muted, progress.settings.sfxVolume]);
 
+  // Browsers reject the first play() until the player interacts with the page.
+  // The old code caught that rejection and left the element paused forever, so
+  // the menu stayed silent until you entered and left a level. One-shot
+  // listeners retry on the first gesture.
+  useEffect(() => {
+    const resumeMenuMusic = () => {
+      const a = menuMusicRef.current;
+      if (a && a.paused) a.play().catch(() => {});
+    };
+    window.addEventListener('pointerdown', resumeMenuMusic, { passive: true });
+    window.addEventListener('keydown', resumeMenuMusic);
+    window.addEventListener('touchstart', resumeMenuMusic, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', resumeMenuMusic);
+      window.removeEventListener('keydown', resumeMenuMusic);
+      window.removeEventListener('touchstart', resumeMenuMusic);
+    };
+  }, []);
+
   useEffect(() => {
     const shouldPlayMusic = MENU_VIEWS.includes(currentView);
 

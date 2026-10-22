@@ -238,14 +238,19 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
   const buyUpgrade = (type: 'maxAmmo' | 'jumpPower' | 'speed', cost: number): boolean => {
     if (progress.coins < cost) return false;
     
-    setProgress(p => ({
-      ...p,
-      coins: p.coins - cost,
-      upgrades: {
-        ...p.upgrades,
-        [type]: p.upgrades[type] + (type === 'maxAmmo' ? 1 : 0.5),
-      },
-    }));
+    setProgress(p => {
+      // Checked again inside the updater: two clicks in the same tick used to
+      // pass the outer check twice and buy the upgrade on credit.
+      if (p.coins < cost) return p;
+      return {
+        ...p,
+        coins: p.coins - cost,
+        upgrades: {
+          ...p.upgrades,
+          [type]: p.upgrades[type] + (type === 'maxAmmo' ? 1 : 0.5),
+        },
+      };
+    });
     return true;
   };
 

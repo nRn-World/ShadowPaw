@@ -47,6 +47,25 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Besegra 3 bossar' },
 };
 
+// The campaign remembers the highest level unlocked, so closing the tab no
+// longer sends a player who reached chapter six back to level 1.
+const CHECKPOINT_KEY = 'shadow_paw_checkpoint';
+const readCheckpoint = (): number => {
+  try {
+    const n = Number(localStorage.getItem(CHECKPOINT_KEY));
+    return Number.isFinite(n) && n > 1 ? Math.min(999, Math.floor(n)) : 1;
+  } catch {
+    return 1;
+  }
+};
+const writeCheckpoint = (level: number) => {
+  try {
+    localStorage.setItem(CHECKPOINT_KEY, String(Math.max(readCheckpoint(), Math.floor(level))));
+  } catch {
+    // A blocked localStorage must never break the level-complete flow.
+  }
+};
+
 const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: string }> = [
   { id: 'flawless', label: 'Felfri', desc: 'Klara en nivå utan skada', icon: 'verified' },
   { id: 'combo_10', label: 'Combo x10', desc: 'Kedja 10 aktioner', icon: 'local_fire_department' },
@@ -183,7 +202,9 @@ export const StartMenuView: React.FC<{
   const dailyDigits = progress.dailySeed.replace(/\D/g, '');
   const dailyLevel = 3 + (Number(dailyDigits || 0) % 28);
   const questsDone = progress.dailyQuests.filter((q) => q.completed).length;
-  const storyLevel = Math.max(1, progress.level);
+  // Campaign progress, not account rank: these are different things, and the
+  // card used to promise chapter 1 forever even after clearing a dozen levels.
+  const storyLevel = readCheckpoint();
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 md:py-10 animate-fade-in-up">
@@ -269,6 +290,16 @@ export const StartMenuView: React.FC<{
               {t('Dagens runda · nivå {n}', { n: dailyLevel })}
             </button>
           </div>
+
+          {storyLevel > 1 && (
+            <button
+              onClick={() => onStart(storyLevel)}
+              className="group mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.06] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.16em] text-primary/90 transition-colors hover:border-primary/40 hover:bg-primary/[0.12] hover:text-primary sm:w-auto sm:justify-start"
+            >
+              <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">resume</span>
+              {t('Fortsätt · kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}
+            </button>
+          )}
 
         </div>
 
@@ -607,11 +638,17 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <button
               onClick={async () => {
                 const code = exportProgressCode();
-                if (code) {
+                if (!code) return;
+                // Clipboard access is denied in insecure contexts and by some
+                // browser settings; report it instead of throwing into the void.
+                try {
                   await navigator.clipboard.writeText(code);
                   setSyncMessage(t('Exportkod kopierad!'));
-                  setTimeout(() => setSyncMessage(''), 2000);
+                } catch {
+                  setImportCode(code);
+                  setSyncMessage(t('Kunde inte kopiera – koden ligger i fältet.'));
                 }
+                setTimeout(() => setSyncMessage(''), 2600);
               }}
               className="px-4 py-2 rounded-lg bg-primary text-[#112218] font-black text-xs uppercase"
             >
@@ -1042,11 +1079,16 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   }, [score, fishesCollected, coinsEarned]);
 
   const handleSaveScore = () => {
-    if (name.trim()) {
-      setIsSaved(true);
-      const highScores = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
+    if (!name.trim()) return;
+    try {
+      const raw = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
+      const highScores = Array.isArray(raw) ? raw : [];
       highScores.push({ name: name.trim(), score, date: new Date().toLocaleDateString() });
       localStorage.setItem('shadow_paw_scores', JSON.stringify(highScores));
+      setIsSaved(true);
+    } catch {
+      // Show the field again rather than claiming a save that did not happen.
+      setIsSaved(false);
     }
   };
 
@@ -1829,6 +1871,12 @@ const fireBossAttack = (
   }
 };
 
+/** Deterministic 0..1 noise for scenery details that must never flicker. */
+const skyHashNoise = (n: number) => {
+  const s = Math.sin(n * 127.1) * 43758.5453;
+  return s - Math.floor(s);
+};
+
 const seededRandom = (seed: number) => {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
   return x - Math.floor(x);
@@ -2500,7 +2548,7 @@ const generateBackgroundElements = (theme: string): BackgroundElement[] => {
     weather formations rather than a row of repeated dots. */
 const drawCloud = (
   ctx: CanvasRenderingContext2D,
-  cx: number, cy: number, scale: number, alpha: number, profile = 0, night = false
+  cx: number, cy: number, scale: number, alpha: number, profile = 0, night = false, warm = false
 ) => {
   const profiles = [  { puffs: [[-92, 8, 74, 48], [-42, 9, 78, 72], [30, 8, 82, 70], [96, 8, 62, 48]], base: [-162, 4, 326, 64] },
   { puffs: [[-112, 8, 62, 43], [-61, 9, 68, 62], [8, 9, 78, 59], [78, 8, 70, 64], [133, 8, 52, 43]], base: [-174, 4, 350, 61] },
@@ -2530,6 +2578,12 @@ const drawCloud = (
     body.addColorStop(0, 'rgba(232, 240, 255, 0.95)');
     body.addColorStop(0.55, 'rgba(198, 214, 246, 0.9)');
     body.addColorStop(1, 'rgba(140, 160, 208, 0.82)');
+  } else if (warm) {
+    // Golden hour: the cloud is lit from below, so the warm light sits on its
+    // underside while the tops cool off into the dusk sky.
+    body.addColorStop(0, '#e7aac4');
+    body.addColorStop(0.45, '#ffd0b4');
+    body.addColorStop(1, '#ffa96f');
   } else {
     // Opaque, bright white: a translucent fill blended with the blue sky and
     // read as a dull grey lump instead of a lit cloud.
@@ -2540,7 +2594,7 @@ const drawCloud = (
   ctx.fillStyle = body;
   // A soft native drop shadow reads as a shaded underside without the hard grey
   // offset copy that made the clouds look dirty.
-  ctx.shadowColor = night ? 'rgba(8, 14, 38, 0.5)' : 'rgba(64, 106, 142, 0.26)';
+  ctx.shadowColor = night ? 'rgba(8, 14, 38, 0.5)' : warm ? 'rgba(120, 50, 70, 0.24)' : 'rgba(64, 106, 142, 0.26)';
   ctx.shadowBlur = 14;
   ctx.shadowOffsetY = 10;
   ctx.fill();
@@ -2549,8 +2603,8 @@ const drawCloud = (
   ctx.shadowOffsetY = 0;
 
   // A broad, feathered highlight gives the cloud a sunlit, airy top.
-  ctx.globalAlpha = alpha * (night ? 0.16 : 0.28);
-  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = alpha * (night ? 0.16 : warm ? 0.2 : 0.28);
+  ctx.fillStyle = warm ? '#ffe2c8' : '#ffffff';
   ctx.beginPath();
   ctx.ellipse(-32, -55, 82, 19, -0.12, Math.PI, Math.PI * 2);
   ctx.fill();
@@ -2597,10 +2651,26 @@ export const PlayingView: React.FC<{
     setRunId((n) => n + 1);
   };
 
-  // The level card introduces the stage for a beat and then fades away.
+  // Leaving from the pause menu ends the run just like a lost life: the
+  // summary has to be written from the live game first, otherwise the game-over
+  // screen showed stale numbers from the previous run.
+  const quitRun = () => {
+    const game = gameRef.current;
+    if (game) {
+      game.running = false;
+      setTotalScore(game.score);
+      persistRunSummary(game, false);
+    }
+    setIsPaused(false);
+    isPausedRef.current = false;
+    onEndRef.current(game?.score ?? totalScore, game?.totalCollectedInLevel ?? 0);
+  };
+
+  // The level card introduces the stage for a beat and then fades away. The
+  // very first card stays a little longer because it also teaches the controls.
   useEffect(() => {
     setShowIntro(true);
-    const timer = window.setTimeout(() => setShowIntro(false), 2300);
+    const timer = window.setTimeout(() => setShowIntro(false), currentLevel === 1 ? 3800 : 2300);
     return () => window.clearTimeout(timer);
   }, [currentLevel, runId]);
 
@@ -2613,8 +2683,18 @@ export const PlayingView: React.FC<{
         isPausedRef.current = true;
       }
     };
+    // Clicking another window can swallow the keyup, leaving the cat sprinting
+    // into a pit the moment the player tabs back. Dropping held keys on blur is
+    // the cheap, non-intrusive half of the fix (the visibility handler pauses).
+    const onBlur = () => {
+      if (gameRef.current) gameRef.current.keys = {};
+    };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 
   const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
@@ -3311,6 +3391,20 @@ export const PlayingView: React.FC<{
     requestJump();
   };
 
+  // Touch players hold the fire button during a boss fight; a single shot per
+  // tap made the phone controls tiring and much weaker than mouse aiming.
+  const touchShootTimer = useRef<number | null>(null);
+  const startTouchShoot = () => {
+    if (touchShootTimer.current !== null) return;
+    fireBullet();
+    touchShootTimer.current = window.setInterval(() => fireBullet(), 130);
+  };
+  const stopTouchShoot = () => {
+    if (touchShootTimer.current === null) return;
+    window.clearInterval(touchShootTimer.current);
+    touchShootTimer.current = null;
+  };
+
   const triggerDash = () => {
     const game = gameRef.current;
     if (!game || !game.running) return;
@@ -3393,18 +3487,23 @@ export const PlayingView: React.FC<{
   };
 
   const persistRunSummary = (game: any, perfectLevel: boolean) => {
-    localStorage.setItem('shadow_paw_last_run', JSON.stringify({
-      enemiesDefeated: game.enemiesDefeatedInRun || 0,
-      levelsCompleted: game.levelsCompletedInRun || 0,
-      bestCombo: game.bestComboInRun || 0,
-      bossDefeated: game.bossDefeatedInRun || false,
-      perfectLevel,
-      bestStreak: game.bestStreak || 0,
-      nearMisses: game.nearMisses || 0,
-      noHit: !!game.noHit,
-      runLevel: game.runLevel || 1,
-      coins: game.coinsThisLevel || 0,
-    }));
+    try {
+      localStorage.setItem('shadow_paw_last_run', JSON.stringify({
+        enemiesDefeated: game.enemiesDefeatedInRun || 0,
+        levelsCompleted: game.levelsCompletedInRun || 0,
+        bestCombo: game.bestComboInRun || 0,
+        bossDefeated: game.bossDefeatedInRun || false,
+        perfectLevel,
+        bestStreak: game.bestStreak || 0,
+        nearMisses: game.nearMisses || 0,
+        noHit: !!game.noHit,
+        runLevel: game.runLevel || 1,
+        coins: game.coinsThisLevel || 0,
+      }));
+    } catch {
+      // Private browsing can reject writes; losing the summary must not stop
+      // the level-complete or game-over screen from appearing.
+    }
   };
 
   const trackDeathCause = (cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
@@ -3603,7 +3702,15 @@ export const PlayingView: React.FC<{
     const game = gameRef.current;
     const rapid = game.buffs.rapid > 0;
     if (game.shootCooldown > 0) return;
-    if (!rapid && game.ammo <= 0) return;
+    if (!rapid && game.ammo <= 0) {
+      // A dry click instead of silence: the player understands the gun is empty
+      // without having to read the ammo counter. The cooldown keeps a held
+      // trigger from repeating the click every frame.
+      game.shootCooldown = 18;
+      AudioEngine.playUiClick();
+      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(6);
+      return;
+    }
     const playerCenterX = game.player.x + game.player.width / 2;
     const playerCenterY = game.player.y + game.player.height / 2;
 
@@ -3641,6 +3748,11 @@ export const PlayingView: React.FC<{
     AudioEngine.playShoot();
   };
 
+  // Never leave a firing interval running after the level unmounts.
+  useEffect(() => () => {
+    if (touchShootTimer.current !== null) window.clearInterval(touchShootTimer.current);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -3666,8 +3778,20 @@ export const PlayingView: React.FC<{
     (window as any).__SP = game;
     (window as any).__SP_NEXT = startNextLevel;
 
-    const handleKeyDown = (e: KeyboardEvent) => setKeyState(e.keyCode, true);
-    const handleKeyUp = (e: KeyboardEvent) => setKeyState(e.keyCode, false);
+    // Keys the game owns: prevent the browser from scrolling the page or
+    // moving focus while the player is running and jumping.
+    const GAME_KEYS = new Set([16, 17, 27, 32, 37, 38, 39, 65, 68, 70, 74, 75, 80, 87, 88, 90]);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (GAME_KEYS.has(e.keyCode)) e.preventDefault();
+      // Holding Esc/P fires a stream of keydown events; without this guard the
+      // pause menu flickered on and off for as long as the key was held.
+      if (e.repeat && (e.keyCode === 27 || e.keyCode === 80)) return;
+      setKeyState(e.keyCode, true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (GAME_KEYS.has(e.keyCode)) e.preventDefault();
+      setKeyState(e.keyCode, false);
+    };
     const handleMouseDown = (e: MouseEvent) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
@@ -3843,9 +3967,17 @@ export const PlayingView: React.FC<{
       game.bullets.forEach((b: any) => {
         b.x += b.vx; b.y += b.vy; b.life--;
         game.enemies.forEach((e: any) => {
+          // A spent bullet must not carry on through a second overlapping enemy.
+          if (b.life <= 0) return;
           if (e.x < b.x + b.radius && e.x + e.width > b.x - b.radius && e.y < b.y + b.radius && e.y + e.height > b.y - b.radius) {
+            // Remember where the enemy died before moving it out of the world:
+            // the old code set e.x = -1000 first, so the explosion, the combo
+            // text and the +200 all played 1000 px off-screen where nobody
+            // could see them.
+            const killX = e.x + e.width / 2;
+            const killY = e.y + e.height / 2;
             e.x = -1000; b.life = 0;
-            registerCombo(game, 200, e.x, e.y);
+            registerCombo(game, 200, killX, killY);
             grantXp(game, 25);
             awardCoins(game, 3);
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
@@ -3855,13 +3987,13 @@ export const PlayingView: React.FC<{
             // Explosion particles
             for (let i = 0; i < 15; i++) {
               game.particles.push({
-                x: e.x + e.width / 2, y: e.y + e.height / 2,
+                x: killX, y: killY,
                 vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
                 life: 30, color: '#ff2222', size: Math.random() * 4 + 2
               });
             }
             // Floating score text
-            game.floatingTexts.push({ x: e.x, y: e.y, text: '+200', life: 40, color: '#ff2222' });
+            game.floatingTexts.push({ x: killX, y: killY, text: '+200', life: 40, color: '#ff2222' });
           }
         });
 
@@ -4047,6 +4179,9 @@ export const PlayingView: React.FC<{
               // Landing squash + dust so the moment reads clearly.
               game.player.squash = 1 + Math.min(0.5, impactSpeed * 0.04);
               game.player.stretch = 0.78;
+              // A soft thump scaled by the fall. Silence on landing was the one
+              // gap in the movement feedback after jump, dash and shoot.
+              if (impactSpeed > 3) AudioEngine.playLand(Math.min(1.5, impactSpeed / 12));
               for (let i = 0; i < 8; i++) {
                 game.particles.push({
                   x: game.player.x + game.player.width / 2 + (Math.random() - 0.5) * 30,
@@ -4400,6 +4535,16 @@ export const PlayingView: React.FC<{
             awardCoins(game, 2);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
             game.totalCollectedInLevel++;
+            // The Time Attack goal promises that every fish buys time, and the
+            // intro card says so - but only the opening budget ever counted, so
+            // the clock could not be refilled. Each fish now adds a little air.
+            if (game.levelType === 'Speed Run' && game.levelTimer > 0) {
+              game.levelTimer = Math.min(
+                game.levelTimer + 1.8,
+                (game.levelTimerBudget || 60) + 40,
+              );
+              game.floatingTexts.push({ x: f.x, y: f.y - 16, text: '+1.8s', life: 40, color: '#7ee7ff' });
+            }
             AudioEngine.playCoin(game.streak || 0);
             // Small coin pop so collection feels physical.
             for (let i = 0; i < 6; i++) {
@@ -4450,7 +4595,17 @@ export const PlayingView: React.FC<{
       // Background - neon sky driven by time of day and season
       const now = Date.now();
       const timeSec = now / 1000;
-      const isNight = game.timeOfDay === 'NIGHT';
+      // Four sky moods. Levels are authored as DAY / SUNSET / DAWN / NIGHT, but
+      // the renderer used to collapse every phase except NIGHT into one bright
+      // midday blue, so a sunset stage looked exactly like noon. Each phase now
+      // gets its own light, sun position and haze tint.
+      const timePhase: 'night' | 'sunset' | 'dawn' | 'day' =
+        game.timeOfDay === 'NIGHT' ? 'night'
+          : game.timeOfDay === 'SUNSET' ? 'sunset'
+            : game.timeOfDay === 'DAWN' ? 'dawn'
+              : 'day';
+      const isNight = timePhase === 'night';
+      const isGolden = timePhase === 'sunset' || timePhase === 'dawn';
       // Night keeps its moody seasonal mood; every daylight sky is a bright,
       // cheerful blue so sunny levels never read as a drab orange wash.
       // Daylight keeps a saturated blue at the top and only softens near the
@@ -4461,8 +4616,13 @@ export const PlayingView: React.FC<{
         summer: { night: ['#0a1f3d', '#123a6b', '#2f7fb8'], day: ['#1596dd', '#5fc2f0', '#b2e2fa'] },
         autumn: { night: ['#2b1430', '#4a1f3d', '#8a3b4a'], day: ['#2fa5e0', '#79cbf1', '#bfe9fb'] },
       };
+      // Golden hour is warmer than a season tint, so it is shared by every
+      // chapter: deep indigo overhead falling into magenta and hot orange.
+      const goldenPalette: [string, string, string] = timePhase === 'dawn'
+        ? ['#1b2a55', '#5b6aa4', '#f6b6a0']
+        : ['#241a44', '#783c68', '#f79a5f'];
       const palette = seasonPalette[seasonTheme] || seasonPalette.summer;
-      const base = isNight ? palette.night : palette.day;
+      const base = isNight ? palette.night : isGolden ? goldenPalette : palette.day;
 
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
       gradient.addColorStop(0, base[0]);
@@ -4472,12 +4632,18 @@ export const PlayingView: React.FC<{
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Sun glow, placed opposite the light direction for a lit-from-the-side look.
-      const sunX = canvas.width * 0.78;
-      const sunY = canvas.height * 0.2;
-      const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, canvas.height * 0.55);
+      // At golden hour the sun drops towards the horizon and grows, which is what
+      // makes a sunset stage read instantly different from noon.
+      const sunX = canvas.width * (isGolden ? 0.71 : 0.78);
+      const sunY = canvas.height * (isGolden ? 0.58 : 0.2);
+      const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, canvas.height * (isGolden ? 0.75 : 0.55));
       // Daylight glow stays near-white; a warm amber wash desaturated the blue sky.
-      sunGlow.addColorStop(0, isNight ? 'rgba(180,200,255,0.22)' : 'rgba(255,252,232,0.32)');
-      sunGlow.addColorStop(0.45, isNight ? 'rgba(120,150,220,0.07)' : 'rgba(255,246,214,0.12)');
+      sunGlow.addColorStop(0, isNight
+        ? 'rgba(180,200,255,0.22)'
+        : isGolden ? 'rgba(255,193,122,0.55)' : 'rgba(255,252,232,0.32)');
+      sunGlow.addColorStop(0.45, isNight
+        ? 'rgba(120,150,220,0.07)'
+        : isGolden ? 'rgba(255,140,80,0.18)' : 'rgba(255,246,214,0.12)');
       sunGlow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = sunGlow;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -4486,14 +4652,37 @@ export const PlayingView: React.FC<{
       // light source gives the whole scene direction and depth.
       ctx.save();
       ctx.globalAlpha = isNight ? 0.9 : 0.85;
-      const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 46);
-      disc.addColorStop(0, isNight ? '#eef4ff' : '#fffbe8');
-      disc.addColorStop(0.55, isNight ? 'rgba(214,228,255,0.95)' : 'rgba(255,246,206,0.95)');
-      disc.addColorStop(1, 'rgba(255,255,255,0)');
+      const sunRadius = isGolden ? 58 : 46;
+      const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
+      disc.addColorStop(0, isNight ? '#eef4ff' : isGolden ? '#fff3d2' : '#fffbe8');
+      disc.addColorStop(0.55, isNight ? 'rgba(214,228,255,0.95)' : isGolden ? 'rgba(255,196,120,0.95)' : 'rgba(255,246,206,0.95)');
+      disc.addColorStop(1, isGolden ? 'rgba(255,150,90,0)' : 'rgba(255,255,255,0)');
       ctx.fillStyle = disc;
       ctx.beginPath();
-      ctx.arc(sunX, sunY, 46, 0, Math.PI * 2);
+      ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
       ctx.fill();
+      if (isGolden) {
+        // A hot rim and a low, mirrored shimmer on the horizon sell the hour.
+        ctx.strokeStyle = 'rgba(255,232,180,0.55)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, sunRadius * 0.82, 0, Math.PI * 2);
+        ctx.stroke();
+        // A soft vertical light shaft instead of a hard rectangle: an
+        // ellipse-scaled radial gradient fades out in every direction.
+        ctx.save();
+        ctx.translate(sunX, sunY + 60);
+        ctx.scale(0.5, 1.9);
+        const shaft = ctx.createRadialGradient(0, 0, 0, 0, 0, 210);
+        shaft.addColorStop(0, 'rgba(255,190,130,0.30)');
+        shaft.addColorStop(0.55, 'rgba(255,150,95,0.10)');
+        shaft.addColorStop(1, 'rgba(255,120,80,0)');
+        ctx.fillStyle = shaft;
+        ctx.beginPath();
+        ctx.arc(0, 0, 210, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       if (isNight) {
         // A couple of craters keep the moon from reading as a white hole.
         ctx.globalAlpha = 0.12;
@@ -4511,10 +4700,11 @@ export const PlayingView: React.FC<{
         canvas.width / 2, canvas.height - 60, 0,
         canvas.width / 2, canvas.height - 60, canvas.width * 0.7
       );
-      const glowAlpha = isNight ? 0.26 : 0.1;
-      horizonGlow.addColorStop(0, `rgba(43, 238, 121, ${glowAlpha})`);
-      horizonGlow.addColorStop(0.5, 'rgba(43, 238, 121, 0.05)');
-      horizonGlow.addColorStop(1, 'rgba(43, 238, 121, 0)');
+      const glowAlpha = isNight ? 0.26 : isGolden ? 0.3 : 0.1;
+      const glowRgb = isGolden ? '255, 154, 90' : '43, 238, 121';
+      horizonGlow.addColorStop(0, `rgba(${glowRgb}, ${glowAlpha})`);
+      horizonGlow.addColorStop(0.5, `rgba(${glowRgb}, 0.05)`);
+      horizonGlow.addColorStop(1, `rgba(${glowRgb}, 0)`);
       ctx.fillStyle = horizonGlow;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -4562,7 +4752,7 @@ export const PlayingView: React.FC<{
       clouds.forEach((cloud, i) => {
         const drift = timeSec * 8;
         const x = ((((i * canvas.width / 3 + drift) % cloudSpan) + cloudSpan) % cloudSpan) - 110;
-        drawCloud(ctx, x, cloud.y, cloud.scale, cloud.alpha, i, isNight);
+        drawCloud(ctx, x, cloud.y, cloud.scale, cloud.alpha, i, isNight, isGolden);
       });
 
       // Distant land: two soft ridgelines with a very slow parallax drift. They
@@ -4571,11 +4761,11 @@ export const PlayingView: React.FC<{
       ctx.save();
       const ridgeBase = game.groundY ?? canvas.height - 96;
       const ridges: Array<[number, string, number, number, number]> = [
-        [0.045, isNight ? '#0a1a2b' : '#7fb4c9', 150, 0.0035, 30],
-        [0.09, isNight ? '#0d2438' : '#659cb5', 92, 0.0062, 18],
+        [0.045, isNight ? '#0a1a2b' : isGolden ? '#6f3f63' : '#7fb4c9', 150, 0.0035, 30],
+        [0.09, isNight ? '#0d2438' : isGolden ? '#4f2d4f' : '#659cb5', 92, 0.0062, 18],
       ];
       ridges.forEach(([parallax, color, height, freq, amp], layer) => {
-        ctx.globalAlpha = isNight ? 0.55 : 0.38;
+        ctx.globalAlpha = isNight ? 0.55 : isGolden ? 0.5 : 0.46;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.moveTo(-20, canvas.height);
@@ -4591,8 +4781,13 @@ export const PlayingView: React.FC<{
       // Atmospheric haze so the ridgelines fade into the sky rather than
       // reading as solid cut-outs.
       const haze = ctx.createLinearGradient(0, ridgeBase - 230, 0, ridgeBase - 20);
-      haze.addColorStop(0, isNight ? 'rgba(20,40,70,0)' : 'rgba(255,255,255,0)');
-      haze.addColorStop(1, isNight ? 'rgba(30,60,95,0.5)' : 'rgba(236,250,255,0.3)');
+      haze.addColorStop(0, 'rgba(255,255,255,0)');
+      // The day haze used to be a thick white veil that flattened every
+      // silhouette into the same pastel grey. A thin, tinted band keeps the
+      // depth readable while still softening the horizon.
+      haze.addColorStop(1, isNight
+        ? 'rgba(30,60,95,0.5)'
+        : isGolden ? 'rgba(255,168,120,0.24)' : 'rgba(232,248,255,0.16)');
       ctx.globalAlpha = 1;
       ctx.fillStyle = haze;
       ctx.fillRect(0, ridgeBase - 230, canvas.width, 210);
@@ -4642,8 +4837,8 @@ export const PlayingView: React.FC<{
           }
           ctx.globalAlpha = 1;
         };
-        drawDepthLayer(0.025, 260, isNight ? 0.62 : 0.2, 11, isNight ? '#071224' : '#6ba0b8');
-        drawDepthLayer(0.065, 190, isNight ? 0.72 : 0.22, 47, isNight ? '#0a1830' : '#578ba5');
+        drawDepthLayer(0.025, 260, isNight ? 0.62 : isGolden ? 0.34 : 0.3, 11, isNight ? '#071224' : isGolden ? '#4b2a52' : '#548ba3');
+        drawDepthLayer(0.065, 190, isNight ? 0.72 : isGolden ? 0.42 : 0.38, 47, isNight ? '#0a1830' : isGolden ? '#3a2044' : '#43768d');
       }
 
       // Scenery has two layers. Buildings are the fixed skyline and stay in
@@ -4654,9 +4849,12 @@ export const PlayingView: React.FC<{
       // Two depth layers. The skyline rests in the distance while the animals
       // stand in front of it - they are nearer the cat, so they are painted
       // last and drawn solid instead of as faint as the far-off buildings.
+      // The skyline sits one plane behind the animals; at 0.55 alpha over a
+      // bright sky it disappeared into the haze, so it gets more body during
+      // daylight while staying soft at night.
       const sceneryLayers: Array<[number, any[]]> = [
-        [0.55, game.backgroundElements.filter((el: any) => el.kind === 'building')],
-        [0.8, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
+        [isNight ? 0.6 : isGolden ? 0.7 : 0.72, game.backgroundElements.filter((el: any) => el.kind === 'building')],
+        [0.86, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
       ];
       sceneryLayers.forEach(([layerAlpha, elements]) => {
         ctx.globalAlpha = layerAlpha;
@@ -5747,6 +5945,36 @@ export const PlayingView: React.FC<{
       }
       ctx.restore();
 
+      // Pebbles and roots in the exposed soil. They are laid out in world space
+      // (not screen space) so they scroll with the level instead of sliding
+      // along under the cat. Deterministic positions keep them from flickering.
+      ctx.save();
+      const soilH = canvas.height - game.groundY;
+      const pebbleStep = 34;
+      const pebbleStart = Math.floor(game.scrollX / pebbleStep) - 1;
+      const pebbleEnd = pebbleStart + Math.ceil(canvas.width / pebbleStep) + 2;
+      for (let i = pebbleStart; i < pebbleEnd; i++) {
+        const sx = i * pebbleStep - game.scrollX;
+        const h1 = skyHashNoise(i * 1.7);
+        const h2 = skyHashNoise(i * 3.1 + 4);
+        const py = game.groundY + 12 + h1 * Math.max(8, soilH - 22);
+        const pr = 2 + h2 * 4.5;
+        ctx.fillStyle = `rgba(${h2 > 0.5 ? '150, 126, 100' : '92, 72, 54'}, ${0.2 + h1 * 0.22})`;
+        ctx.beginPath();
+        ctx.ellipse(sx + h2 * 20, py, pr, pr * 0.62, h1 * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        // A thin root hanging from the turf every third slot.
+        if (i % 3 === 0 && soilH > 34) {
+          ctx.strokeStyle = 'rgba(74, 52, 32, 0.5)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(sx + 8, game.groundY + 4);
+          ctx.bezierCurveTo(sx + 2, game.groundY + 14, sx + 16, game.groundY + 20, sx + 9, game.groundY + 30 + h2 * 14);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+
       // Platforms - dark neon slabs with a glowing top edge
       game.platforms.forEach(plat => {
         const platX = plat.x - game.scrollX;
@@ -5754,7 +5982,10 @@ export const PlayingView: React.FC<{
         if (platX + plat.width > 0 && platX < canvas.width) {
           if (plat.isGround && !plat.bossWalkway) {
             // Mark/marknivå: gräs + jord
-            const gGrad = ctx.createLinearGradient(platX, platY, platX, platY + plat.height);
+            // The gradient spans a fixed depth instead of each slab's own height:
+            // adjacent ground platforms of different heights used to shade the
+            // same y differently, leaving a visible vertical seam every 480 px.
+            const gGrad = ctx.createLinearGradient(platX, platY, platX, game.groundY + 130);
             // Väder-anpassat utseende
             if (game.weather === 'SNÖIGT') {
               gGrad.addColorStop(0, '#e8f4ff');   // Snö
@@ -6795,26 +7026,39 @@ export const PlayingView: React.FC<{
         
         ctx.restore();
         
-        // Boss-hälsobar (stor, prominant)
-        const hpBarW = Math.min(400, bw * 3);
-        const hpBarX = bx + bw/2 - hpBarW/2;
-        const hpBarY = by - 28;
-        
-        // Boss-namn
-        ctx.font = 'bold 14px Outfit, sans-serif';
+        // The boss also carries a compact world-space nameplate so its health
+        // reads while the camera is locked on the fight. It is deliberately
+        // slim: the full-width bar at the top of the screen already carries the
+        // numbers, and the old 400 px duplicate covered the boss art.
+        const hpBarW = Math.min(230, bw * 2.2);
+        const hpBarX = bx + bw / 2 - hpBarW / 2;
+        const hpBarY = by - 30;
+        const plateW = hpBarW + 28;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(6, 10, 20, 0.62)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(bx + bw / 2 - plateW / 2, hpBarY - 20, plateW, 35, 9);
+        ctx.fill();
+        ctx.stroke();
+
+        // Boss name, on its own line above the bar.
+        ctx.font = 'bold 12px Outfit, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = phaseColor;
         ctx.shadowColor = phaseColor;
         ctx.shadowBlur = 8;
-        ctx.fillText(boss.name, bx + bw/2, hpBarY - 6);
+        ctx.fillText(boss.name, bx + bw / 2, hpBarY - 8);
         ctx.shadowBlur = 0;
-        
-        // HP-bar bakgrund
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+
+        // HP-bar background
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.beginPath();
-        ctx.roundRect(hpBarX - 2, hpBarY, hpBarW + 4, 14, 7);
+        ctx.roundRect(hpBarX, hpBarY, hpBarW, 8, 4);
         ctx.fill();
-        
+
         // HP-bar gradient
         const hpGrad = ctx.createLinearGradient(hpBarX, 0, hpBarX + hpBarW, 0);
         hpGrad.addColorStop(0, '#ff2222');
@@ -6824,15 +7068,10 @@ export const PlayingView: React.FC<{
         ctx.shadowColor = phaseColor;
         ctx.shadowBlur = 6;
         ctx.beginPath();
-        ctx.roundRect(hpBarX, hpBarY + 1, Math.max(0, hpBarW * hpPct), 12, 6);
+        ctx.roundRect(hpBarX + 1, hpBarY + 1, Math.max(0, (hpBarW - 2) * hpPct), 6, 3);
         ctx.fill();
         ctx.shadowBlur = 0;
-        
-        // HP-text
-        ctx.fillStyle = 'white';
-        ctx.font = 'bold 10px Outfit, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${boss.hp}/${boss.maxHp}`, hpBarX + hpBarW/2, hpBarY + 10);
+        ctx.restore();
       }
 
       // Draw Fishes (Yellow/Gold Fish) - Now drawn after background and platforms
@@ -7113,6 +7352,9 @@ export const PlayingView: React.FC<{
           };
           setLevelSummary({ ...summary, grade: getGrade(summary) });
           AudioEngine.playGrade();
+          // Normal runs and the Continue entry advance the campaign checkpoint;
+          // a quick Daily Run from level 29 must not unlock the whole story.
+          if (startLevel <= readCheckpoint()) writeCheckpoint(currentLevel + 1);
           setShowLevelComplete(true);
         }
         else { game.showFishWarning = true; }
@@ -7222,7 +7464,13 @@ export const PlayingView: React.FC<{
         ctx.fillStyle = '#ee2b2b'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
         const needBoss = game.boss && game.boss.hp > 0;
         const missingFish = Math.max(0, (game.fishGoal ?? game.fishes.length) - collectedCountInFrame);
-        ctx.fillText(needBoss ? `BESEGRA BOSS · ${missingFish} FISKAR KVAR` : `SAMLA ${missingFish} FISKAR TILL!`, jx + jw / 2, jy - 15);
+        ctx.fillText(
+          needBoss
+            ? tr('BESEGRA BOSS · {n} FISKAR KVAR', { n: missingFish })
+            : tr('SAMLA {n} FISKAR TILL!', { n: missingFish }),
+          jx + jw / 2,
+          jy - 15,
+        );
       }
 
       // Player
@@ -7264,6 +7512,8 @@ export const PlayingView: React.FC<{
         t: Date.now() / 1000,
         running: Math.abs(game.player.velocityX) > 0.4 && game.player.onGround,
         jumping: !game.player.onGround,
+        // The blaster flashes for a few frames after each shot.
+        shooting: (game.shootCooldown || 0) > 6,
         facing: game.player.facing === -1 ? -1 : 1,
         sx: pw / 40,
         sy: ph / 56,
@@ -7373,6 +7623,12 @@ export const PlayingView: React.FC<{
         grade.addColorStop(0, 'rgba(90,130,220,0.10)');
         grade.addColorStop(0.55, 'rgba(20,30,80,0.02)');
         grade.addColorStop(1, 'rgba(5,10,30,0.18)');
+      } else if (isGolden) {
+        // Warm light pours in from the sun side; the opposite corner cools to
+        // violet. This is the pass that makes the whole frame feel like dusk.
+        grade.addColorStop(0, 'rgba(255,170,110,0.16)');
+        grade.addColorStop(0.55, 'rgba(255,210,160,0.03)');
+        grade.addColorStop(1, 'rgba(60,20,80,0.16)');
       } else {
         grade.addColorStop(0, 'rgba(255,236,190,0.055)');
         grade.addColorStop(0.5, 'rgba(255,255,255,0)');
@@ -7442,6 +7698,31 @@ export const PlayingView: React.FC<{
         ctx.restore();
         ctx.fillStyle = `rgba(232, 242, 255, ${wash * f})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Fireflies on night stages. They drift against the camera at half speed,
+      // so they read as a near layer without ever hinting at a collision. Their
+      // soft pulse gives the empty night sky something alive to watch.
+      if (isNight && !progress.settings.reduceMotion) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const span = canvas.width + 240;
+        for (let i = 0; i < 26; i++) {
+          const drift = timeSec * (6 + skyHashNoise(i * 3.3) * 14);
+          const world = i * 173 + drift + Math.sin(timeSec * 0.7 + i) * 28;
+          const sx = (((world - game.scrollX * 0.45) % span) + span) % span - 120;
+          const sy = game.groundY - 24 - skyHashNoise(i * 7.1) * 205 + Math.sin(timeSec * 1.3 + i * 2) * 12;
+          const pulse = 0.35 + 0.65 * Math.max(0, Math.sin(timeSec * 1.8 + i));
+          ctx.fillStyle = `rgba(180, 255, 140, ${0.18 * pulse})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `rgba(224, 255, 180, ${0.85 * pulse})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
       }
 
       ctx.restore();
@@ -7726,14 +8007,14 @@ export const PlayingView: React.FC<{
                   <span
                     className={`material-symbols-outlined text-[15px] ${
                       stats.weather === 'SOLIGT'
-                        ? stats.timeOfDay === 'DAY' ? 'text-orange-400' : 'text-yellow-400'
+                        ? stats.timeOfDay === 'DAY' ? 'text-orange-400' : stats.timeOfDay === 'NIGHT' ? 'text-yellow-400' : 'text-orange-300'
                         : stats.weather === 'REGNIGT' ? 'text-blue-400'
                         : stats.weather === 'SNÖIGT' ? 'text-white'
                         : stats.weather === 'DIMMIGT' ? 'text-gray-300' : 'text-purple-400'
                     }`}
                   >
                     {stats.weather === 'SOLIGT'
-                      ? stats.timeOfDay === 'DAY' ? 'sunny' : 'nightlight'
+                      ? stats.timeOfDay === 'DAY' ? 'sunny' : stats.timeOfDay === 'NIGHT' ? 'nightlight' : 'wb_twilight'
                       : stats.weather === 'REGNIGT' ? 'rainy'
                       : stats.weather === 'SNÖIGT' ? 'ac_unit'
                       : stats.weather === 'DIMMIGT' ? 'foggy' : 'thunderstorm'}
@@ -7747,9 +8028,17 @@ export const PlayingView: React.FC<{
                 </div>
 
                 {stats.levelType === 'Speed Run' && (
-                  <div className="hud-chip border-orange-400/35 bg-orange-400/10 sm:inline-flex">
-                    <span className="material-symbols-outlined text-[15px] text-orange-300">timer</span>
-                    <span className="tabular text-xs font-black text-orange-200">{Math.ceil(stats.timer)}s</span>
+                  <div
+                    className={`hud-chip sm:inline-flex ${
+                      stats.timer <= 10
+                        ? 'animate-pulse border-red-400/60 bg-red-500/20'
+                        : 'border-orange-400/35 bg-orange-400/10'
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-[15px] ${stats.timer <= 10 ? 'text-red-300' : 'text-orange-300'}`}>timer</span>
+                    <span className={`tabular text-xs font-black ${stats.timer <= 10 ? 'text-red-200' : 'text-orange-200'}`}>
+                      {Math.ceil(stats.timer)}s
+                    </span>
                   </div>
                 )}
 
@@ -7809,6 +8098,28 @@ export const PlayingView: React.FC<{
               <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
                 {t(LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name)}
               </p>
+              {currentLevel === 1 && (
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-white/10 pt-3 text-[9px] font-bold uppercase tracking-[0.14em] text-white/45">
+                  {(isTouchDevice
+                    ? [
+                        ['arrow_back', t('Gå')],
+                        ['arrow_upward', t('Hoppa')],
+                        ['bolt', t('Skjut')],
+                      ]
+                    : [
+                        ['keyboard', t('A / D · gå')],
+                        ['arrow_upward', t('Space · hoppa')],
+                        ['my_location', t('F · skjut')],
+                        ['bolt', t('Shift · dash')],
+                      ]
+                  ).map(([icon, label]) => (
+                    <span key={label} className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-primary/70">{icon}</span>
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -7858,7 +8169,7 @@ export const PlayingView: React.FC<{
                     {isMuted ? t('Ljud av') : t('Ljud på')}
                   </button>
                   <button
-                    onClick={() => { togglePause(); onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0); }}
+                    onClick={quitRun}
                     className="btn-ghost py-3 text-xs uppercase tracking-wider"
                   >
                     <span className="material-symbols-outlined text-base">logout</span>
@@ -7941,6 +8252,8 @@ export const PlayingView: React.FC<{
 
         <canvas
           ref={canvasRef}
+          role="img"
+          aria-label={t('Spelplan: katten, fiskarna, fienden och Jerry')}
           className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
           style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
         />
@@ -8116,7 +8429,9 @@ export const PlayingView: React.FC<{
             {/* Shoot-knapp */}
             <button
               className="size-16 lg:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); fireBullet(); }}
+              onTouchStart={(e) => { e.preventDefault(); startTouchShoot(); }}
+              onTouchEnd={(e) => { e.preventDefault(); stopTouchShoot(); }}
+              onTouchCancel={stopTouchShoot}
             >
               <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
               <span className="text-[10px] font-black uppercase tracking-widest opacity-90">{t('SKJUT')}</span>

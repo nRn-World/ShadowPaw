@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node -e \"require('fs').cpSync('Sounds', 'dist/Sounds', {recursive: true})\"",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^19.2.3",

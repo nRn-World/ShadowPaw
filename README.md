@@ -23,11 +23,13 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 ### Features
 
 - 🎯 **50 Action-Packed Levels** - Progress through increasingly challenging stages
+- 💾 **Campaign Checkpoint** - Continue from the highest chapter you have unlocked
 - 🐱 **Play as a Cat** - Control your feline hero through neon streets
 - 🐰 **Defeat Enemies** - Jump on enemies or shoot them from a distance
-- 🐟 **Collect Fish** - Gather fish for ammo and coins
+- 🐟 **Collect Fish** - Gather fish, extend the timer and earn coins
 - 💰 **Shop System** - Upgrade your cat with better stats
-- 📱 **Mobile Support** - Play on desktop or mobile browsers
+- 📱 **Mobile Support** - Hold-to-fire touch controls, portrait and landscape
+- 🌅 **Living Skies** - Dawn, sunset, rain, snow, storms and firefly nights
 - 🎵 **Epic Soundtrack** - Background music and sound effects
 
 ---

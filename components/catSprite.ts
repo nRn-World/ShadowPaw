@@ -117,20 +117,54 @@ export const drawCatSprite = (ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.stroke();
   }
 
-  // Weapon + muzzle flash
-  ctx.fillStyle = '#dfe8f5';
-  ctx.fillRect(9, -19, 13, 3.4);
-  ctx.fillStyle = '#8fa3bd';
-  ctx.fillRect(9, -16, 5, 3);
+  // Weapon + muzzle flash. It is deliberately chunky: at menu size the cat is
+  // only ~90 px tall, and a thin pale rectangle read as a straw in its mouth.
+  // A dark frame with a bright energy cell and a short barrel stays a blaster.
+  ctx.save();
+  ctx.translate(7, -21);
+  // Grip, tucked under the body of the gun.
+  ctx.fillStyle = '#0a1120';
+  ctx.beginPath();
+  ctx.roundRect(1, 5, 5, 5.5, 1.6);
+  ctx.fill();
+  // Main frame.
+  ctx.fillStyle = '#1a2740';
+  ctx.strokeStyle = '#060b16';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.roundRect(0, 0.6, 16, 5.6, 2);
+  ctx.fill();
+  ctx.stroke();
+  // Top rail highlight.
+  ctx.fillStyle = '#7690b3';
+  ctx.beginPath();
+  ctx.roundRect(1.6, 1.5, 8.2, 1.5, 0.7);
+  ctx.fill();
+  // Energy cell glows in the cat's eye colour.
+  ctx.fillStyle = eye;
+  ctx.shadowColor = eye;
+  ctx.shadowBlur = 5;
+  ctx.beginPath();
+  ctx.roundRect(10.4, 1.4, 3.4, 3.2, 0.9);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // Barrel and dark muzzle ring.
+  ctx.fillStyle = '#c3d8f2';
+  ctx.fillRect(15.6, 2.1, 2.8, 2.6);
+  ctx.fillStyle = '#0a1120';
+  ctx.fillRect(18, 2.6, 1.4, 1.6);
   if (shooting) {
-    ctx.fillStyle = 'rgba(255,236,150,0.95)';
+    const flash = 4.5 + Math.sin(t * 60) * 1.2;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(255,206,120,0.9)';
     ctx.beginPath();
-    ctx.arc(24, -17, 5.2, 0, Math.PI * 2);
+    ctx.arc(21.5, 3.6, flash, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
     ctx.beginPath();
-    ctx.arc(25, -17, 2.4, 0, Math.PI * 2);
+    ctx.arc(22.3, 3.6, flash * 0.45, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
   ctx.restore();
 };
