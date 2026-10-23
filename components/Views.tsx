@@ -47,25 +47,6 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Besegra 3 bossar' },
 };
 
-// The campaign remembers the highest level unlocked, so closing the tab no
-// longer sends a player who reached chapter six back to level 1.
-const CHECKPOINT_KEY = 'shadow_paw_checkpoint';
-const readCheckpoint = (): number => {
-  try {
-    const n = Number(localStorage.getItem(CHECKPOINT_KEY));
-    return Number.isFinite(n) && n > 1 ? Math.min(999, Math.floor(n)) : 1;
-  } catch {
-    return 1;
-  }
-};
-const writeCheckpoint = (level: number) => {
-  try {
-    localStorage.setItem(CHECKPOINT_KEY, String(Math.max(readCheckpoint(), Math.floor(level))));
-  } catch {
-    // A blocked localStorage must never break the level-complete flow.
-  }
-};
-
 const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: string }> = [
   { id: 'flawless', label: 'Felfri', desc: 'Klara en nivå utan skada', icon: 'verified' },
   { id: 'combo_10', label: 'Combo x10', desc: 'Kedja 10 aktioner', icon: 'local_fire_department' },
@@ -204,7 +185,7 @@ export const StartMenuView: React.FC<{
   const questsDone = progress.dailyQuests.filter((q) => q.completed).length;
   // Campaign progress, not account rank: these are different things, and the
   // card used to promise chapter 1 forever even after clearing a dozen levels.
-  const storyLevel = readCheckpoint();
+  const storyLevel = progress.campaignLevel;
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 md:py-10 animate-fade-in-up">
@@ -2417,7 +2398,9 @@ const SKY_ANIMALS = ['bird', 'pigeon', 'crow', 'seagull', 'eagle', 'bat', 'pelic
 const WAVING_ANIMALS = ['cat', 'stray_cat', 'dog', 'rabbit', 'bear', 'alien_creature', 'cow', 'horse', 'deer'];
 // Background creatures are scenery, not characters: keep them small enough
 // that the cat always reads as the subject, and the skyline taller than them.
-const SCALE_RANGE = { building: [0.62, 1.15] as const, animal: [0.78, 1.12] as const };
+// Ground animals are scenery, not characters: kept a little smaller than the
+// cat so a fox at the edge of the screen can never read as a threat.
+const SCALE_RANGE = { building: [0.62, 1.15] as const, animal: [0.6, 0.88] as const };
 
 /** Gives a flying animal its own flight profile: heading, cruise speed, altitude,
     undulation and wingbeat. Every bird then flies its own line instead of
@@ -2704,7 +2687,7 @@ export const PlayingView: React.FC<{
   const [isPortrait, setIsPortrait] = useState(true);
   const [combo, setCombo] = useState(0);
   const [seasonTheme] = useState(getSeasonTheme());
-  const { progress, addCoins, toggleMuted } = useProgress();
+  const { progress, addCoins, toggleMuted, advanceCampaign } = useProgress();
   const t = useT();
   const isMuted = progress.settings.muted;
 
@@ -4854,7 +4837,9 @@ export const PlayingView: React.FC<{
       // daylight while staying soft at night.
       const sceneryLayers: Array<[number, any[]]> = [
         [isNight ? 0.6 : isGolden ? 0.7 : 0.72, game.backgroundElements.filter((el: any) => el.kind === 'building')],
-        [0.86, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
+        // Animals sit between the skyline and the level, so they are muted
+        // compared to the cat: vivid scenery stole attention from the player.
+        [isNight ? 0.62 : isGolden ? 0.62 : 0.66, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
       ];
       sceneryLayers.forEach(([layerAlpha, elements]) => {
         ctx.globalAlpha = layerAlpha;
@@ -7353,8 +7338,9 @@ export const PlayingView: React.FC<{
           setLevelSummary({ ...summary, grade: getGrade(summary) });
           AudioEngine.playGrade();
           // Normal runs and the Continue entry advance the campaign checkpoint;
-          // a quick Daily Run from level 29 must not unlock the whole story.
-          if (startLevel <= readCheckpoint()) writeCheckpoint(currentLevel + 1);
+          // a quick Daily Run from level 29 must not unlock the whole story. The
+          // guard lives in the progress context, where the live checkpoint is.
+          advanceCampaign(currentLevel + 1, startLevel);
           setShowLevelComplete(true);
         }
         else { game.showFishWarning = true; }

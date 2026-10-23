@@ -46,6 +46,7 @@ const defaultProgress: PlayerProgress = {
   totalCoinsEarned: 0,
   xp: 0,
   level: 1,
+  campaignLevel: 1,
   unlockedSkins: ['default'],
   equippedSkin: 'default',
   upgrades: {
@@ -95,6 +96,10 @@ interface ProgressContextType {
   setMuted: (muted: boolean) => void;
   toggleMuted: () => void;
   updateStats: (updates: Partial<PlayerProgress['stats']>) => void;
+  /** Advances the campaign checkpoint, but only for a run that began at or
+      before the currently unlocked chapter. Returns nothing: the story is
+      never allowed to jump ahead because of a Daily Run. */
+  advanceCampaign: (reachedLevel: number, runStartLevel: number) => void;
   unlockAchievement: (achievementId: string) => void;
   unlockSkin: (skinId: string) => void;
   applyRunResults: (results: {
@@ -134,6 +139,22 @@ const migrateLegacyAudio = (settings: PlayerProgress['settings']): PlayerProgres
   }
 };
 
+/** Before the checkpoint lived in the save file it had its own localStorage key.
+    Read it once so a returning player keeps the chapter they unlocked. */
+const readLegacyCheckpoint = () => {
+  try {
+    const n = Number(localStorage.getItem('shadow_paw_checkpoint'));
+    return Number.isFinite(n) && n > 1 ? Math.min(999, Math.floor(n)) : 1;
+  } catch {
+    return 1;
+  }
+};
+
+const clampCampaignLevel = (value: unknown, fallback = 1) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(999, Math.max(1, Math.floor(n))) : fallback;
+};
+
 const LANG_CODES = ['en', 'sv', 'tr', 'es', 'ar'];
 const cleanLang = (s: PlayerProgress['settings']): PlayerProgress['settings'] =>
   LANG_CODES.includes(s.language) ? s : { ...s, language: 'en' };
@@ -150,6 +171,9 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
           return {
             ...defaultProgress,
             ...parsed,
+            campaignLevel: parsed.campaignLevel === undefined
+              ? readLegacyCheckpoint()
+              : clampCampaignLevel(parsed.campaignLevel),
             upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
             settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
             stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
@@ -304,6 +328,14 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
     setProgress((p) => ({ ...p, stats: { ...p.stats, ...updates } }));
   };
 
+  const advanceCampaign = (reachedLevel: number, runStartLevel: number) => {
+    setProgress((p) => {
+      if (runStartLevel > p.campaignLevel) return p;
+      const next = clampCampaignLevel(reachedLevel, p.campaignLevel);
+      return next > p.campaignLevel ? { ...p, campaignLevel: next } : p;
+    });
+  };
+
   const unlockAchievement = (achievementId: string) => {
     setProgress((p) => {
       if (p.achievements.includes(achievementId)) return p;
@@ -393,6 +425,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       setProgress({
         ...defaultProgress,
         ...parsed,
+        campaignLevel: clampCampaignLevel(parsed.campaignLevel),
         upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
         settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
         stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
@@ -420,6 +453,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       setMuted,
       toggleMuted,
       updateStats,
+      advanceCampaign,
       unlockAchievement,
       unlockSkin,
       applyRunResults,

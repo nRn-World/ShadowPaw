@@ -32,6 +32,9 @@ export interface PlayerProgress {
   totalCoinsEarned: number;
   xp: number;
   level: number;
+  /** Highest story level unlocked; lives in the save file so export/import and
+      backups carry the campaign with them. */
+  campaignLevel: number;
   unlockedSkins: string[];
   equippedSkin: string;
   upgrades: {
