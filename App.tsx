@@ -2,12 +2,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverView, ShopView, QuestsView, PlayingView } from './components/Views';
+import LevelSelectView from './components/LevelSelectView';
 import { AppView } from './types';
 import { ProgressProvider, useProgress } from './context/ProgressContext';
 import { AudioEngine } from './services/AudioEngine';
 import { useT } from './i18n';
 
-const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppView.LEADERBOARD, AppView.SHOP, AppView.QUESTS, AppView.GAME_OVER];
+const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppView.LEADERBOARD, AppView.SHOP, AppView.QUESTS, AppView.LEVELS, AppView.GAME_OVER];
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.START);
@@ -148,6 +149,13 @@ const App: React.FC = () => {
         return <ShopView onBack={() => handleNavigate(AppView.START)} />;
       case AppView.QUESTS:
         return <QuestsView onBack={() => handleNavigate(AppView.START)} />;
+      case AppView.LEVELS:
+        return (
+          <LevelSelectView
+            onBack={() => handleNavigate(AppView.START)}
+            onStart={handleStart}
+          />
+        );
       default:
         return <StartMenuView onNavigate={handleNavigate} />;
     }
@@ -189,6 +197,7 @@ const App: React.FC = () => {
           <div className="mx-auto flex max-w-md items-stretch justify-around px-2 py-1.5">
             {[
               { view: AppView.START, icon: 'home', label: 'Hem' },
+              { view: AppView.LEVELS, icon: 'map', label: 'Kapitel' },
               { view: AppView.SHOP, icon: 'store', label: 'Butik' },
               { view: AppView.QUESTS, icon: 'task_alt', label: 'Uppdrag' },
               { view: AppView.LEADERBOARD, icon: 'emoji_events', label: 'Topplista' },
@@ -199,7 +208,7 @@ const App: React.FC = () => {
                   key={item.view}
                   onClick={() => handleNavigate(item.view)}
                   aria-current={active ? 'page' : undefined}
-                  className={`flex min-w-16 flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 transition-colors ${
+                  className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 transition-colors ${
                     active ? 'bg-primary/10 text-primary' : 'text-white/45 active:bg-white/5'
                   }`}
                 >

@@ -173,6 +173,52 @@ const InjuredCatVisual: React.FC = () => (
 );
 
 /** START MENU **/
+/** The attract-mode card on the start screen: a live slice of play, the next
+    story goal and the player's rank. It renders once in the mobile flow and
+    once in the desktop hero column, so both share this single definition. */
+const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level?: number) => void }> = ({ storyLevel, rank, onStart }) => {
+  const t = useT();
+  return (
+    <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
+      {/* Attract mode: a looping slice of real play. The cat sprints through the
+          park, hops a crate, shoots a drone, crosses the rainy night and takes
+          down a boss, so the first screen shows what the game *is* before the
+          visitor presses anything. */}
+      <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
+        <div className="absolute inset-0">
+          <LiveRunDemo />
+        </div>
+        <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
+          <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
+          <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
+        </div>
+        <button
+          onClick={() => onStart(1)}
+          className="absolute inset-0 z-10 flex items-end justify-end p-3"
+          aria-label={t('Spela Shadow Paw')}
+        >
+          <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
+            <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
+            {t('Spela själv')}
+          </span>
+        </button>
+      </div>
+
+      <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">{t('Nästa mål')}</p>
+            <p className="text-xs font-bold text-white/85">{t('Kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}</p>
+          </div>
+          <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
+            {t('Rank {n}', { n: rank })}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const StartMenuView: React.FC<{
   onNavigate: (v: AppView) => void;
   onStart: (level?: number) => void;
@@ -212,43 +258,7 @@ export const StartMenuView: React.FC<{
           </h1>
 
           <div className="mt-5 lg:hidden">
-          <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
-            {/* Attract mode: a looping slice of real play. The cat sprints
-                through the park, hops a crate, shoots a drone, crosses the
-                rainy night and takes down a boss, so the first screen shows
-                what the game *is* before the visitor presses anything. */}
-            <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
-              <div className="absolute inset-0">
-                <LiveRunDemo />
-              </div>
-              <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
-                <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
-              </div>
-              <button
-                onClick={() => onStart(1)}
-                className="absolute inset-0 z-10 flex items-end justify-end p-3"
-                aria-label={t('Spela Shadow Paw')}
-              >
-                <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
-                  <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
-                  {t('Spela själv')}
-                </span>
-              </button>
-            </div>
-
-            <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">{t('Nästa mål')}</p>
-                  <p className="text-xs font-bold text-white/85">{t('Kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}</p>
-                </div>
-                <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
-                  {t('Rank {n}', { n: progress.level })}
-                </span>
-              </div>
-            </div>
-          </div>
+            <HeroShowcase storyLevel={storyLevel} rank={progress.level} onStart={onStart} />
           </div>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
@@ -272,58 +282,34 @@ export const StartMenuView: React.FC<{
             </button>
           </div>
 
-          {storyLevel > 1 && (
+          <div className="mt-2.5 flex flex-col gap-2.5 sm:flex-row">
+            {storyLevel > 1 && (
+              <button
+                onClick={() => onStart(storyLevel)}
+                className="group flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.06] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.16em] text-primary/90 transition-colors hover:border-primary/40 hover:bg-primary/[0.12] hover:text-primary sm:flex-1 sm:justify-start"
+              >
+                <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">resume</span>
+                {t('Fortsätt · nivå {n}', { n: storyLevel })}
+              </button>
+            )}
             <button
-              onClick={() => onStart(storyLevel)}
-              className="group mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.06] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.16em] text-primary/90 transition-colors hover:border-primary/40 hover:bg-primary/[0.12] hover:text-primary sm:w-auto sm:justify-start"
+              onClick={() => onNavigate(AppView.LEVELS)}
+              className="group flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.16em] text-white/60 transition-colors hover:border-white/25 hover:bg-white/[0.08] hover:text-white sm:flex-1 sm:justify-start"
             >
-              <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">resume</span>
-              {t('Fortsätt · kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}
+              <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">map</span>
+              {t('Kapitelkarta · {a}/{b}', {
+                a: Math.min(40, Math.max(0, storyLevel - 1)),
+                b: 40,
+              })}
             </button>
-          )}
+          </div>
 
         </div>
 
         {/* ----------------------------------------------------- hero panel */}
         <div className="relative">
           <div className="hidden lg:block">
-          <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
-            {/* Attract mode: a looping slice of real play. The cat sprints
-                through the park, hops a crate, shoots a drone, crosses the
-                rainy night and takes down a boss, so the first screen shows
-                what the game *is* before the visitor presses anything. */}
-            <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
-              <div className="absolute inset-0">
-                <LiveRunDemo />
-              </div>
-              <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
-                <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
-              </div>
-              <button
-                onClick={() => onStart(1)}
-                className="absolute inset-0 z-10 flex items-end justify-end p-3"
-                aria-label={t('Spela Shadow Paw')}
-              >
-                <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
-                  <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
-                  {t('Spela själv')}
-                </span>
-              </button>
-            </div>
-
-            <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/35">{t('Nästa mål')}</p>
-                  <p className="text-xs font-bold text-white/85">{t('Kapitel {c} · nivå {n}', { c: Math.ceil(storyLevel / 5), n: storyLevel })}</p>
-                </div>
-                <span className="rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary">
-                  {t('Rank {n}', { n: progress.level })}
-                </span>
-              </div>
-            </div>
-          </div>
+            <HeroShowcase storyLevel={storyLevel} rank={progress.level} onStart={onStart} />
           </div>
 
           {/* Career stats */}

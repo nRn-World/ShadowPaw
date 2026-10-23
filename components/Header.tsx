@@ -11,6 +11,7 @@ interface HeaderProps {
 
 const NAV_ITEMS: { view: AppView; icon: string; label: string }[] = [
   { view: AppView.START, icon: 'home', label: 'Hem' },
+  { view: AppView.LEVELS, icon: 'map', label: 'Kapitel' },
   { view: AppView.SHOP, icon: 'store', label: 'Butik' },
   { view: AppView.QUESTS, icon: 'task_alt', label: 'Uppdrag' },
   { view: AppView.LEADERBOARD, icon: 'emoji_events', label: 'Topplista' },

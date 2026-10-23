@@ -7,7 +7,8 @@ export enum AppView {
   PLAYING = 'PLAYING',
   GAME_OVER = 'GAME_OVER',
   SHOP = 'SHOP',
-  QUESTS = 'QUESTS'
+  QUESTS = 'QUESTS',
+  LEVELS = 'LEVELS'
 }
 
 export interface ScoreEntry {
