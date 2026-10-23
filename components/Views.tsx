@@ -238,19 +238,11 @@ export const StartMenuView: React.FC<{
       <div className="grid items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
         {/* ------------------------------------------------------- hero copy */}
         <div>
-          <div className="flex items-center gap-3">
-            <img
-              src="./icon.svg"
-              alt=""
-              className="size-11 shrink-0 rounded-[13px] ring-1 ring-white/10 shadow-[0_12px_34px_-16px_rgba(43,238,121,0.85)]"
-            />
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/[0.07] px-3 py-1.5">
-              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-              <span className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/90">
-                {t('Ett neonäventyr från NRN World')}
-              </span>
-            </div>
-          </div>
+          <img
+            src="./icon.svg"
+            alt=""
+            className="size-11 shrink-0 rounded-[13px] ring-1 ring-white/10 shadow-[0_12px_34px_-16px_rgba(43,238,121,0.85)]"
+          />
 
           <h1 className="mt-5 font-display text-[3.4rem] font-black uppercase leading-[0.86] tracking-tight md:text-[5.2rem]">
             <span className="block display-title">Shadow</span>

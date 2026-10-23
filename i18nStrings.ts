@@ -22,7 +22,6 @@ export const STRINGS: Row[] = [
   ['Tillbaka till menyn', 'Back to the menu', 'Menüye dön', 'Volver al menú', 'العودة إلى القائمة'],
 
   // ---- start screen
-  ['Ett neonäventyr från NRN World', 'A neon adventure from NRN World', "NRN World'den bir neon macera", 'Una aventura neón de NRN World', 'مغامرة نيون من NRN World'],
   ['Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40+ handbyggda kapitel – bygg streaken, besegra bossarna och ta tillbaka natten.',
     'Neon City has taken Jerry. Run, jump and shoot your way through 40+ handcrafted chapters – build your streak, beat the bosses and take back the night.',
     'Neon Şehir Jerry\'yi kaçırdı. 40\'tan fazla el yapımı bölümde koş, zıpla ve ateş et – seriyi büyüt, patronları yen ve geceyi geri al.',
