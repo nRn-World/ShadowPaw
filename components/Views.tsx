@@ -5992,6 +5992,13 @@ export const PlayingView: React.FC<{
             ctx.fillRect(platX, platY, plat.width, 2);
             ctx.fillStyle = 'rgba(0,0,0,0.2)';
             ctx.fillRect(platX, platY + 2, plat.width, 5);
+            // Neon spill: a cheap gradient band (no shadowBlur) so the ground
+            // glows green at night and mint by day, in line with the neon theme.
+            const spill = ctx.createLinearGradient(0, platY - 16, 0, platY);
+            spill.addColorStop(0, 'rgba(43,238,121,0)');
+            spill.addColorStop(1, `rgba(43,238,121,${groundNight ? 0.32 : 0.16})`);
+            ctx.fillStyle = spill;
+            ctx.fillRect(platX, platY - 16, plat.width, 16);
           }
 
           // Grass fringe on solid ground. Deterministic sine-based blades keep
@@ -7059,13 +7066,15 @@ export const PlayingView: React.FC<{
 
         ctx.save();
         // Halo
-        const halo = ctx.createRadialGradient(fx2, fy2, 1, fx2, fy2, 26);
-        halo.addColorStop(0, 'rgba(255, 216, 120, 0.5)');
-        halo.addColorStop(0.5, 'rgba(255, 186, 72, 0.18)');
+        // Pulsing neon bloom so the pickup glows instead of just sitting there.
+        const haloR = 32 + Math.sin(Date.now() / 340 + (f.hoverOffset || 0)) * 4;
+        const halo = ctx.createRadialGradient(fx2, fy2, 1, fx2, fy2, haloR);
+        halo.addColorStop(0, 'rgba(255, 226, 140, 0.65)');
+        halo.addColorStop(0.5, 'rgba(255, 186, 72, 0.24)');
         halo.addColorStop(1, 'rgba(255, 186, 72, 0)');
         ctx.fillStyle = halo;
         ctx.beginPath();
-        ctx.arc(fx2, fy2, 26, 0, Math.PI * 2);
+        ctx.arc(fx2, fy2, haloR, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.translate(fx2, fy2);
@@ -7594,9 +7603,10 @@ export const PlayingView: React.FC<{
         grade.addColorStop(0.55, 'rgba(255,210,160,0.03)');
         grade.addColorStop(1, 'rgba(60,20,80,0.16)');
       } else {
-        grade.addColorStop(0, 'rgba(255,236,190,0.055)');
+        // Cyan-to-magenta wash keeps daylight stages inside the neon palette.
+        grade.addColorStop(0, 'rgba(90,240,255,0.10)');
         grade.addColorStop(0.5, 'rgba(255,255,255,0)');
-        grade.addColorStop(1, 'rgba(10,45,95,0.07)');
+        grade.addColorStop(1, 'rgba(170,60,255,0.12)');
       }
       ctx.fillStyle = grade;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
