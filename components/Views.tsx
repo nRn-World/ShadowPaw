@@ -4759,7 +4759,7 @@ export const PlayingView: React.FC<{
       // horizon several planes instead of one painted backdrop.
       {
         const themeName = String(game.theme || '');
-        const urbanTheme = /city|downtown|industrial|construction|rooftop|power|highway|space|data|warzone|quantum|harbor|sewer|nuclear|laboratory|underground|roof/.test(themeName);
+        const urbanTheme = /park|suburban|city|downtown|industrial|construction|rooftop|power|highway|space|data|warzone|quantum|harbor|sewer|nuclear|laboratory|underground|roof/.test(themeName);
         const drawDepthLayer = (parallax: number, baseH: number, alpha: number, seedBase: number, color: string) => {
           const span = 240;
           const offset = ((game.scrollX * parallax) % span + span) % span;
@@ -4776,6 +4776,23 @@ export const PlayingView: React.FC<{
               ctx.fillRect(x, y, w, h);
               if (r2 > 0.65) ctx.fillRect(x + w * 0.2, y - 14, 3, 14);
               if (r1 > 0.55) ctx.fillRect(x + w * 0.55, y - 22, w * 0.25, 22);
+              // Lit windows in cyan / magenta / amber plus a neon roof edge, so the
+              // far skyline reads as a living neon city rather than flat blocks.
+              const neon = ['#5af0ff', '#ff4fd8', '#ffd166'][Math.floor(skyHash(seedBase + i * 11.3) * 3)];
+              const lit = isNight ? 0.9 : isGolden ? 0.7 : 0.4;
+              ctx.save();
+              ctx.fillStyle = neon;
+              ctx.globalAlpha = Math.min(1, alpha * lit * 1.4);
+              for (let wy = y + 8; wy < ridgeBase - 10; wy += 13) {
+                for (let wx = x + 6; wx < x + w - 8; wx += 11) {
+                  if (skyHash(wx * 0.37 + wy * 1.91 + seedBase) > 0.42) ctx.fillRect(wx, wy, 4, 5);
+                }
+              }
+              ctx.globalAlpha = Math.min(1, alpha * lit * 1.6);
+              ctx.fillRect(x, y, w, 2);
+              ctx.restore();
+              ctx.globalAlpha = alpha;
+              ctx.fillStyle = color;
             } else {
               // Distant pines stand ON the horizon: a trunk plus three stacked
               // canopy tiers. The old single triangle floated above the ridge
