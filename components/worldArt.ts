@@ -242,37 +242,16 @@ export interface AtmosphereOptions {
 }
 
 /**
- * Filmic finish: light shafts, a low fog band, a vignette and a whisper of
- * grain. Everything is screen-space and sits under the HTML HUD.
+ * Filmic finish: a low fog band, weather veil, vignette and a whisper of
+ * grain. Deliberately no light shafts - see the note below. Everything is
+ * screen-space and sits under the HTML HUD.
  */
 export const drawAtmosphere = (ctx: CanvasRenderingContext2D, o: AtmosphereOptions) => {
-  const { width, height, time, isNight, isGolden, weather, reducedMotion, groundY } = o;
+  const { width, height, time, isNight, weather, reducedMotion, groundY } = o;
 
-  // Volumetric shafts from the moon / sun. Two broad wedges are enough; more
-  // reads as a lens flare rather than light in the air.
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const shaftX = width * (isGolden ? 0.71 : 0.78);
-  const shaftY = height * (isGolden ? 0.58 : 0.2);
-  // Two very soft wedges. Three wide, opaque beams read as searchlights and
-  // washed the whole stage out; these are barely-there atmospheric shafts.
-  for (let i = 0; i < 2; i++) {
-    const angle = -0.42 + i * 0.24 + Math.sin(time * 0.06 + i) * 0.02;
-    const len = height * 1.3;
-    const grad = ctx.createLinearGradient(shaftX, shaftY, shaftX + Math.sin(angle) * len, shaftY + Math.cos(angle) * len);
-    grad.addColorStop(0, isNight ? 'rgba(150, 210, 255, 0.055)' : isGolden ? 'rgba(255, 190, 120, 0.06)' : 'rgba(220, 250, 255, 0.045)');
-    grad.addColorStop(0.6, isNight ? 'rgba(120, 180, 255, 0.012)' : 'rgba(255, 220, 170, 0.012)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(shaftX - 8, shaftY);
-    ctx.lineTo(shaftX + 8, shaftY);
-    ctx.lineTo(shaftX + Math.sin(angle) * len + 90, shaftY + Math.cos(angle) * len);
-    ctx.lineTo(shaftX + Math.sin(angle) * len - 90, shaftY + Math.cos(angle) * len);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
+  // No artificial god-rays. The sun/moon lights the sky through the broad,
+  // edge-free radial glow drawn in the background pass; hard wedges or cones
+  // reaching down onto the playfield read as a lens flare / generated light.
 
   // Low mist pooling over the ground. It separates the playfield from the
   // background and hides the hard seam where the soil meets the horizon.

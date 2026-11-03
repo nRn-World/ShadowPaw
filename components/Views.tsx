@@ -5267,8 +5267,10 @@ export const PlayingView: React.FC<{
       // Sun glow, placed opposite the light direction for a lit-from-the-side look.
       // At golden hour the sun drops towards the horizon and grows, which is what
       // makes a sunset stage read instantly different from noon.
-      const sunX = canvas.width * (isGolden ? 0.71 : 0.78);
-      const sunY = canvas.height * (isGolden ? 0.58 : 0.2);
+      // Kept clear of the top-right HUD controls so the light source reads as
+      // part of the sky instead of a glow behind a button.
+      const sunX = canvas.width * (isGolden ? 0.71 : 0.67);
+      const sunY = canvas.height * (isGolden ? 0.58 : 0.22);
       const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, canvas.height * (isGolden ? 0.75 : 0.55));
       // Daylight glow stays near-white; a warm amber wash desaturated the blue sky.
       sunGlow.addColorStop(0, isNight
@@ -5285,46 +5287,25 @@ export const PlayingView: React.FC<{
       // light source gives the whole scene direction and depth.
       ctx.save();
       ctx.globalAlpha = isNight ? 0.9 : 0.85;
-      const sunRadius = isGolden ? 72 : isNight ? 58 : 64;
+      // A real sun/moon has a readable core and only a short, hazy falloff at
+      // the rim. A fully blurred blob (or a hard outline) reads as a rendered
+      // lens flare instead of a distant celestial body.
+      const sunRadius = isGolden ? 62 : isNight ? 46 : 50;
       const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
-      disc.addColorStop(0, isNight ? '#eef4ff' : isGolden ? '#fff3d2' : '#fffbe8');
-      disc.addColorStop(0.55, isNight ? 'rgba(214,228,255,0.95)' : isGolden ? 'rgba(255,196,120,0.95)' : 'rgba(255,246,206,0.95)');
+      const core = isNight ? '#eef4ff' : isGolden ? '#fff3d2' : '#fffbe8';
+      const rim = isNight ? 'rgba(214,228,255,0.72)' : isGolden ? 'rgba(255,196,120,0.72)' : 'rgba(255,246,206,0.72)';
+      disc.addColorStop(0, core);
+      disc.addColorStop(0.72, core);
+      disc.addColorStop(0.88, rim);
       disc.addColorStop(1, isGolden ? 'rgba(255,150,90,0)' : 'rgba(255,255,255,0)');
       ctx.fillStyle = disc;
       ctx.beginPath();
       ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
       ctx.fill();
-      // A thin atmospheric ring makes the disc read as a distant celestial
-      // body instead of a glowing dot.
-      ctx.globalAlpha = isNight ? 0.24 : 0.18;
-      ctx.strokeStyle = isNight ? '#bcd8ff' : isGolden ? '#ffd9a0' : '#fff6d8';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, sunRadius * 1.28, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = isNight ? 0.9 : 0.85;
-      if (isGolden) {
-        // A hot rim and a low, mirrored shimmer on the horizon sell the hour.
-        ctx.strokeStyle = 'rgba(255,232,180,0.55)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(sunX, sunY, sunRadius * 0.82, 0, Math.PI * 2);
-        ctx.stroke();
-        // A soft vertical light shaft instead of a hard rectangle: an
-        // ellipse-scaled radial gradient fades out in every direction.
-        ctx.save();
-        ctx.translate(sunX, sunY + 60);
-        ctx.scale(0.5, 1.9);
-        const shaft = ctx.createRadialGradient(0, 0, 0, 0, 0, 210);
-        shaft.addColorStop(0, 'rgba(255,190,130,0.30)');
-        shaft.addColorStop(0.55, 'rgba(255,150,95,0.10)');
-        shaft.addColorStop(1, 'rgba(255,120,80,0)');
-        ctx.fillStyle = shaft;
-        ctx.beginPath();
-        ctx.arc(0, 0, 210, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
+      // No outline rings and no downward shafts: a distant light source only
+      // has a soft, edge-free halo (the radial glow above) and a soft-edged
+      // disc. Hard circles or cones read as a generated lens flare instead of
+      // light in the atmosphere.
       if (isNight) {
         // A couple of craters keep the moon from reading as a white hole.
         ctx.globalAlpha = 0.12;
