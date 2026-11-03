@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { AppView, ScoreEntry } from '../types';
+import { AppView, ScoreEntry, RunMode } from '../types';
 import GameplayVideo from './GameplayVideo';
 import { drawCatSprite } from './catSprite';
 import { drawCatAtlasSprite, getCatMuzzle } from './catAtlasSprite';
@@ -12,6 +12,24 @@ import { useProgress, isReducedMotion } from '../context/ProgressContext';
 import { useInstall } from '../context/InstallContext';
 import { AudioEngine } from '../services/AudioEngine';
 import { useT, tr, renderRich, LanguageButtons } from '../i18n';
+import {
+  loadGhost, saveGhost, loadDailyScores, recordDailyScore,
+  readDailyStreak, touchDailyStreak,
+} from '../game/daily';
+import { getTopDeathCause, getMostDangerousLevel, type DeathCause } from '../game/telemetry';
+import { PERK_BY_ID, combinePerkEffects, offerPerks, type PerkDef } from '../game/perks';
+import { SHADOW_ENEMY_TYPE, updateEnemyMotion, drawShadowWraith } from '../game/enemies';
+import { haptic } from '../game/haptics';
+import { createQualityMonitor, FULL_QUALITY } from '../game/quality';
+import type { GameState, HudStats } from '../game/types';
+import { ShadowShiftMeter, ObjectivePill } from './GameHud';
+import { drawCheckpointBeacons, drawGhost } from './gameRender';
+import {
+  getLevelDesign, getDifficultyProfile, getLevelLayout, LEVEL_LAYOUT_META,
+  buildLevelLayout, makeRng, getWeatherForLevel, seededRandom,
+  GROUND_COLOR, hashSeed, getDailySeed, dailyLevelFromSeed,
+  getCheckpoints,
+} from '../game/level';
 
 /** Permanent cinematic crop for the stage. Kept as one constant so the render
     transform and the pointer→world conversion can never drift apart. */
@@ -187,7 +205,7 @@ const InjuredCatVisual: React.FC = () => (
 /** The attract-mode card on the start screen: a live slice of play, the next
     story goal and the player's rank. It renders once in the mobile flow and
     once in the desktop hero column, so both share this single definition. */
-const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level?: number) => void }> = ({ storyLevel, rank, onStart }) => {
+const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level?: number, mode?: RunMode) => void }> = ({ storyLevel, rank, onStart }) => {
   const t = useT();
   return (
     <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
@@ -232,13 +250,15 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level
 
 export const StartMenuView: React.FC<{
   onNavigate: (v: AppView) => void;
-  onStart: (level?: number) => void;
+  onStart: (level?: number, mode?: RunMode) => void;
 }> = ({ onNavigate, onStart }) => {
   const { progress } = useProgress();
   const t = useT();
 
-  const dailyDigits = progress.dailySeed.replace(/\D/g, '');
-  const dailyLevel = 3 + (Number(dailyDigits || 0) % 28);
+  // Use the same padded local-date seed that setupLevel and the ghost/board
+  // use, so the level on the button is exactly the course that gets loaded.
+  const todaySeed = getDailySeed();
+  const dailyLevel = dailyLevelFromSeed(todaySeed);
   const questsDone = progress.dailyQuests.filter((q) => q.completed).length;
   // Campaign progress, not account rank: these are different things, and the
   // card used to promise chapter 1 forever even after clearing a dozen levels.
@@ -276,7 +296,7 @@ export const StartMenuView: React.FC<{
               <span>{t('Spela nu')}</span>
             </button>
             <button
-              onClick={() => onStart(dailyLevel)}
+              onClick={() => onStart(dailyLevel, 'daily')}
               className="btn-ghost px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
               title={t('Starta direkt på nivå {n}', { n: dailyLevel })}
             >
@@ -305,6 +325,31 @@ export const StartMenuView: React.FC<{
                 b: 40,
               })}
             </button>
+          </div>
+
+          {/* Shared daily seed: everyone gets the same course on the same date.
+              The board and streak are local-only, so no account is needed. */}
+          <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/[0.045] px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base text-primary">calendar_today</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/70">{t('Dagens runda · {d}', { d: todaySeed })}</span>
+              </span>
+              <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-primary">
+                <span className="material-symbols-outlined text-sm">local_fire_department</span>
+                {t('Streak {n}', { n: readDailyStreak().count })}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              {loadDailyScores(todaySeed).length === 0 ? (
+                <span className="text-[10px] text-white/40">{t('Inga rundor än – bli först på dagens topp 3!')}</span>
+              ) : loadDailyScores(todaySeed).slice(0, 3).map((e, i) => (
+                <span key={i} className="tabular text-[11px] font-black text-white/65">
+                  <span className="text-primary">#{i + 1}</span> {e.score.toLocaleString()}
+                  <span className="ml-1 text-[9px] font-bold text-white/30">{t('nivå {n}', { n: e.level })}</span>
+                </span>
+              ))}
+            </div>
           </div>
 
         </div>
@@ -643,6 +688,65 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-all ${progress.settings.haptics ? 'left-5' : 'left-0.5'}`} />
             </span>
           </button>
+
+          {/* Difficulty scales hazards, enemy pressure and the fish quota, but
+              never rewards or shop prices: an accessibility dial, not a boost. */}
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-base text-primary">tune</span>
+              <span className="text-sm font-semibold text-white/85">{t('Svårighetsgrad')}</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-white/40">{t('Påverkar gropar, fiender och tidsgränser – inte belöningar.')}</p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label={t('Svårighetsgrad')}>
+              {([
+                { value: 'easy' as const, label: t('Avslappnat'), hint: t('Färre gropar, lugnare fiender') },
+                { value: 'normal' as const, label: t('Normal'), hint: t('Den tänkta utmaningen') },
+                { value: 'hard' as const, label: t('Utmaning'), hint: t('Tätare faror, kortare tid') },
+              ]).map((opt) => {
+                const active = progress.settings.difficulty === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    title={opt.hint}
+                    aria-pressed={active}
+                    onClick={() => updateSettings({ difficulty: opt.value })}
+                    className={`rounded-lg border px-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${
+                      active ? 'border-primary/60 bg-primary/15 text-primary' : 'border-white/10 bg-white/[0.04] text-white/60 hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quality + audio switches. Both are opt-out, and both degrade
+              gracefully on devices that cannot measure fps or pan audio. */}
+          {([
+            { key: 'autoQuality' as const, icon: 'speed', label: t('Auto-prestanda'), desc: t('Sänker effekter automatiskt om bildfrekvensen dippar') },
+            { key: 'cinematicEffects' as const, icon: 'flare', label: t('Filmiska effekter'), desc: t('Bloom och atmosfäriskt ljus – stäng av för maximal bildfrekvens') },
+            { key: 'adaptiveAudio' as const, icon: 'graphic_eq', label: t('Adaptivt ljud'), desc: t('Mjuka tonlager som följer kombon och riktade ljudeffekter') },
+          ]).map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => updateSettings({ [opt.key]: !progress.settings[opt.key] })}
+              aria-pressed={progress.settings[opt.key]}
+              className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:border-white/20"
+            >
+              <span className="flex min-w-0 items-start gap-2">
+                <span className="material-symbols-outlined text-base text-white/60">{opt.icon}</span>
+                <span>
+                  <span className="block text-xs font-bold text-white">{opt.label}</span>
+                  <span className="block text-[10px] leading-relaxed text-white/35">{opt.desc}</span>
+                </span>
+              </span>
+              <span className={`h-5 w-10 shrink-0 relative rounded-full transition-colors ${progress.settings[opt.key] ? 'bg-primary' : 'bg-white/20'}`} aria-hidden="true">
+                <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-all ${progress.settings[opt.key] ? 'left-5' : 'left-0.5'}`} />
+              </span>
+            </button>
+          ))}
         </div>
 
         {/* Save Sync Section */}
@@ -1086,6 +1190,9 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   const [name, setName] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
+  const [deathTip, setDeathTip] = useState('');
+  const [dailyResult, setDailyResult] = useState<{ rank: number; streak: number; best: number } | null>(null);
+  const recordedRef = React.useRef(false);
   const { progress, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
   const lastRun = (() => {
     try {
@@ -1114,6 +1221,28 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   useEffect(() => {
     setTaunt(getJerryTaunt(score));
     addXP(Math.floor(score / 10));
+    // Turn local death telemetry into one concrete, non-nagging tip.
+    const cause: DeathCause | null = getTopDeathCause();
+    const level = getMostDangerousLevel();
+    const tips: Record<DeathCause, string> = {
+      hole: t('VANLIGASTE ORSAK: fallet. Använd dubbelhoppet tidigare och leta efter de cyanfärgade kontrollpunkterna.'),
+      enemy: t('VANLIGASTE ORSAK: fiender. Hoppa på dem, eller spara Skuggskiftet till en trång passage.'),
+      hazard: t('VANLIGASTE ORSAK: fällor. Stanna upp och läs mönstret innan du rusar vidare.'),
+      timer: t('VANLIGASTE ORSAK: tiden. Fiskar ger extra sekunder – ta dem i kombo för att spara tid.'),
+      boss: t('VANLIGASTE ORSAK: bossar. Vänta på attacken; kärnan lyser bara precis efteråt.'),
+    };
+    setDeathTip(cause
+      ? `${tips[cause]}${level ? ' ' + t('Nivå {n} är din tuffaste.', { n: level }) : ''}`
+      : t('Spela en runda till så visar vi vad som är din vanligaste orsak till att fastna.'));
+
+    // Daily runs post to a local board and extend the consecutive-day streak.
+    if (!recordedRef.current && lastRun.runMode === 'daily' && lastRun.dailySeed) {
+      recordedRef.current = true;
+      const rank = recordDailyScore(lastRun.dailySeed, score, lastRun.level || 1);
+      const streak = touchDailyStreak(lastRun.dailySeed);
+      const board = loadDailyScores(lastRun.dailySeed);
+      setDailyResult({ rank, streak: streak.count, best: board[0]?.score || score });
+    }
     applyRunResults({
       fishesCollected,
       enemiesDefeated: lastRun.enemiesDefeated || 0,
@@ -1336,6 +1465,33 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
             ))}
           </div>
 
+          {/* Local death-cause telemetry becomes actionable advice, and daily
+              runs show their rank and streak without any server round-trip. */}
+          {deathTip && (
+            <div className="mt-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] p-3.5">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base text-cyan-300">lightbulb</span>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-cyan-200/70">{t('Tips från dina rundor')}</p>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-white/70">{deathTip}</p>
+            </div>
+          )}
+
+          {dailyResult && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {[
+                { label: t('Dagens placering'), value: dailyResult.rank ? `#${dailyResult.rank}` : '–' },
+                { label: t('Daglig streak'), value: `${dailyResult.streak} ${t('dagar')}` },
+                { label: t('Dagens bästa'), value: dailyResult.best.toLocaleString() },
+              ].map((d) => (
+                <div key={d.label} className="rounded-xl border border-primary/20 bg-primary/[0.06] px-2.5 py-2">
+                  <p className="tabular truncate text-base font-black text-primary">{d.value}</p>
+                  <p className="mt-0.5 truncate text-[8px] font-black uppercase tracking-wider text-white/35">{d.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3.5">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-base text-yellow-300">emoji_events</span>
@@ -1395,10 +1551,19 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
 const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume: number = 75, isPaused: boolean = false) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Boss warnings briefly duck the soundtrack via AudioEngine, so the warning
+  // cue is audible over the music without muting anything permanently.
+  const duckRef = useRef(1);
 
   // Pausing ducks the soundtrack instead of stopping it, so resuming the run
   // does not restart the track from the top.
   const targetVolume = isMuted || isPaused ? 0 : Math.min(1, (musicVolume / 100) * 0.5);
+
+  useEffect(() => AudioEngine.onDuck((value) => {
+    duckRef.current = value;
+    const audio = audioRef.current;
+    if (audio) audio.volume = targetVolume * value;
+  }), [targetVolume]);
 
   // Mute + slider changes ramp the live track so nothing clicks.
   useEffect(() => {
@@ -1408,10 +1573,11 @@ const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume
       clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
     }
-    const step = (targetVolume - audio.volume) / 8;
+    const ceiling = targetVolume * duckRef.current;
+    const step = (ceiling - audio.volume) / 8;
     const ramp = setInterval(() => {
-      audio.volume = Math.abs(targetVolume - audio.volume) < Math.abs(step) ? targetVolume : audio.volume + step;
-      if (audio.volume === targetVolume) clearInterval(ramp);
+      audio.volume = Math.abs(ceiling - audio.volume) < Math.abs(step) ? ceiling : audio.volume + step;
+      if (audio.volume === ceiling) clearInterval(ramp);
     }, 25);
     return () => clearInterval(ramp);
   }, [targetVolume]);
@@ -1433,12 +1599,13 @@ const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume
 
       // Fade in over 3 seconds
       let currentVolume = 0;
-      const fadeStep = targetVolume / 30; // 30 steps for 3 seconds
+      const ceiling = () => targetVolume * duckRef.current;
+      const fadeStep = ceiling() / 30; // 30 steps for 3 seconds
 
       fadeIntervalRef.current = setInterval(() => {
         currentVolume += fadeStep;
-        if (currentVolume >= targetVolume) {
-          currentVolume = targetVolume;
+        if (currentVolume >= ceiling()) {
+          currentVolume = ceiling();
           if (fadeIntervalRef.current) {
             clearInterval(fadeIntervalRef.current);
           }
@@ -1477,425 +1644,9 @@ const useBackgroundMusic = (level: number, isMuted: boolean = false, musicVolume
   }, [level]);
 };
 
-// LEVEL DESIGN SYSTEM - 50 unique levels with progressive difficulty
-const getLevelDesign = (level: number) => {
-  const designs = [
-    // Levels 1-10: Tutorial & Easy
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY', theme: 'park', difficulty: 1 },
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY', theme: 'suburban', difficulty: 1.2 },
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', theme: 'city', difficulty: 1.4 },
-    { weather: 'REGNIGT', intensity: 'LIGHT', timeOfDay: 'DAY', theme: 'park', difficulty: 1.6 },
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'SUNSET', theme: 'industrial', difficulty: 1.8 },
-    { weather: 'DIMMIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', theme: 'downtown', difficulty: 2.0 },
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY', theme: 'beach', difficulty: 2.2 },
-    { weather: 'SNÖIGT', intensity: 'LIGHT', timeOfDay: 'DAY', theme: 'mountain', difficulty: 2.4 },
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'SUNSET', theme: 'forest', difficulty: 2.6 },
-    { weather: 'STORMIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', theme: 'harbor', difficulty: 2.8 },
-
-    // Levels 11-20: Medium
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'sewers', difficulty: 3.0 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'alpine', difficulty: 3.3 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'construction', difficulty: 3.6 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'rooftops', difficulty: 3.9 },
-    { weather: 'REGNIGT', intensity: 'LIGHT', timeOfDay: 'DAWN', theme: 'countryside', difficulty: 4.2 },
-    { weather: 'SNÖIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', theme: 'ice_cave', difficulty: 4.5 },
-    { weather: 'STORMIGT', intensity: 'LIGHT', timeOfDay: 'DAY', theme: 'power_plant', difficulty: 4.8 },
-    { weather: 'DIMMIGT', intensity: 'LIGHT', timeOfDay: 'SUNSET', theme: 'abandoned', difficulty: 5.1 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'highway', difficulty: 5.4 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'glacier', difficulty: 5.7 },
-
-    // Levels 21-30: Hard
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'space_station', difficulty: 6.0 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'volcano', difficulty: 6.4 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'underground', difficulty: 6.8 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'sky_bridge', difficulty: 7.2 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'nuclear', difficulty: 7.6 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'laboratory', difficulty: 8.0 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'datacenter', difficulty: 8.4 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'arctic_base', difficulty: 8.8 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'warzone', difficulty: 9.2 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'quantum', difficulty: 9.6 },
-
-    // Levels 31-40: Very Hard
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'hell', difficulty: 10.0 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'nightmare', difficulty: 10.5 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'void', difficulty: 11.0 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'chaos', difficulty: 11.5 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'inferno', difficulty: 12.0 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'abyss', difficulty: 12.5 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'oblivion', difficulty: 13.0 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'pandemonium', difficulty: 13.5 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'apocalypse', difficulty: 14.0 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'armageddon', difficulty: 14.5 },
-
-    // Levels 41-50: Extreme
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'titan', difficulty: 15.0 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'hades', difficulty: 16.0 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'tartarus', difficulty: 17.0 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'nexus', difficulty: 18.0 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'omega', difficulty: 19.0 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'infinity', difficulty: 20.0 },
-    { weather: 'DIMMIGT', intensity: 'HEAVY', timeOfDay: 'SUNSET', theme: 'transcendence', difficulty: 21.0 },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT', theme: 'enlightenment', difficulty: 22.0 },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'DAY', theme: 'ascension', difficulty: 23.0 },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'DAWN', theme: 'legendary', difficulty: 25.0 }
-  ];
-
-  return designs[Math.min(level - 1, designs.length - 1)];
-};
-
-const getDifficultyProfile = (level: number, playerRank: number) => {
-  // t runs 0 -> 1 across the 50-stage campaign. The curve is deliberately
-  // gentle for the first stages: level 1 is a tutorial walk, level 2 is still
-  // calm, and real pressure only starts once every mechanic has been taught.
-  const t = Math.min(1, Math.max(0, (level - 1) / 49));
-  const ramp = Math.pow(t, 1.25);
-  // Account level gives a little relief, but never turns the late game into a
-  // walkover: it is capped at roughly a tenth of the total ramp.
-  const rankRelief = Math.min(0.1, Math.max(0, (Math.max(1, playerRank) - 1) / 49) * 0.1);
-  const effectiveRamp = Math.max(0, ramp - rankRelief);
-  const variant = (level - 1) % 6;
-  const variantLengthBonus = [300, 800, 1400, 500, 1000, 1800][variant];
-
-  return {
-    levelLength: Math.floor(2600 + level * 150 + effectiveRamp * 1900 + variantLengthBonus),
-    // Base width of one ground segment; the generator varies this per segment.
-    segmentWidth: Math.max(120, 200 - effectiveRamp * 62),
-    // How much harder the level gets between its start and its goal.
-    inLevelRamp: 0.2 + effectiveRamp * 1.0,
-    // Level 1-2 have no pits at all, so the opening stages can never kill a
-    // first-time player by accident. From level 3 the gaps grow steadily.
-    holeChance: level <= 2 ? 0 : Math.min(0.36, 0.04 + effectiveRamp * 0.34),
-    holeSize: Math.min(0.42, 0.1 + effectiveRamp * 0.3),
-    platformCount: Math.floor(8 + level * 0.55 + effectiveRamp * 8),
-    enemyCount: Math.floor(1 + Math.max(0, level - 1) * 0.6 + effectiveRamp * 4),
-    enemySpeed: 1.1 + Math.max(0, level - 1) * 0.07 + effectiveRamp * 0.8,
-    fishCount: Math.floor(10 + level * 0.55 + effectiveRamp * 3),
-    hazardCount: level <= 3 ? 0 : Math.floor((level - 3) * 0.4 + effectiveRamp * 4),
-    variant,
-  };
-};
-
-/* ============================ LEVEL BLUEPRINTS ============================
-   Every stage gets a structural archetype, not just a new backdrop. Two
-   neighbouring levels therefore never share a silhouette: one climbs stairs,
-   the next hops islands, the third balances over bridges. Level 1 is always
-   the flat tutorial meadow and every fifth level is a boss arena. */
-
-type LevelLayoutId = 'meadow' | 'stairs' | 'islands' | 'canyon' | 'bridges' | 'towers' | 'ruins' | 'gauntlet' | 'arena';
-
-const LEVEL_LAYOUTS: LevelLayoutId[] = ['meadow', 'stairs', 'islands', 'canyon', 'bridges', 'towers', 'ruins', 'gauntlet'];
-
-const LEVEL_LAYOUT_META: Record<LevelLayoutId, { name: string; tagline: string }> = {
-  meadow: { name: 'Ängsstart', tagline: 'Breda gräsytor och låga avsatser. Lär känna katten.' },
-  stairs: { name: 'Trappstaden', tagline: 'Klättra trappor, fall inte i glappen.' },
-  islands: { name: 'Övärlden', tagline: 'Flytande öar över ett svart djup.' },
-  canyon: { name: 'Kanjonsprickan', tagline: 'Breda klyftor som kräver dubbelhopp.' },
-  bridges: { name: 'Broarna', tagline: 'Smal balansgång över avgrunden.' },
-  towers: { name: 'Tornen', tagline: 'Klättra mot skyn för att nå fiskarna.' },
-  ruins: { name: 'Ruinerna', tagline: 'Krossade pelare i oregelbunden rytm.' },
-  gauntlet: { name: 'Prövningen', tagline: 'Tätt mellan plattformar, fiender och fällor.' },
-  arena: { name: 'Bossarenan', tagline: 'En öppen arena. Bara du och bossen.' },
-};
-
-/** Structural archetype for a level. Boss stages own a flat arena, level 1
-    stays a plain meadow, and everything else cycles through the eight shapes
-    so the course reads differently every single stage. */
-const getLevelLayout = (level: number): LevelLayoutId => {
-  if (level % 5 === 0) return 'arena';
-  if (level <= 1) return 'meadow';
-  return LEVEL_LAYOUTS[(level - 1) % LEVEL_LAYOUTS.length];
-};
-
-/** Small deterministic PRNG so a level is rebuilt identically after a restart:
-    the player can learn a course instead of re-rolling the dice. */
-const makeRng = (seed: number) => {
-  let s = Math.floor(Math.abs(seed)) % 2147483647;
-  if (s <= 0) s += 2147483646;
-  return () => (s = (s * 16807) % 2147483647) / 2147483647;
-};
-
-const GROUND_COLOR = '#1c3a2a';
-const LEDGE_COLOR = '#234832';
-
-interface LayoutBuildArgs {
-  level: number;
-  layout: LevelLayoutId;
-  levelLength: number;
-  groundY: number;
-  profile: { inLevelRamp: number; holeChance: number; holeSize: number };
-  bossLevel: boolean;
-}
-
-/** Builds the solid geometry of a level: ground slabs, floating platforms and
-    the pits between them. Fish, enemies and pickups are placed on top of this
-    afterwards, so every layout only has to answer "where can the cat stand?". */
-const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLevel }: LayoutBuildArgs) => {
-  const rng = makeRng(level * 7919 + 17);
-  const platforms: any[] = [];
-  const holes: any[] = [];
-
-  const ground = (x: number, width: number) => {
-    if (width <= 4) return;
-    platforms.push({ x, y: groundY, width, height: 44 + Math.round(rng() * 46), color: GROUND_COLOR, isGround: true });
-  };
-  const ledge = (x: number, y: number, width: number, height = 20, solid = false, color = LEDGE_COLOR) => {
-    if (width <= 4) return;
-    platforms.push({ x, y, width, height, color, solid: solid && height >= 80 });
-  };
-  /** A moving lift. `x`/`y` are the resting centre points: the sim re-derives
-      the actual rectangle from `Math.sin(phase)`, so the start frame matches
-      the placed position exactly. */
-  const moverLedge = (x: number, y: number, width: number, axis: 'h' | 'v', amp: number, speed: number) => {
-    if (width <= 8) return;
-    const phase = rng() * Math.PI * 2;
-    platforms.push({
-      x: axis === 'h' ? x + Math.sin(phase) * amp : x,
-      y: axis === 'v' ? y + Math.sin(phase) * amp : y,
-      width,
-      height: 18,
-      color: LEDGE_COLOR,
-      baseX: x,
-      baseY: y,
-      mover: { axis, amp, speed, phase },
-    });
-  };
-  const pit = (x: number, width: number) => {
-    if (width <= 0) return;
-    holes.push({ x, y: groundY, width });
-  };
-  // How much of each end is guaranteed safe: the cat spawns in the first
-  // stretch and Jerry waits in the last one, so neither may be a death trap.
-  const startSafe = bossLevel ? 820 : 760;
-  const endSafe = bossLevel ? 1080 : 940;
-  const end = Math.max(startSafe + 400, levelLength - endSafe);
-  // Difficulty inside the level also widens pits a little as you approach Jerry.
-  const pitBonus = Math.min(46, Math.floor(level * 0.6));
-
-  // Any stretch without ground is a bottomless pit. Registering it as a hole
-  // lets the renderer draw depth and a warning lip, instead of a hard black band
-  // where the floor simply stops.
-  const finish = () => {
-    const groundGaps = () => {
-      const covered = platforms
-        .filter((pl) => pl.isGround)
-        .map((pl) => [pl.x, pl.x + pl.width] as [number, number])
-        .sort((l, r) => l[0] - r[0]);
-      const gaps: Array<[number, number]> = [];
-      let cursor = 0;
-      for (const [start, stop] of covered) {
-        if (start > cursor + 4) gaps.push([cursor, start]);
-        cursor = Math.max(cursor, stop);
-      }
-      if (cursor < levelLength - 4) gaps.push([cursor, levelLength]);
-      return gaps;
-    };
-
-    // A leap wider than the cat can clear would make the stage impossible, so
-    // any leftover gap that is not already bridged by stairs, beams or floating
-    // platforms gets stepping stones. Designed gaps are left untouched.
-    for (const [start, stop] of groundGaps()) {
-      const width = stop - start;
-      if (width <= 200) continue;
-      const bridged = platforms.some(
-        (pl) => !pl.isGround && pl.x + pl.width > start && pl.x < stop && pl.y >= groundY - 270,
-      );
-      if (bridged) continue;
-      for (let stoneX = start + 90; stoneX < stop - 70; stoneX += 172) {
-        ledge(stoneX, groundY - 46, 96, 18);
-      }
-    }
-
-    // Everything still uncovered reads as a bottomless pit: register it as a
-    // hole so the renderer draws depth and a warning lip instead of a hard
-    // black band where the floor simply stops.
-    for (const [start, stop] of groundGaps()) {
-      holes.push({ x: start, y: groundY, width: stop - start });
-    }
-    return { platforms, holes };
-  };
-
-  ground(0, startSafe);
-  ground(levelLength - endSafe, endSafe);
-
-  if (layout === 'arena') {
-    // The boss arena is carved out later; keep the run-up flat and readable.
-    ground(startSafe, end - startSafe);
-    for (let x = startSafe + 300; x < end - 200; x += 560) {
-      ledge(x, groundY - 96, 120);
-    }
-    return finish();
-  }
-
-  if (layout === 'meadow') {
-    ground(startSafe, end - startSafe);
-    for (let x = startSafe + 220; x < end - 220; x += 480) {
-      const y = groundY - 64 - Math.round(rng() * 42);
-      ledge(x, y, 140 + Math.round(rng() * 60));
-      if (rng() > 0.55) ledge(x + 250, y - 58, 96);
-    }
-    return finish();
-  }
-
-  if (layout === 'stairs') {
-    let x = startSafe;
-    let climb = true;
-    while (x < end - 420) {
-      const steps = 3 + Math.floor(rng() * 3);
-      let y = groundY - 20;
-      for (let s = 0; s < steps; s++) {
-        y -= 54;
-        ledge(x + s * 146, y, 146, 22);
-      }
-      const topWidth = 170 + Math.round(rng() * 120);
-      ledge(x + steps * 146, y, topWidth, 22);
-      x += steps * 146 + topWidth;
-      // A real pit between staircases: the stairs are the only way across.
-      const gap = 84 + Math.round(rng() * 46) + Math.min(40, pitBonus);
-      pit(x - 4, gap + 8);
-      // A shuttle crossing the gap while the cat rides it: the classic moving
-      // platform. It swings well short of both ledges, so timing still matters.
-      if (rng() > 0.3) {
-        moverLedge(x - 4 + gap / 2, groundY - 46, 88, 'h', Math.min(56, gap * 0.38), 0.013 + rng() * 0.007);
-      }
-      x += gap;
-      if (climb && rng() > 0.6) {
-        // Optional high reward ledge above the gap.
-        ledge(x - 40, y - 92, 104);
-      }
-      climb = !climb;
-    }
-    return finish();
-  }
-
-  if (layout === 'islands') {
-    let x = startSafe;
-    while (x < end - 160) {
-      const w = 150 + Math.round(rng() * 110);
-      ground(x, Math.min(w, Math.max(80, end - x)));
-      if (rng() > 0.35) {
-        ledge(x + w * 0.2, groundY - 118 - Math.round(rng() * 70), 84 + Math.round(rng() * 60));
-      }
-      x += w;
-      const gap = 88 + Math.round(rng() * 54) + Math.min(40, pitBonus);
-      if (x + gap > end - 80) break;
-      pit(x, gap);
-      // Shuttle ferrying the cat between islands over the black water.
-      if (rng() > 0.4) {
-        moverLedge(x, groundY - 42, 90, 'h', Math.min(64, gap * 0.42), 0.012 + rng() * 0.006);
-      }
-      x += gap;
-    }
-    return finish();
-  }
-
-  if (layout === 'canyon') {
-    let x = startSafe;
-    while (x < end - 220) {
-      const w = 240 + Math.round(rng() * 190);
-      ground(x, Math.min(w, Math.max(120, end - x)));
-      if (rng() > 0.55) ledge(x + 60, groundY - 108 - Math.round(rng() * 52), 104);
-      x += w;
-      const gap = 104 + Math.round(rng() * 44) + Math.min(46, pitBonus);
-      if (x + gap > end - 80) break;
-      pit(x, gap);
-      // Wide canyon rifts get a lift running partway down into the cleft:
-      // dropping onto it mid-fall is the second-chance save that makes the
-      // risky rim route worth trying.
-      if (rng() > 0.5) {
-        moverLedge(x, groundY - 40, 96, 'h', Math.min(70, gap * 0.4), 0.012 + rng() * 0.005);
-      }
-      x += gap;
-    }
-    return finish();
-  }
-
-  if (layout === 'bridges') {
-    // Beams replace the floor in the middle: fall and the run is over.
-    let x = startSafe;
-    let y = groundY - 44;
-    while (x < end - 80) {
-      const w = 112 + Math.round(rng() * 52);
-      ledge(x, y, Math.min(w, end - x), 18);
-      x += w;
-      const gap = 66 + Math.round(rng() * 44);
-      if (x + gap > end - 60) break;
-      pit(x - 3, gap + 6);
-      x += gap;
-      if (rng() > 0.5) {
-        const step = rng() > 0.5 ? -58 : 58;
-        y = Math.max(groundY - 250, Math.min(groundY - 30, y + step));
-      }
-    }
-    return finish();
-  }
-
-  if (layout === 'towers') {
-    ground(startSafe, end - startSafe);
-    let x = startSafe + 220;
-    while (x < end - 280) {
-      const towerH = 110 + Math.round(rng() * 130);
-      const towerW = 66 + Math.round(rng() * 26);
-      // Solid pillar: the cat lands on top and hops from ledge to ledge.
-      // `solid` also let it act as a wall the cat can slide down and kick off
-      // (wall jump) - the tower silhouette finally has a second use.
-      platforms.push({ x, y: groundY - towerH, width: towerW, height: towerH, color: LEDGE_COLOR, solid: true });
-      ledge(x - 78, groundY - 74, 68);
-      ledge(x + towerW + 12, groundY - 140, 68);
-      if (rng() > 0.4) ledge(x + towerW + 96, groundY - towerH + 10, 84);
-      // A vertical lift beside the tower so the sky ledges are rideable even
-      // without using up the double jump.
-      if (rng() > 0.45) {
-        moverLedge(x + towerW + 120, groundY - 80, 62, 'v', 78, 0.011 + rng() * 0.005);
-      }
-      x += 260 + Math.round(rng() * 70);
-      if (rng() > 0.6) {
-        const gap = 96 + Math.round(rng() * 40);
-        pit(x - 150, gap);
-      }
-    }
-    return finish();
-  }
-
-  if (layout === 'ruins') {
-    ground(startSafe, end - startSafe);
-    let x = startSafe + 180;
-    while (x < end - 200) {
-      const h = 50 + Math.round(rng() * 130);
-      const w = 60 + Math.round(rng() * 60);
-      // Tall ruin blocks double as climbable walls: they are solid, so the cat
-      // can slide down their face and wall-jump off it like the towers can.
-      ledge(x, groundY - h, w, h, h >= 110);
-      if (rng() > 0.5) ledge(x + w + 70, groundY - Math.max(70, h - 70), 74);
-      x += 190 + Math.round(rng() * 90);
-      if (rng() > 0.66) {
-        const gap = 92 + Math.round(rng() * 36);
-        pit(x - 120, gap);
-      }
-    }
-    return finish();
-  }
-
-  // gauntlet: flat ground with a dense, tight ceiling of small platforms.
-  ground(startSafe, end - startSafe);
-  let gx = startSafe + 120;
-  while (gx < end - 160) {
-    const w = 72 + Math.round(rng() * 46);
-    const y = groundY - 110 - Math.round(rng() * 120);
-    ledge(gx, y, w, 18);
-    if (rng() > 0.6) ledge(gx + 46, y - 62, w * 0.8, 18);
-    gx += 118 + Math.round(rng() * 54);
-    if (rng() > 0.75) {
-      const gap = 88 + Math.round(rng() * 34);
-      pit(gx - 60, gap);
-    }
-  }
-  return finish();
-};
-
 /* ---------------------------- BOSS PROFILES ----------------------------- */
 
-type BossPattern = 'orb' | 'burst' | 'fan' | 'sweep' | 'summon' | 'slam';
+type BossPattern = 'orb' | 'burst' | 'fan' | 'sweep' | 'summon' | 'slam' | 'crossfire' | 'spiral';
 
 const BOSS_ATTACK_PROFILES: Record<string, {
   cooldown: number;
@@ -1908,34 +1659,34 @@ const BOSS_ATTACK_PROFILES: Record<string, {
   // Rått-kungen: slow heavy orbs early, then a burst plus summoned rats.
   rat_king: {
     cooldown: 116, speed: 4.3, radius: 9, color: '#ff6b35',
-    moves: [['orb'], ['orb', 'burst'], ['burst', 'summon']],
+    moves: [['orb'], ['orb', 'burst'], ['burst', 'crossfire', 'summon', 'spiral']],
   },
   // Cyber-hunden: fast, aggressive, sweeps the floor in the last phase.
   cyber_dog: {
     cooldown: 86, speed: 6.2, radius: 7, color: '#00e1ff',
-    moves: [['burst'], ['burst', 'sweep'], ['burst', 'sweep', 'summon']],
+    moves: [['burst'], ['burst', 'sweep'], ['burst', 'crossfire', 'sweep', 'spiral']],
   },
   // Storm-örnen: wide fans that punish standing still.
   storm_eagle: {
     cooldown: 140, speed: 4.8, radius: 8, color: '#ffe600',
-    moves: [['fan'], ['fan', 'sweep'], ['fan', 'fan', 'summon']],
+    moves: [['fan'], ['fan', 'sweep'], ['fan', 'crossfire', 'fan', 'spiral']],
   },
   // Tomrums-draken: area denial and adds.
   void_dragon: {
     cooldown: 150, speed: 3.8, radius: 12, color: '#a855f7',
-    moves: [['fan', 'orb'], ['fan', 'summon'], ['fan', 'summon', 'sweep']],
+    moves: [['fan', 'orb'], ['fan', 'summon'], ['fan', 'crossfire', 'summon', 'spiral']],
   },
   // Skugg-titanen: ground slams and orbs, the hardest final boss.
   shadow_titan: {
     cooldown: 164, speed: 3.2, radius: 14, color: '#ff4d6d',
-    moves: [['slam', 'orb'], ['slam', 'summon'], ['slam', 'summon', 'orb']],
+    moves: [['slam', 'orb'], ['slam', 'summon'], ['slam', 'crossfire', 'spiral', 'orb']],
   },
 };
 
 /* Applies one boss signature move. Kept outside the game loop so the pattern
    logic stays readable and every boss shares the same telegraph rules. */
 const fireBossAttack = (
-  game: any,
+  game: GameState,
   boss: any,
   move: BossPattern,
   profile: { speed: number; radius: number; color: string },
@@ -2001,6 +1752,27 @@ const fireBossAttack = (
       AudioEngine.playExplosion();
       break;
     }
+    case 'crossfire': {
+      // Four aimed diagonals from slightly offset origins: the safe answer is
+      // to move sideways, not to jump. Telegraph colour is magenta.
+      for (let i = 0; i < 4; i++) {
+        const angle = baseAngle + (i - 1.5) * 0.34;
+        shoot(angle, speedBase * 0.95, profile.radius * 0.85, 'crossfire', by + (i % 2 ? 14 : -14));
+      }
+      game.screenShake = Math.max(game.screenShake, 8);
+      break;
+    }
+    case 'spiral': {
+      // A slow rotating fan. It is lethal to stand still in, but each projectile
+      // has a visible gap because the ring is evenly spaced.
+      const count = 8;
+      const spin = (boss.moveIndex || 0) * 0.28;
+      for (let i = 0; i < count; i++) {
+        shoot(spin + (i / count) * Math.PI * 2, speedBase * 0.72, profile.radius * 0.75, 'spiral');
+      }
+      AudioEngine.playBossRoar();
+      break;
+    }
     case 'summon': {
       const bossPlat = game.platforms.find((p: any) => p.bossArena);
       const platIndex = bossPlat ? game.platforms.indexOf(bossPlat) : -1;
@@ -2041,11 +1813,6 @@ const fireBossAttack = (
 const skyHashNoise = (n: number) => {
   const s = Math.sin(n * 127.1) * 43758.5453;
   return s - Math.floor(s);
-};
-
-const seededRandom = (seed: number) => {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
 };
 
 // ---------------------------------------------------------------------------
@@ -2234,7 +2001,7 @@ const createLightningStrike = (targetX: number, targetY: number, brightSky = fal
 
 /** Picks a solid spot on screen: a platform interior (never over a pit), on
     screen, off the cat and not right where the last bolt landed. */
-const pickLightningSpot = (game: any, canvasWidth: number) => {
+const pickLightningSpot = (game: GameState, canvasWidth: number) => {
   const catX = game.player.x + game.player.width / 2;
   const catY = game.player.y + game.player.height / 2;
   const preferred: Array<{ x: number; y: number }> = [];
@@ -2260,12 +2027,12 @@ const pickLightningSpot = (game: any, canvasWidth: number) => {
   return pool[Math.floor(Math.random() * pool.length)];
 };
 
-const nextLightningDelay = (game: any) => {
+const nextLightningDelay = (game: GameState) => {
   if (game.weather === 'STORMIGT') return 130 + Math.random() * 170;
   return game.intensity === 'HEAVY' ? 240 + Math.random() * 280 : 520 + Math.random() * 460;
 };
 
-const fireLightning = (game: any, x: number, y: number, canvasWidth: number, catX: number) => {
+const fireLightning = (game: GameState, x: number, y: number, canvasWidth: number, catX: number) => {
   const L: LightningState = game.lightning;
   // Final gate, evaluated on the frame the bolt actually lands.
   if (Math.abs(x - catX) < BOLT_SAFE_RADIUS) return;
@@ -2296,7 +2063,7 @@ const fireLightning = (game: any, x: number, y: number, canvasWidth: number, cat
   game.screenShake = Math.max(game.screenShake || 0, 4 + Math.round((1 - distance) * 5));
 };
 
-const updateLightning = (game: any, canvasWidth: number) => {
+const updateLightning = (game: GameState, canvasWidth: number) => {
   const L: LightningState | undefined = game.lightning;
   if (!L) return;
   const stormy = game.weather === 'STORMIGT';
@@ -2341,7 +2108,7 @@ const updateLightning = (game: any, canvasWidth: number) => {
   }
 };
 
-const drawLightning = (ctx: CanvasRenderingContext2D, game: any, softStrobe = false) => {
+const drawLightning = (ctx: CanvasRenderingContext2D, game: GameState, softStrobe = false) => {
   const L: LightningState | undefined = game.lightning;
   if (!L) return;
 
@@ -2439,29 +2206,6 @@ const drawLightning = (ctx: CanvasRenderingContext2D, game: any, softStrobe = fa
 
     ctx.restore();
   });
-};
-
-const getWeatherForLevel = (level: number) => {
-  if (level === 1) {
-    return { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY' };
-  }
-
-  const weatherPresets = [
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'DAY' },
-    { weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'SUNSET' },
-    { weather: 'REGNIGT', intensity: 'LIGHT', timeOfDay: 'DAY' },
-    { weather: 'REGNIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT' },
-    { weather: 'STORMIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT' },
-    { weather: 'SNÖIGT', intensity: 'LIGHT', timeOfDay: 'DAY' },
-    { weather: 'SNÖIGT', intensity: 'HEAVY', timeOfDay: 'NIGHT' },
-    { weather: 'DIMMIGT', intensity: 'LIGHT', timeOfDay: 'DAWN' },
-  ] as const;
-
-  const index = Math.floor(seededRandom(level * 17.371) * weatherPresets.length);
-  const previousIndex = Math.floor(seededRandom((level - 1) * 17.371) * weatherPresets.length);
-  const safeIndex = index === previousIndex ? (index + 1) % weatherPresets.length : index;
-
-  return weatherPresets[safeIndex];
 };
 
 // BACKGROUND ELEMENTS GENERATOR
@@ -2566,8 +2310,6 @@ const SKY_WORLD_W = 2600;
 // so they can genuinely leave the view instead of hovering in it forever.
 const GROUND_WORLD_W = 2600;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type GameState = any;
 
 /** Fisher-Yates on a copy, so callers never mutate the theme config. */
 const shuffled = <T,>(items: T[], rng: () => number = Math.random): T[] => {
@@ -2783,7 +2525,8 @@ const drawCloud = (
 export const PlayingView: React.FC<{
   onEnd: (score: number, fishesCollected: number) => void;
   startLevel?: number;
-}> = ({ onEnd, startLevel = 1 }) => {
+  runMode?: RunMode;
+}> = ({ onEnd, startLevel = 1, runMode = 'campaign' as RunMode }) => {
   // The game loop is started once per level. Reading onEnd through a ref keeps a
   // parent re-render (e.g. the coin counter updating after every fish) from
   // changing the loop's dependencies and restarting the whole level.
@@ -2795,6 +2538,8 @@ export const PlayingView: React.FC<{
   const [lives, setLives] = useState(5);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
+  const [perkOffer, setPerkOffer] = useState<PerkDef[]>([]);
+  const [perkChoice, setPerkChoice] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
   isPausedRef.current = isPaused;
@@ -2822,6 +2567,9 @@ export const PlayingView: React.FC<{
     if (gameRef.current) gameRef.current.running = false;
     // A restart is a fresh attempt, so run-wide tallies start over too.
     runTotalsRef.current = { nearMisses: 0, shadowPasses: 0, shadowShifts: 0 };
+    runPerksRef.current = [];
+    setPerkOffer([]);
+    setPerkChoice(null);
     setRunId((n) => n + 1);
   };
 
@@ -2886,7 +2634,7 @@ export const PlayingView: React.FC<{
     };
   }, []);
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
+  const [stats, setStats] = useState<HudStats>({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -2902,10 +2650,17 @@ export const PlayingView: React.FC<{
   // on it: the results screen and quests need the whole run, not just the last
   // stage. A new PlayingView (keyed by start level) starts a fresh run.
   const runTotalsRef = useRef({ nearMisses: 0, shadowPasses: 0, shadowShifts: 0 });
+  // Cards chosen this run survive level transitions but not a restart.
+  const runPerksRef = useRef<string[]>([]);
+  // One monitor per PlayingView mount; survives level changes within a run.
+  const qualityRef = useRef(createQualityMonitor());
   const gameContainerRef = useRef<HTMLDivElement>(null);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
   useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume, isPaused);
+  useEffect(() => {
+    AudioEngine.setAdaptive(progress.settings.adaptiveAudio !== false);
+  }, [progress.settings.adaptiveAudio]);
 
   // Handle fullscreen and ESC key
   useEffect(() => {
@@ -2964,15 +2719,17 @@ export const PlayingView: React.FC<{
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
-    // One seed per level. The structural layout already used a seeded RNG, but
-    // enemies, fish, hazards, pickups and bounce pads were rolled with
-    // rng(), so retrying a stage handed the player a completely
-    // different course. Everything now comes from this generator: a death
-    // replays the exact level you just learned, and a bad roll can never be
-    // silently re-rolled into an impossible one.
-    const rng = makeRng(level * 104729 + 991);
+    // One seed per level. A daily run mixes in the date so everyone gets the
+    // same fresh course, while the campaign keeps its canonical, learnable
+    // layout. Everything (enemies, fish, hazards, pickups, pads, scenery)
+    // comes from this generator, so a retry replays the exact same stage.
+    const dailySeed = getDailySeed();
+    const seedOffset = runMode === 'daily' ? hashSeed(dailySeed) : 0;
+    const rng = makeRng(level * 104729 + 991 + seedOffset);
 
-    const difficultyProfile = getDifficultyProfile(level, progress.level);
+    const difficulty = progress.settings.difficulty || 'normal';
+    const difficultyProfile = getDifficultyProfile(level, progress.level, difficulty);
+    const perkEffects = combinePerkEffects(runPerksRef.current);
     const levelLength = difficultyProfile.levelLength;
     const baseLevelDesign = getLevelDesign(level);
     const randomWeather = getWeatherForLevel(level);
@@ -2994,12 +2751,29 @@ export const PlayingView: React.FC<{
     // unbeatable once the mandatory fish hunt was factored in.
     const speedRunTimer = Math.max(
       40,
-      Math.ceil((levelLength / ((4.6 + level * 0.08) * 60)) * 1.5 + 14 + difficultyProfile.fishCount * 0.9)
+      Math.ceil(((levelLength / ((4.6 + level * 0.08) * 60)) * 1.5 + 14 + difficultyProfile.fishCount * 0.9) * difficultyProfile.timerScale * perkEffects.timerMult)
     );
 
     const game = {
       running: true,
       level: level,
+      runMode,
+      dailySeed,
+      seedOffset,
+      ghostKey: `${runMode}:${level}:${seedOffset}`,
+      frame: 0,
+      quality: FULL_QUALITY,
+      bgCache: null as HTMLCanvasElement | null,
+      bgCacheKey: '',
+      shadowShiftId: 0,
+      ghost: null as any,
+      ghostFrames: [] as any[],
+      checkpoints: [] as number[],
+      checkpointIndex: 0,
+      checkpointX: 100,
+      activePerks: [...runPerksRef.current],
+      perkEffects,
+      perkOffer: offerPerks(level * 31.7 + seedOffset, runPerksRef.current),
       score: existingScore,
       lives: existingLives,
       // Boss stages get enough extra shots for missed shots and a few regular
@@ -3140,6 +2914,10 @@ export const PlayingView: React.FC<{
     if (progress.level >= 15) game.player.invincibleTimer = 20;
     // Shadow Shift temporarily raises `speed`; keep the real value to restore.
     game.player.baseSpeed = game.player.speed;
+    if (perkEffects.speedMult !== 1) {
+      game.player.speed *= perkEffects.speedMult;
+      game.player.baseSpeed = game.player.speed;
+    }
     game.player.invincible = true;
     game.player.invincibleTimer = game.introTimer;
 
@@ -3191,6 +2969,7 @@ export const PlayingView: React.FC<{
       groundY,
       profile: difficultyProfile,
       bossLevel: level % 5 === 0,
+      seedOffset,
     });
     game.platforms.push(...layoutBuild.platforms);
     game.holes.push(...layoutBuild.holes);
@@ -3210,6 +2989,11 @@ export const PlayingView: React.FC<{
         });
       }
     }
+
+    // Respawn anchors on solid ground. Long levels used to send a fallen cat
+    // back to whichever slab happened to be nearest, which could be far behind.
+    game.checkpoints = getCheckpoints(levelLength, game.platforms, game.holes);
+    game.checkpointX = 100;
 
     // MUCH MORE enemies - spread throughout the entire level for excitement!
     // More enemies on EVERY level, not just higher levels
@@ -3349,6 +3133,63 @@ export const PlayingView: React.FC<{
           auraAngle: 0,
           dashTimer: 0,
           encountered: false,
+          isMini: false,
+          coreExposed: 0,
+          coreFlash: 0,
+        };
+      }
+    }
+
+    // Miniboss on every third chapter: a shorter version of a real boss, on a
+    // normal platform. It must be defeated before Jerry opens the exit, but it
+    // has less HP and a gentler attack cadence than a full arena fight.
+    if (level % 5 === 3) {
+      const miniTypes = ['rat_king', 'cyber_dog', 'storm_eagle', 'void_dragon', 'shadow_titan'];
+      const miniType = miniTypes[Math.floor(level / 5) % miniTypes.length];
+      const miniNames: Record<string, string> = {
+        rat_king: tr('MINIBOSS · RÅTTE-KUNG'),
+        cyber_dog: tr('MINIBOSS · CYBER-HUND'),
+        storm_eagle: tr('MINIBOSS · STORM-ÖRN'),
+        void_dragon: tr('MINIBOSS · DRAKE'),
+        shadow_titan: tr('MINIBOSS · TITAN'),
+      };
+      let miniPlat = game.platforms
+        .filter((pl: any) => pl.isGround && pl.x > levelLength * 0.35 && pl.x + pl.width < levelLength - 350 && !pl.bossArena)
+        .sort((a: any, b: any) => b.width - a.width)[0];
+      // A narrow-island level can have no wide slab at all. Build a small arena
+      // so the third chapter always has its miniboss encounter.
+      if (!miniPlat || miniPlat.width < 220) {
+        const mx = Math.round(levelLength * 0.62);
+        miniPlat = {
+          x: mx, y: groundY, width: 340, height: 46,
+          color: GROUND_COLOR, isGround: true, miniArena: true,
+        };
+        game.platforms.push(miniPlat);
+        game.holes = game.holes.filter((h: any) => h.x + h.width <= mx || h.x >= mx + 340);
+        game.hazards = game.hazards.filter((h: any) => h.x <= mx || h.x >= mx + 340);
+      }
+      if (miniPlat) {
+        const miniHp = 6 + Math.floor(level / 5) * 2;
+        game.enemies = game.enemies.filter((en: any) =>
+          en.x < miniPlat.x - 120 || en.x > miniPlat.x + miniPlat.width + 120);
+        game.boss = {
+          x: miniPlat.x + (miniPlat.width - 88) / 2,
+          y: miniPlat.y - 78,
+          width: 88, height: 78,
+          hp: miniHp, maxHp: miniHp,
+          velocityX: 1.35, velocityY: 0,
+          platformX: miniPlat.x, platformW: miniPlat.width,
+          groundY: miniPlat.y - 78,
+          phase: 0, type: miniType,
+          name: miniNames[miniType] || 'MINIBOSS',
+          attackTimer: BOSS_ATTACK_PROFILES[miniType].cooldown + 40,
+          attackCooldown: BOSS_ATTACK_PROFILES[miniType].cooldown + 40,
+          tier: 1, moveIndex: 0, telegraph: 0,
+          pendingMove: null as string | null,
+          summonCooldown: 0, projectiles: [] as any[],
+          isJumping: false, jumpTimer: 0, stunTimer: 0,
+          auraAngle: 0, dashTimer: 0, encountered: false,
+          isMini: true, coreExposed: 0, coreFlash: 0,
         };
       }
     }
@@ -3456,10 +3297,10 @@ export const PlayingView: React.FC<{
     // across a long course is busywork. It can never exceed the fish that were
     // actually placed, however unlucky the generator was. Collecting
     // everything still pays a perfect-catch bonus.
-    const quotaRatio = level <= 2 ? 0.6 : 0.72;
+    const quotaRatio = Math.min(0.85, (level <= 2 ? 0.6 : 0.72) * difficultyProfile.quotaScale);
     game.fishGoal = Math.min(
       game.fishes.length,
-      Math.max(3, Math.ceil(game.fishes.length * quotaRatio)),
+      Math.max(3, Math.ceil(game.fishes.length * quotaRatio) + perkEffects.fishGoalDelta),
     );
 
     // Add fun hazards to keep levels unique and less repetitive.
@@ -3612,6 +3453,27 @@ export const PlayingView: React.FC<{
       }
     }
 
+    // Shadow wraiths: immune to bullets, stomps and knockback. Only a Shadow
+    // Shift pass dissolves them, which gives the ability a real target.
+    if (level >= 6 && levelMode !== 'Boss Battle') {
+      const wraithPlats = game.platforms.filter((pl: any) =>
+        pl.isGround && pl.width > 180 && pl.x > 700 &&
+        pl.x + pl.width < levelLength - 520 && !pl.bossArena);
+      const wraithCount = Math.min(2, 1 + Math.floor((level - 6) / 12));
+      for (let wi = 0; wi < wraithCount && wraithPlats.length; wi++) {
+        const plat = wraithPlats[Math.floor(rng() * wraithPlats.length)];
+        const wx = plat.x + plat.width * (0.3 + rng() * 0.4);
+        if (game.enemies.some((en: any) => Math.abs(en.x - wx) < 200)) continue;
+        game.enemies.push({
+          x: wx, y: plat.y - 44, width: 42, height: 44,
+          velocityX: 0, direction: 1, type: SHADOW_ENEMY_TYPE,
+          isShadow: true, platform: game.platforms.indexOf(plat),
+          baseY: plat.y - 44, hover: rng() * Math.PI * 2,
+          shootTimer: 0, chargeTimer: 0,
+        });
+      }
+    }
+
     // --- Neon bounce pads ---------------------------------------------------
     // Spring mattresses embedded in the ground. Stepping on one flings the cat
     // skyward with a fresh double jump, which ties the high optional ledges
@@ -3671,7 +3533,7 @@ export const PlayingView: React.FC<{
       p.coyoteTimer = 0;
       p.stretch = 1.32;
       game.squashKick = 0;
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(12);
+      haptic('jump', progress.settings.haptics);
       AudioEngine.playJump();
     } else if (p.canDoubleJump && !p.hasDoubleJumped) {
       p.velocityY = -p.doubleJumpPower;
@@ -3686,7 +3548,7 @@ export const PlayingView: React.FC<{
           life: 22, color: p.accent, size: Math.random() * 3 + 1.5
         });
       }
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(9);
+      haptic('doubleJump', progress.settings.haptics);
       AudioEngine.playJump();
     }
   };
@@ -3719,7 +3581,7 @@ export const PlayingView: React.FC<{
         life: 20, color: 'rgba(190, 225, 255, 0.9)', size: Math.random() * 3 + 1.2,
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(10);
+    haptic('wallJump', progress.settings.haptics);
     AudioEngine.playWallJump();
     return true;
   };
@@ -3761,7 +3623,7 @@ export const PlayingView: React.FC<{
         life: 26, color: '#2bee79', size: Math.random() * 4 + 2
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(18);
+    haptic('dash', progress.settings.haptics);
     AudioEngine.playDash();
   };
 
@@ -3775,6 +3637,7 @@ export const PlayingView: React.FC<{
     game.bestStreak = Math.max(game.bestStreak || 0, game.streak);
     game.multiplier = Math.min(8, 1 + Math.floor(game.streak / 4));
     game.multiplierTimer = 240;
+    AudioEngine.setComboTier(Math.floor(game.combo / 3));
 
     const multiplierBonus = Math.round(baseScore * (game.multiplier - 1) * 0.5);
     const comboBonus = Math.min(100, Math.max(0, (game.combo - 1) * 6));
@@ -3789,7 +3652,7 @@ export const PlayingView: React.FC<{
       AudioEngine.playCombo(game.multiplier);
       pushToast(game, tr('MULTIPLIKATOR x{n}', { n: game.multiplier }), '#ffd166');
     }
-    const gained = baseScore + comboBonus + multiplierBonus;
+    const gained = Math.round((baseScore + comboBonus + multiplierBonus) * (game.perkEffects?.scoreMult || 1));
     game.score += gained;
     // Shadow Shift is the payoff for a clean, fast streak: every action is
     // worth 75 % more while the cat is dissolved.
@@ -3841,7 +3704,8 @@ export const PlayingView: React.FC<{
     // shifts forever and the ability would never have a downtime.
     if (!game || game.shadowActive > 0) return;
     const before = game.shadowCharge || 0;
-    game.shadowCharge = Math.min(100, before + amount);
+    const scaled = Math.round(amount * (game.perkEffects?.shadowChargeMult || 1));
+    game.shadowCharge = Math.min(100, before + scaled);
     if (before < 100 && game.shadowCharge >= 100) {
       pushToast(game, tr('SKUGGSKIFTE REDO · E'), '#c084fc');
       AudioEngine.playPowerup();
@@ -3855,6 +3719,7 @@ export const PlayingView: React.FC<{
     const p = game.player;
     game.shadowCharge = 0;
     game.shadowActive = SHADOW_DURATION;
+    game.shadowShiftId = (game.shadowShiftId || 0) + 1;
     game.shadowShifts = (game.shadowShifts || 0) + 1;
     runTotalsRef.current.shadowShifts += 1;
     p.baseSpeed = p.baseSpeed || p.speed;
@@ -3878,7 +3743,7 @@ export const PlayingView: React.FC<{
     pushToast(game, tr('SKUGGSKIFTE! · {n}s', { n: 4 }), '#c084fc');
     AudioEngine.playDash();
     AudioEngine.playPowerup();
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate([12, 30, 18]);
+    haptic('shadowShift', progress.settings.haptics);
   };
 
   /** Passing through an enemy while shifted dissolves it instead of hurting
@@ -3904,6 +3769,12 @@ export const PlayingView: React.FC<{
     }
     game.floatingTexts.push({ x: killX, y: killY - 12, text: tr('SKUGGPASS +300'), life: 45, color: '#c084fc' });
     game.hitStop = Math.max(game.hitStop || 0, 2);
+    if (e.isShadow) {
+      gainShadowCharge(game, 35);
+      pushToast(game, tr('SKUGGVÅLNAD UPPLÖST · E'), '#c084fc');
+      game.score += 150;
+    }
+    AudioEngine.playShadowPass();
     AudioEngine.playExplosion();
   };
 
@@ -3923,7 +3794,15 @@ export const PlayingView: React.FC<{
         runLevel: game.runLevel || 1,
         coins: game.coinsThisLevel || 0,
         deaths: game.deathsInRun || 0,
+        score: game.score || 0,
+        runMode: game.runMode || 'campaign',
+        dailySeed: game.dailySeed || '',
+        level: game.level || 1,
       }));
+      // A new personal best on this exact seed becomes tomorrow's ghost.
+      if (game.ghostKey && game.ghostFrames?.length) {
+        saveGhost(game.ghostKey, game.score || 0, game.ghostFrames);
+      }
     } catch {
       // Private browsing can reject writes; losing the summary must not stop
       // the level-complete or game-over screen from appearing.
@@ -3991,7 +3870,7 @@ export const PlayingView: React.FC<{
         });
       }
       pushToast(game, tr('SKÖLDEN TOG SMÄLLEN!'), '#7ee7ff');
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(20);
+      haptic('shieldBreak', progress.settings.haptics);
       AudioEngine.playShieldBreak();
       return 'shielded';
     }
@@ -4003,12 +3882,13 @@ export const PlayingView: React.FC<{
     p.invincible = true;
     // Long enough to actually escape contact: the old 1.6s window could expire
     // while the cat was still pressed against the same enemy or wall.
-    p.invincibleTimer = 120;
+    p.invincibleTimer = Math.max(50, 120 + (game.perkEffects?.invincibleBonus || 0));
     p.velocityY = Math.min(p.velocityY, -lift - 1.5);
     p.velocityX = -p.facing * 7;
     game.combo = 0;
     game.streak = 0;
     game.multiplier = 1;
+    AudioEngine.setComboTier(0);
     game.noHit = false;
     game.slowMo = 10;
     game.zoomPunch = 14;
@@ -4020,7 +3900,7 @@ export const PlayingView: React.FC<{
         life: 26, color: i % 3 ? '#ff5470' : '#ffd166', size: Math.random() * 4 + 2,
       });
     }
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(35);
+    haptic('damage', progress.settings.haptics);
     AudioEngine.playDamage();
     AudioEngine.playLifeLost();
     if (game.lives <= 0) endRun(game, cause);
@@ -4105,6 +3985,8 @@ export const PlayingView: React.FC<{
     setLives(Math.min(6, (finished?.lives ?? lives) + levelLifeBonus(finished)));
     setShowLevelComplete(false);
     setLevelSummary(null);
+    setPerkOffer([]);
+    setPerkChoice(null);
     setCurrentLevel(prev => prev + 1);
   };
 
@@ -4147,7 +4029,7 @@ export const PlayingView: React.FC<{
       // trigger from repeating the click every frame.
       game.shootCooldown = 18;
       AudioEngine.playUiClick();
-      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(6);
+      haptic('shoot', progress.settings.haptics);
       return;
     }
     const playerCenterX = game.player.x + game.player.width / 2;
@@ -4200,7 +4082,7 @@ export const PlayingView: React.FC<{
     });
     game.shootCooldown = rapid ? 6 : 10;
     if (!rapid) game.ammo--;
-    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(8);
+    haptic('shoot', progress.settings.haptics);
     AudioEngine.playShoot();
   };
 
@@ -4228,6 +4110,7 @@ export const PlayingView: React.FC<{
 
     const game = setupLevel(currentLevel, totalScore, lives);
     if (!game) return;
+    game.ghost = loadGhost(game.ghostKey);
     gameRef.current = game;
     // Debug handles the automated play-test uses to inspect live state and jump
     // between stages. They expose nothing the player can abuse in a local game.
@@ -4366,6 +4249,24 @@ export const PlayingView: React.FC<{
       // The intro card's spawn-protection clock runs in simulation frames,
       // not wall-clock time, so it cannot expire while a tab is throttled.
       if (game.introTimer > 0) game.introTimer--;
+      game.frame = (game.frame || 0) + 1;
+      if (game.frame % 10 === 0) {
+        const pCx = game.player.x + game.player.width / 2;
+        let nearest: number | null = null;
+        for (const e of game.enemies) {
+          if (e.x < -500) continue;
+          const d = Math.abs(e.x + e.width / 2 - pCx);
+          if (d < 640 && (nearest === null || d < Math.abs(nearest))) nearest = e.x + e.width / 2 - pCx;
+        }
+        AudioEngine.setSfxPan(nearest === null ? 0 : Math.max(-0.75, Math.min(0.75, nearest / 480)));
+      }
+      // Ghost replay: one sample every four frames keeps localStorage small
+      // (a 60-second level is ~900 samples) while looking smooth enough.
+      if (game.frame % 4 === 0) {
+        game.ghostFrames.push([
+          Math.round(game.player.x), Math.round(game.player.y), game.player.facing === -1 ? -1 : 1,
+        ]);
+      }
       // Level clock (used for the results card, independent of the Speed Run
       // countdown).
       game.levelSeconds = (game.levelSeconds || 0) + 1 / 60;
@@ -4536,7 +4437,7 @@ export const PlayingView: React.FC<{
         b.x += b.vx; b.y += b.vy; b.life--;
         game.enemies.forEach((e: any) => {
           // A spent bullet must not carry on through a second overlapping enemy.
-          if (b.life <= 0) return;
+          if (b.life <= 0 || e.isShadow) return;
           if (e.x < b.x + b.radius && e.x + e.width > b.x - b.radius && e.y < b.y + b.radius && e.y + e.height > b.y - b.radius) {
             // Remember where the enemy died before moving it out of the world:
             // the old code set e.x = -1000 first, so the explosion, the combo
@@ -4570,7 +4471,10 @@ export const PlayingView: React.FC<{
           const boss = game.boss;
           if (boss.x < b.x + b.radius && boss.x + boss.width > b.x - b.radius && boss.y < b.y + b.radius && boss.y + boss.height > b.y - b.radius) {
             b.life = 0;
-            boss.hp--;
+            const coreHit = boss.coreExposed > 0;
+            const shadowShot = game.shadowActive > 0;
+            const damage = (coreHit ? 2 : 1) * (shadowShot ? 2 : 1);
+            boss.hp -= damage;
             gainShadowCharge(game, 6);
             boss.stunTimer = 8;
             game.hitStop = 2;
@@ -4584,7 +4488,12 @@ export const PlayingView: React.FC<{
                 life: 25, color: bossCol, size: Math.random()*5+2
               });
             }
-            game.floatingTexts.push({ x: boss.x + boss.width/2, y: boss.y - 10, text: tr('BOSS HP {a}/{b}', { a: boss.hp, b: boss.maxHp }), life: 30, color: '#ff6b6b' });
+            game.floatingTexts.push({
+              x: boss.x + boss.width / 2, y: boss.y - 10,
+              text: coreHit ? tr('KÄRNTRÄFF -{n}!', { n: damage }) : tr('BOSS HP {a}/{b}', { a: boss.hp, b: boss.maxHp }),
+              life: 30, color: coreHit ? '#ffd166' : '#ff6b6b',
+            });
+            if (coreHit) AudioEngine.playCombo(3);
             if (boss.hp <= 0) {
               registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
               grantXp(game, 200 + boss.phase * 100);
@@ -4803,7 +4712,7 @@ export const PlayingView: React.FC<{
           }
           gainShadowCharge(game, 5);
           AudioEngine.playBounce();
-          if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(16);
+          haptic('bounce', progress.settings.haptics);
           break;
         }
       }
@@ -4882,8 +4791,7 @@ export const PlayingView: React.FC<{
               AudioEngine.playShoot();
             }
           } else {
-            e.x += e.velocityX;
-            if (e.x < p.x || e.x + e.width > p.x + p.width) e.velocityX *= -1;
+            updateEnemyMotion(e, game, p);
           }
         }
 
@@ -4912,7 +4820,7 @@ export const PlayingView: React.FC<{
             const isAboveEnemy = playerBottom < enemyCenterY;
             const isFalling = game.player.velocityY > 0;
 
-            if (isFalling && isAboveEnemy && playerBottom < enemyTop + 20) {
+            if (isFalling && isAboveEnemy && playerBottom < enemyTop + 20 && !e.isShadow) {
               // Player jumps on enemy - defeat enemy!
             const enemyCenterXBeforeRemove = e.x + e.width / 2;
             const enemyCenterYBeforeRemove = e.y + e.height / 2;
@@ -4954,6 +4862,8 @@ export const PlayingView: React.FC<{
           AudioEngine.playBossRoar();
         }
         boss.auraAngle = (boss.auraAngle || 0) + 0.05;
+        if (boss.coreExposed > 0) boss.coreExposed--;
+        if (boss.coreFlash > 0) boss.coreFlash--;
         
         // Beräkna fas baserat på HP
         const hpPct = boss.hp / boss.maxHp;
@@ -4999,6 +4909,10 @@ export const PlayingView: React.FC<{
               const move = (boss.pendingMove || 'orb') as BossPattern;
               boss.pendingMove = null;
               fireBossAttack(game, boss, move, attackProfile);
+              // Recovery window: the core glows for 1.2 s after every attack.
+              // Shots in this window deal double, which rewards aggression.
+              boss.coreExposed = boss.isMini ? 52 : 72;
+              boss.coreFlash = 12;
               boss.attackCooldown = Math.max(42, attackProfile.cooldown - boss.phase * 22 - (boss.tier || 1) * 3);
               boss.attackTimer = boss.attackCooldown;
             }
@@ -5011,8 +4925,11 @@ export const PlayingView: React.FC<{
               boss.pendingMove = move;
               // Later tiers wind up faster, which is what makes the same boss
               // genuinely harder without changing its silhouette.
-              boss.telegraph = Math.max(12, 26 - (boss.tier || 1) * 2);
-              AudioEngine.playBossRoar();
+              // Phase 3 winds up much longer, so its new patterns read clearly.
+              boss.telegraph = Math.max(12, 26 - (boss.tier || 1) * 2 + (boss.phase === 2 ? 16 : 0));
+              boss.telegraphTotal = boss.telegraph;
+              AudioEngine.playBossWarning();
+              haptic('bossWarning', progress.settings.haptics);
             }
           }
         }
@@ -5032,6 +4949,32 @@ export const PlayingView: React.FC<{
           }
         });
         
+        // Shadow Shift pass: the dissolved cat can strike the boss's core for
+        // double damage once per transformation, without taking a hit back.
+        if (game.shadowActive > 0 && boss.shadowHitShift !== game.shadowShiftId) {
+          const passX = game.player.x + game.player.width > boss.x && game.player.x < boss.x + boss.width;
+          const passY = game.player.y + game.player.height > boss.y && game.player.y < boss.y + boss.height;
+          if (passX && passY) {
+            boss.shadowHitShift = game.shadowShiftId;
+            boss.hp -= 2;
+            boss.stunTimer = 18;
+            boss.coreFlash = 16;
+            game.hitStop = 4;
+            game.screenShake = Math.max(game.screenShake, 12);
+            game.floatingTexts.push({
+              x: boss.x + boss.width / 2, y: boss.y,
+              text: tr('SKUGGPASS -2 HP'), life: 45, color: '#c084fc',
+            });
+            gainShadowCharge(game, 14);
+            if (boss.hp <= 0) {
+              registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
+              game.bossDefeatedInRun = true;
+              pushToast(game, tr('{name} BESEGRAD!', { name: boss.name }), '#ff9f43');
+              AudioEngine.playExplosion();
+            }
+          }
+        }
+
         // Kollision med spelaren (direktkontakt)
         if (!game.player.invincible) {
           const overlapX = game.player.x + game.player.width > boss.x && game.player.x < boss.x + boss.width;
@@ -5077,11 +5020,14 @@ export const PlayingView: React.FC<{
         }
         game.slowMo = 10;
         game.screenShake = 12;
+        const anchorX = game.checkpointX && game.checkpointX > 120 ? game.checkpointX : game.player.x + 20;
         const safePlatforms = game.platforms
-          .filter((pl: any) => pl.isGround && pl.x < game.player.x + 20 && !pl.chasm)
+          .filter((pl: any) => pl.isGround && pl.x < anchorX + 30 && pl.x + pl.width > anchorX - 30 && !pl.chasm)
           .sort((a: any, b: any) => b.x - a.x);
         const safe = safePlatforms[0];
-        game.player.x = safe ? safe.x + Math.min(safe.width - game.player.width / 2, Math.max(game.player.width / 2, safe.width / 2)) : 160;
+        game.player.x = safe
+          ? Math.max(safe.x + 10, Math.min(anchorX, safe.x + safe.width - game.player.width - 10))
+          : 160;
         game.player.y = (safe ? safe.y : game.groundY) - game.player.height - 30;
         game.player.velocityY = 0;
         game.player.velocityX = 0;
@@ -5091,6 +5037,25 @@ export const PlayingView: React.FC<{
       }
 
 
+
+      // Checkpoints: crossing an anchor arms a safe respawn point. Only one
+      // toast per anchor, and never on the tutorial meadow.
+      const nextCheckpoint = game.checkpoints?.[game.checkpointIndex || 0];
+      if (nextCheckpoint !== undefined && game.player.x >= nextCheckpoint) {
+        game.checkpointX = nextCheckpoint;
+        game.checkpointIndex = (game.checkpointIndex || 0) + 1;
+        pushToast(game, tr('CHECKPOINT!'), '#7ee7ff');
+        AudioEngine.playCheckpoint();
+        haptic('checkpoint', progress.settings.haptics);
+        for (let i = 0; i < 12; i++) {
+          game.particles.push({
+            x: nextCheckpoint + (Math.random() - 0.5) * 40,
+            y: game.groundY - 20 - Math.random() * 60,
+            vx: (Math.random() - 0.5) * 3, vy: -1 - Math.random() * 3,
+            life: 30, color: '#7ee7ff', size: Math.random() * 3 + 1.5,
+          });
+        }
+      }
 
       // Camera: deadzone + look-ahead in the facing direction, smoothed so it never snaps.
       const desiredScroll = game.player.x - canvas.width * 0.45 + game.player.facing * 90;
@@ -5192,6 +5157,7 @@ export const PlayingView: React.FC<{
               game.floatingTexts.push({ x: f.x, y: f.y - 16, text: '+1.8s', life: 40, color: '#7ee7ff' });
             }
             AudioEngine.playCoin(game.streak || 0);
+            haptic('collect', progress.settings.haptics);
             // Small coin pop so collection feels physical.
             for (let i = 0; i < 6; i++) {
               game.particles.push({
@@ -5214,6 +5180,14 @@ export const PlayingView: React.FC<{
           }
         }
       });
+
+      // Auto-quality: drop the oldest particles rather than paying to draw a
+      // thousand sparks on a phone that is already struggling.
+      const q = game.quality || FULL_QUALITY;
+      if (game.particles.length > q.particleLimit) {
+        game.particles.splice(0, game.particles.length - q.particleLimit);
+      }
+      const weatherBudget = Math.ceil(game.weatherParticles.length * q.weatherScale);
 
       // --- DRAWING ---
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -5486,7 +5460,7 @@ export const PlayingView: React.FC<{
       // Deep skyline: three procedural planes with setbacks, antennas, lit
       // windows and neon roof edges. This is the layer that turns a flat blue
       // gradient into a city with real depth.
-      drawNeonSkyline(ctx, {
+      const skylineOpts = {
         width: canvas.width,
         height: canvas.height,
         ridgeBase,
@@ -5495,7 +5469,33 @@ export const PlayingView: React.FC<{
         isGolden,
         theme: String(game.theme || ''),
         time: timeSec,
-      });
+      };
+      // On the lean tier the skyline is rasterised once into an offscreen
+      // canvas and reused. It scrolls by a single parallax offset instead of
+      // rebuilding every building every frame; animated windows are dropped.
+      if (q.cacheBackground) {
+        const cacheKey = `${canvas.width}x${canvas.height}:${ridgeBase}:${isNight}:${isGolden}:${skylineOpts.theme}`;
+        if (!game.bgCache || game.bgCacheKey !== cacheKey) {
+          const off = document.createElement('canvas');
+          off.width = canvas.width + 320;
+          off.height = canvas.height;
+          const octx = off.getContext('2d');
+          if (octx) {
+            drawNeonSkyline(octx, { ...skylineOpts, width: off.width, scrollX: 0, time: 0 });
+            game.bgCache = off;
+            game.bgCacheKey = cacheKey;
+          }
+        }
+        if (game.bgCache) {
+          const span = 320;
+          const offset = ((game.scrollX * 0.25) % span + span) % span;
+          ctx.drawImage(game.bgCache, -offset, 0);
+        } else {
+          drawNeonSkyline(ctx, skylineOpts);
+        }
+      } else {
+        drawNeonSkyline(ctx, skylineOpts);
+      }
 
       // Scenery has two layers. Buildings are the fixed skyline and stay in
       // screen space; animals - on the ground and in the sky - are anchored in
@@ -6947,6 +6947,8 @@ export const PlayingView: React.FC<{
         }
       });
 
+      drawCheckpointBeacons(ctx, game, canvas.width);
+
       // Neon bounce pads: an embedded spring mattress with a cyan disc that
       // compresses for a few frames after use, plus a bobbing chevron hint.
       game.springPads.forEach((s: any) => {
@@ -7021,6 +7023,11 @@ export const PlayingView: React.FC<{
         const ey = e.y;
         const ew = e.width;
         const eh = e.height;
+
+        if (e.isShadow) {
+          drawShadowWraith(ctx, ex, ey, ew, eh, Date.now());
+          return;
+        }
 
         // Ground shadow for enemies (hovering drones get their own beacon glow)
         if (e.type !== 5) {
@@ -7529,7 +7536,8 @@ export const PlayingView: React.FC<{
         // is about to fire, so damage always feels earned.
         if (boss.telegraph > 0) {
           ctx.save();
-          const t = 1 - boss.telegraph / Math.max(1, Math.round(26 - (boss.tier || 1) * 2));
+          const total = boss.telegraphTotal || Math.max(1, Math.round(26 - (boss.tier || 1) * 2));
+          const t = Math.max(0, Math.min(1, 1 - boss.telegraph / total));
           ctx.globalAlpha = 0.25 + 0.45 * t;
           ctx.strokeStyle = boss.phase === 2 ? '#ff00ff' : '#ffd166';
           ctx.lineWidth = 3;
@@ -7915,6 +7923,46 @@ export const PlayingView: React.FC<{
         // reads while the camera is locked on the fight. It is deliberately
         // slim: the full-width bar at the top of the screen already carries the
         // numbers, and the old 400 px duplicate covered the boss art.
+        // Exposed core: the reward window right after an attack. It glows gold
+        // and literally shows the weak point the player should shoot.
+        if (boss.coreExposed > 0 || boss.coreFlash > 0) {
+          const glow = boss.coreFlash > 0 ? 1 : 0.45 + 0.3 * Math.sin((boss.auraAngle || 0) * 3);
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = glow;
+          const cx = bx + bw / 2;
+          const cy = by + bh * 0.5;
+          const core = ctx.createRadialGradient(cx, cy, 2, cx, cy, bw * 0.42);
+          core.addColorStop(0, '#ffffff');
+          core.addColorStop(0.32, '#ffd166');
+          core.addColorStop(1, 'rgba(255,120,0,0)');
+          ctx.fillStyle = core;
+          ctx.beginPath();
+          ctx.arc(cx, cy, bw * 0.42, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          if (boss.coreExposed > 0) {
+            ctx.save();
+            ctx.font = 'bold 10px Outfit, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffe6a3';
+            ctx.fillText(tr('KÄRNAN BLOTTAD · DUBBEL SKADA'), bx + bw / 2, by - 36);
+            ctx.restore();
+          }
+        }
+
+        // Phase 3 spells out which pattern is charging, on top of the ring.
+        if (boss.telegraph > 0 && boss.pendingMove) {
+          ctx.save();
+          ctx.font = 'bold 11px Outfit, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = boss.phase === 2 ? '#ff7bff' : '#ffd166';
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.shadowBlur = 10;
+          ctx.fillText(tr('VARNING · {m}', { m: boss.pendingMove.toUpperCase() }), bx + bw / 2, by + bh + 24);
+          ctx.restore();
+        }
+
         const hpBarW = Math.min(230, bw * 2.2);
         const hpBarX = bx + bw / 2 - hpBarW / 2;
         const hpBarY = by - 30;
@@ -8224,6 +8272,7 @@ export const PlayingView: React.FC<{
           persistRunSummary(game, perfectLevel);
           setTotalScore(game.score);
           AudioEngine.playLevelUp();
+          haptic('levelUp', progress.settings.haptics);
           const summary = {
             score: game.score,
             perfect: perfectLevel,
@@ -8239,6 +8288,9 @@ export const PlayingView: React.FC<{
             lifeBonus: levelLifeBonus(game),
           };
           setLevelSummary({ ...summary, grade: getGrade(summary) });
+          // Seeded offer: restarting this level always shows the same 3 cards.
+          setPerkOffer(game.perkOffer || []);
+          setPerkChoice(null);
           AudioEngine.playGrade();
           // Normal runs and the Continue entry advance the campaign checkpoint;
           // a quick Daily Run from level 29 must not unlock the whole story. The
@@ -8361,6 +8413,8 @@ export const PlayingView: React.FC<{
           jy - 15,
         );
       }
+
+      drawGhost(ctx, game);
 
       // Player
       // Squash and stretch scale around the cat's feet so it never floats off the floor.
@@ -8618,7 +8672,7 @@ export const PlayingView: React.FC<{
       if (game.weather === 'REGNIGT' || game.weather === 'STORMIGT') {
         ctx.strokeStyle = game.timeOfDay === 'DAY' ? 'rgba(100, 100, 150, 0.4)' : 'rgba(174, 194, 224, 0.5)';
         ctx.lineWidth = 1;
-        game.weatherParticles.forEach((p: any) => {
+        game.weatherParticles.slice(0, weatherBudget).forEach((p: any) => {
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(p.x - 2, p.y + p.length);
@@ -8626,13 +8680,13 @@ export const PlayingView: React.FC<{
         });
       } else if (game.weather === 'SNÖIGT') {
         ctx.fillStyle = game.timeOfDay === 'DAY' ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.9)';
-        game.weatherParticles.forEach((p: any) => {
+        game.weatherParticles.slice(0, weatherBudget).forEach((p: any) => {
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
           ctx.fill();
         });
       } else if (game.weather === 'DIMMIGT') {
-        game.weatherParticles.forEach((p: any) => {
+        game.weatherParticles.slice(0, weatherBudget).forEach((p: any) => {
           const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
           const fogColor = game.timeOfDay === 'DAY' ? '255, 255, 255' : '200, 200, 200';
           grd.addColorStop(0, `rgba(${fogColor}, ${p.opacity})`);
@@ -8692,23 +8746,26 @@ export const PlayingView: React.FC<{
       // Bright-pass bloom first, then the filmic grade on top. The bloom is
       // what makes the neon windows, fish and muzzle flashes feel like light
       // rather than paint.
-      if (!isReducedMotion(progress.settings.reduceMotion)) {
+      const cinematic = progress.settings.cinematicEffects !== false;
+      if (q.bloom && cinematic && !isReducedMotion(progress.settings.reduceMotion)) {
         drawBloom(ctx, canvas, isNight ? 0.22 : 0.14);
       }
 
       // Screen-space finish: volumetric light, ground mist, vignette and a
       // whisper of grain. It sits under the HTML HUD, so the interface keeps
       // its crisp contrast while the world gains a filmic grade.
-      drawAtmosphere(ctx, {
-        width: canvas.width,
-        height: canvas.height,
-        time: timeSec,
-        isNight,
-        isGolden,
-        weather: game.weather,
-        reducedMotion: isReducedMotion(progress.settings.reduceMotion),
-        groundY: game.groundY,
-      });
+      if (q.atmosphere && cinematic) {
+        drawAtmosphere(ctx, {
+          width: canvas.width,
+          height: canvas.height,
+          time: timeSec,
+          isNight,
+          isGolden,
+          weather: game.weather,
+          reducedMotion: isReducedMotion(progress.settings.reduceMotion),
+          groundY: game.groundY,
+        });
+      }
 
       // Throttle React state updates to prevent infinite loops and improve performance
       if (Date.now() - game.lastStatUpdate > 250) {
@@ -8765,6 +8822,7 @@ export const PlayingView: React.FC<{
       if (!game.running) return;
       const elapsed = now - previousFrameTime;
       previousFrameTime = now;
+      game.quality = qualityRef.current.sample(elapsed, progress.settings.autoQuality !== false);
       // Cap the debt at a few steps so a stalled frame or a backgrounded tab
       // cannot make the level fast-forward when it resumes.
       accumulatedTime = Math.min(accumulatedTime + Math.max(0, elapsed), FIXED_STEP_MS * 5);
@@ -8890,39 +8948,11 @@ export const PlayingView: React.FC<{
                 </div>
               </div>
 
-              {/* Shadow Shift meter. It doubles as the touch button: the HUD
-                  is otherwise pointer-transparent, so one chip can serve
-                  desktop (E / Q), mouse and phone without a sixth thumb key. */}
-              <button
-                type="button"
-                onClick={triggerShadowShift}
-                disabled={stats.shadowCharge < 100 && stats.shadowActive <= 0}
-                aria-label={t('Skuggskifte')}
-                title={t('Skuggskifte: ladda med fisk, fiender och nästan-träffar · E')}
-                className={`hud-chip pointer-events-auto relative overflow-hidden transition-colors ${
-                  stats.shadowActive > 0
-                    ? 'border-[#c084fc]/70 bg-[#a855f7]/20 text-[#e9d5ff]'
-                    : stats.shadowCharge >= 100
-                      ? 'animate-pulse border-[#c084fc]/60 bg-[#a855f7]/10 text-[#d8b4fe]'
-                      : 'border-white/10 text-white/45'
-                } ${isTouchDevice ? 'px-3 py-1.5' : ''}`}
-              >
-                <span className="material-symbols-outlined text-[14px]">dark_mode</span>
-                <span className="text-[9px] font-black uppercase tracking-wider">
-                  {stats.shadowActive > 0
-                    ? t('Skugga {n}s', { n: Math.ceil(stats.shadowActive / 60) })
-                    : t('SKIFT')}
-                </span>
-                {stats.shadowActive === 0 && (
-                  <span className="tabular text-[9px] font-black opacity-75">{Math.floor(stats.shadowCharge)}%</span>
-                )}
-                <span
-                  className="absolute inset-x-0 bottom-0 h-[2px] bg-[#c084fc] transition-[width] duration-150"
-                  style={{
-                    width: `${stats.shadowActive > 0 ? (stats.shadowActive / 240) * 100 : stats.shadowCharge}%`,
-                  }}
-                />
-              </button>
+              <ShadowShiftMeter
+                stats={stats}
+                isTouchDevice={isTouchDevice}
+                onTrigger={triggerShadowShift}
+              />
 
               {(stats.magnet > 0 || stats.rapid > 0) && (
                 <div className="flex items-center gap-1">
@@ -9257,27 +9287,7 @@ export const PlayingView: React.FC<{
           </div>
         )}
 
-        {/* Objective pill: one always-current sentence that tells the player what
-            to do next, so a run never stalls on a full fish counter. */}
-        {!showLevelComplete && !isPaused && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center px-2">
-            <div className="hud-panel flex items-center gap-2 px-3 py-1.5">
-              <span className="material-symbols-outlined text-[15px] text-primary">
-                {stats.bossHp > 0 ? 'swords' : stats.collectedCount >= stats.fishGoal ? 'near_me' : stats.fishDir < 0 ? 'keyboard_backspace' : 'set_meal'}
-              </span>
-              <span className="max-w-[60vw] truncate text-[10px] font-black uppercase tracking-[0.14em] text-white/80">
-                {stats.bossHp > 0
-                  ? t('Besegra {name}', { name: stats.bossName || t('bossen') })
-                  : stats.collectedCount >= stats.fishGoal
-                    ? t('Spring till Jerry · {n} m', { n: stats.goalDist })
-                    : t('Samla {n} fiskar till', { n: Math.max(0, stats.fishGoal - stats.collectedCount) })}
-              </span>
-              {stats.collectedCount >= stats.fishGoal && (
-                <span className="tabular rounded-md bg-primary/15 px-1.5 py-0.5 text-[9px] font-black text-primary">{t('MÅL')}</span>
-              )}
-            </div>
-          </div>
-        )}
+        {!showLevelComplete && !isPaused && <ObjectivePill stats={stats} />}
 
         <canvas
           ref={canvasRef}
@@ -9375,6 +9385,55 @@ export const PlayingView: React.FC<{
                     <span className="material-symbols-outlined text-[13px]">favorite</span>
                     {t('+{n} liv inför nästa nivå', { n: levelSummary.lifeBonus })}
                   </p>
+                )}
+
+                {/* Risk/reward: one of three seeded cards. Every option has a
+                    cost, so this is a build decision, not a free upgrade. */}
+                {perkOffer.length > 0 && (
+                  <div className="relative mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base text-primary">style</span>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-white/60">{t('Välj ett kort inför nästa nivå')}</span>
+                      </span>
+                      {perkChoice && <span className="text-[9px] font-black uppercase tracking-wider text-primary">{t('Låst för rundan')}</span>}
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {perkOffer.map((perk) => {
+                        const active = perkChoice === perk.id;
+                        return (
+                          <button
+                            key={perk.id}
+                            type="button"
+                            disabled={!!perkChoice}
+                            aria-pressed={active}
+                            onClick={() => {
+                              setPerkChoice(perk.id);
+                              runPerksRef.current = [...runPerksRef.current, perk.id];
+                              AudioEngine.playUiClick();
+                            }}
+                            className={`flex min-h-[104px] flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                              active
+                                ? 'border-primary/70 bg-primary/15'
+                                : perkChoice
+                                  ? 'cursor-not-allowed border-white/[0.06] bg-white/[0.02] opacity-40'
+                                  : 'border-white/10 bg-white/[0.04] hover:border-white/30 hover:bg-white/[0.07]'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-lg" style={{ color: perk.color }}>{perk.icon}</span>
+                            <span className="text-[11px] font-black uppercase tracking-wide text-white">{t(perk.name)}</span>
+                            <span className="text-[10px] leading-snug text-white/50">{t(perk.desc)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {runPerksRef.current.length > 0 && (
+                      <p className="mt-2 truncate text-[9px] uppercase tracking-wider text-white/30">
+                        {t('Aktiva kort: {n}', { n: runPerksRef.current.length })}
+                        {' · '}{runPerksRef.current.map((id) => t(PERK_BY_ID[id]?.name || id)).join(' · ')}
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">

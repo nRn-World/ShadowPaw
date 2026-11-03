@@ -1,9 +1,8 @@
 // TEMP: measure the cat's eye position precisely, in tight-box normalised coords.
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
 await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.evaluate(() => localStorage.clear());

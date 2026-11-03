@@ -10,10 +10,9 @@
  *
  * Usage: node scripts/bake-run-frames.mjs   (dev server must run on :3000)
  */
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 // The generated sheet lives in the project's art folder; copy it into public/
 // just long enough to load it same-origin, then remove it so the 750 KB source
@@ -23,7 +22,7 @@ const SHEET_TMP = 'public/cat_run_sheet.jpg';
 const SHEET = './cat_run_sheet.jpg';
 fs.copyFileSync(SHEET_SRC, SHEET_TMP);
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 400, height: 400 } });
 // Same-origin so the canvas stays readable (getImageData would throw otherwise).
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });

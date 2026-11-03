@@ -1,10 +1,9 @@
 // TEMP: verify (a) bullets spawn at the blaster muzzle, (b) the idle cat blinks.
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
 await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.evaluate(() => localStorage.clear());

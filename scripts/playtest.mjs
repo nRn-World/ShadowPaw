@@ -1,16 +1,11 @@
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const OUT = 'screenshots/playtest';
 fs.mkdirSync(OUT, { recursive: true });
 
-const browser = await chromium.launch({
-  executablePath: CHROME,
-  headless: true,
-  args: ['--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'],
-});
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
 const errors = [];
 page.on('console', (m) => {

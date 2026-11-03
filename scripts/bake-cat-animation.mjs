@@ -30,17 +30,7 @@ if (!existsSync(MODEL)) {
   process.exit(1);
 }
 
-const chromePath = [
-  process.env.CHROME_PATH,
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-].filter(Boolean).find((p) => existsSync(p));
-if (!chromePath) {
-  console.error('Chrome not found. Set CHROME_PATH.');
-  process.exit(1);
-}
+const { executablePath: chromePath } = await resolveExecutable();
 
 const PAGE = `<!doctype html><html><body style="margin:0">
 <script type="importmap">{"imports":{"three":"/nm/three/build/three.module.js","three/addons/":"/nm/three/examples/jsm/"}}</script>
@@ -128,7 +118,7 @@ async function main() {
   await new Promise((r) => server.listen(PORT, r));
 
   const chrome = spawn(chromePath, [
-    '--headless=new', '--remote-debugging-port=9342', `--user-data-dir=${PROFILE}`,
+    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-port=9342', `--user-data-dir=${PROFILE}`,
     '--no-first-run', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
     '--window-size=400,400', 'about:blank',
   ], { stdio: 'ignore' });

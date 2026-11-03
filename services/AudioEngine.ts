@@ -11,6 +11,14 @@ export class AudioEngine {
     private static masterGain: GainNode | null = null;
     private static sfxVolume = 0.5;
     private static muted = false;
+    /** -1 = hard left, +1 = hard right; set from the nearest enemy's x. */
+    private static currentPan = 0;
+    private static adaptive = true;
+    private static duckFactor = 1;
+    private static duckListeners = new Set<(value: number) => void>();
+    private static duckTimer: ReturnType<typeof setTimeout> | null = null;
+    private static comboTier = 0;
+    private static lastComboLayerAt = 0;
 
     /** Shared tone helper so every new sound follows the same envelope rules. */
     private static tone(opts: {
@@ -44,7 +52,7 @@ export class AudioEngine {
             node = lp;
         }
         node.connect(gain);
-        gain.connect(this.masterGain);
+        this.route(gain);
         osc.start(t0);
         osc.stop(t0 + opts.duration + 0.02);
     }
@@ -82,7 +90,7 @@ export class AudioEngine {
 
         src.connect(filter);
         filter.connect(gain);
-        gain.connect(this.masterGain);
+        this.route(gain);
         src.start(t0);
     }
 
@@ -90,6 +98,21 @@ export class AudioEngine {
         frequencies.forEach((f, i) => {
             this.tone({ type, from: f, to: f * 1.01, duration, gain, delay: delay + i * 0.055 });
         });
+    }
+
+    /** Optional StereoPanner: positional SFX on capable browsers, a plain wire
+        on older ones. Panning is subtle by design so it never disorients. */
+    private static route(gain: GainNode) {
+        if (!this.ctx || !this.masterGain) return;
+        const pan = this.adaptive ? Math.max(-1, Math.min(1, this.currentPan)) : 0;
+        if (pan !== 0 && typeof this.ctx.createStereoPanner === 'function') {
+            const panner = this.ctx.createStereoPanner();
+            panner.pan.value = pan;
+            gain.connect(panner);
+            panner.connect(this.masterGain);
+        } else {
+            gain.connect(this.masterGain);
+        }
     }
 
     private static init() {
@@ -123,9 +146,74 @@ export class AudioEngine {
         this.applyMasterGain();
     }
 
+    /** Turn the whole adaptive layer on/off from the settings screen. */
+    public static setAdaptive(enabled: boolean) {
+        this.adaptive = enabled;
+        if (!enabled) this.currentPan = 0;
+    }
+
+    /** Normalised screen position of the sound source (-1 .. 1). */
+    public static setSfxPan(value: number) {
+        this.currentPan = this.adaptive ? Math.max(-1, Math.min(1, value)) : 0;
+    }
+
+    /** Subscribe to music ducking. Returns an unsubscribe function. */
+    public static onDuck(listener: (value: number) => void) {
+        this.duckListeners.add(listener);
+        return () => this.duckListeners.delete(listener);
+    }
+
+    /** Briefly lower music and SFX so a boss warning cuts through the mix. */
+    public static duckMusic(factor = 0.42, seconds = 0.9) {
+        this.duckFactor = Math.max(0.1, Math.min(1, factor));
+        this.applyMasterGain();
+        this.duckListeners.forEach((fn) => fn(this.duckFactor));
+        if (this.duckTimer) clearTimeout(this.duckTimer);
+        this.duckTimer = setTimeout(() => {
+            this.duckFactor = 1;
+            this.applyMasterGain();
+            this.duckListeners.forEach((fn) => fn(1));
+            this.duckTimer = null;
+        }, seconds * 1000);
+    }
+
+    /** A soft chord enters at combo tiers 2/4/6 and leaves when the combo dies.
+        Throttled so a dense fish cluster cannot machine-gun the layer. */
+    public static setComboTier(tier: number) {
+        if (!this.adaptive) return;
+        const clamped = Math.max(0, Math.min(3, tier));
+        if (clamped === this.comboTier) return;
+        const rising = clamped > this.comboTier;
+        this.comboTier = clamped;
+        if (!rising || clamped === 0) return;
+        const now = Date.now();
+        if (now - this.lastComboLayerAt < 900) return;
+        this.lastComboLayerAt = now;
+        const roots = [0, 220, 261.63, 329.63];
+        const root = roots[clamped];
+        this.chord([root, root * 1.25, root * 1.5], 0.55, 0.035, 0, 'sine');
+    }
+
+    /** Distinct new cues for the systems added in the 2026 gameplay pass. */
+    public static playCheckpoint() {
+        this.chord([392, 523.25, 659.25], 0.42, 0.09);
+        this.tone({ type: 'sine', from: 880, to: 1320, duration: 0.3, gain: 0.06, delay: 0.12 });
+    }
+
+    public static playBossWarning() {
+        this.duckMusic(0.42, 0.9);
+        this.tone({ type: 'sawtooth', from: 180, to: 90, duration: 0.55, gain: 0.12, filter: 900 });
+        this.noise({ duration: 0.3, gain: 0.08, from: 900, to: 180 });
+    }
+
+    public static playShadowPass() {
+        this.tone({ type: 'triangle', from: 520, to: 1040, duration: 0.24, gain: 0.1 });
+        this.noise({ duration: 0.16, gain: 0.06, from: 3200, to: 600, type: 'highpass' });
+    }
+
     private static applyMasterGain() {
         if (!this.masterGain) return;
-        const target = this.muted ? 0 : this.sfxVolume;
+        const target = this.muted ? 0 : this.sfxVolume * this.duckFactor;
         // Ramp instead of jumping, so muting mid-jump does not click.
         const now = this.ctx?.currentTime ?? 0;
         this.masterGain.gain.cancelScheduledValues(now);

@@ -1,66 +1,21 @@
 /**
  * Portable gameplay smoke test for Shadow Paw.
  *
- * The older scripts/*.mjs harnesses assume a Chrome installed at a Windows
- * path and cannot run in CI. This one uses any local Chrome (CHROME_PATH) or
- * the Chromium binary bundled in the optional @sparticuz/chromium package,
- * drives the real game in a headless browser and asserts the rules that are
- * easy to break: deterministic levels, a reachable fish quota, Shadow Shift,
+ * Drives the real game in headless Chromium (see ./browser.mjs) and asserts the
+ * rules that are easy to break: deterministic levels, a reachable fish quota,
+ * checkpoints, seeded perk offers, Shadow Shift, wraith immunity, boss depth,
  * spawn protection and the life refill between levels.
  *
- * Usage:  npm run dev              (in another terminal, or set BASE_URL)
- *         npm run test:smoke
- *
- * page.clock drives requestAnimationFrame at 60 Hz without waiting in real
- * time. Canvas painting is stubbed out (FAST_CANVAS=0 disables it) because a
- * software-rendered 1280x720 scene with dozens of gradients is far too slow
- * in headless Chromium; the simulation and React state stay completely real.
+ * Usage:  npm run dev   (or set BASE_URL) ; npm run test:smoke
+ * `page.clock` drives requestAnimationFrame at 60 Hz without waiting in real
+ * time. Canvas painting is stubbed (FAST_CANVAS=0 disables it) because a
+ * software-rendered 720p neon scene is far too slow in headless Chromium.
  */
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
-import { chromium } from 'playwright-core';
+import { launchBrowser, noCanvasPainting } from './browser.mjs';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const FAST_CANVAS = process.env.FAST_CANVAS !== '0';
-
-/** Resolve a browser binary without assuming a developer's OS. */
-async function launchBrowser() {
-  let executablePath = process.env.CHROME_PATH;
-  let args = ['--no-sandbox', '--disable-dev-shm-usage'];
-  if (!executablePath) {
-    const chromiumPkg = await import('@sparticuz/chromium').then((m) => m.default);
-    const { inflate } = await import('@sparticuz/chromium');
-    // On a bare Linux the bundled Amazon Linux 2023 libraries are needed.
-    // Setting the variable here is enough: Chrome is a child process and
-    // inherits the updated environment at exec time.
-    const libs = await inflate('node_modules/@sparticuz/chromium/bin/al2023.tar.br');
-    process.env.LD_LIBRARY_PATH = [join(libs, 'lib'), join(libs, 'usr/lib64'), process.env.LD_LIBRARY_PATH]
-      .filter(Boolean).join(':');
-    executablePath = await chromiumPkg.executablePath();
-    args = [...chromiumPkg.args, ...args];
-  }
-  return chromium.launch({ executablePath, headless: true, args });
-}
-
-function noCanvasPainting() {
-  const P = CanvasRenderingContext2D.prototype;
-  const noop = function () {};
-  const methods = [
-    'fill', 'stroke', 'fillRect', 'strokeRect', 'clearRect', 'fillText', 'strokeText',
-    'drawImage', 'arc', 'ellipse', 'beginPath', 'closePath', 'moveTo', 'lineTo',
-    'quadraticCurveTo', 'bezierCurveTo', 'rect', 'roundRect', 'arcTo', 'save',
-    'restore', 'translate', 'scale', 'rotate', 'transform', 'setTransform',
-    'resetTransform', 'setLineDash', 'clip', 'putImageData',
-  ];
-  for (const m of methods) if (typeof P[m] === 'function') P[m] = noop;
-  const gradient = () => ({ addColorStop: noop });
-  P.createLinearGradient = gradient;
-  P.createRadialGradient = gradient;
-  P.createPattern = () => ({});
-  P.measureText = (text) => ({ width: String(text).length * 8 });
-  P.createImageData = (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
-  P.getImageData = (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
-}
 
 const levelSnapshot = () => {
   const g = window.__SP;
@@ -119,6 +74,27 @@ try {
   // oscillating saws all move once the simulation starts, so compare the
   // generated (frame-zero) layout instead.
   const first = await page.evaluate(levelSnapshot);
+  const runSystems = await page.evaluate(() => {
+    const g = window.__SP;
+    return {
+      runMode: g.runMode,
+      seedOffset: g.seedOffset,
+      ghostKey: g.ghostKey,
+      checkpoints: g.checkpoints,
+      perkOffer: g.perkOffer.map((p) => p.id),
+      qualityTier: g.quality?.tier,
+    };
+  });
+
+  check('new run systems are initialised on a fresh campaign', () => {
+    assert.equal(runSystems.runMode, 'campaign');
+    assert.equal(runSystems.seedOffset, 0);
+    assert.ok(/^campaign:1:0$/.test(runSystems.ghostKey));
+    assert.equal(runSystems.checkpoints.length, 2, 'long levels get two checkpoints');
+    assert.ok(runSystems.checkpoints[0] < runSystems.checkpoints[1]);
+    assert.equal(runSystems.perkOffer.length, 3, 'three seeded risk/reward cards');
+    assert.equal(runSystems.qualityTier, 0, 'quality starts at the full budget');
+  });
 
   check('level 1 has a reachable fish quota', () => {
     assert.ok(first.fishGoal >= 1 && first.fishGoal <= first.fish.length,
@@ -184,6 +160,17 @@ try {
     assert.equal(livesAfter, 4);
   });
 
+  const mini = await page.evaluate(() => ({
+    isMini: !!window.__SP.boss?.isMini,
+    hp: window.__SP.boss?.hp || 0,
+    exposed: window.__SP.boss?.coreExposed,
+  }));
+  check('level % 5 === 3 has a miniboss with an exposable core', () => {
+    assert.equal(mini.isMini, true);
+    assert.ok(mini.hp > 0 && mini.hp < 20, 'a miniboss is shorter than a full fight');
+    assert.equal(mini.exposed, 0);
+  });
+
   // --- Shadow Shift -------------------------------------------------------
   await page.evaluate(() => { window.__SP.shadowCharge = 100; });
   await page.keyboard.press('KeyE');
@@ -215,6 +202,9 @@ try {
       const e = g.enemies[0];
       e.x = g.player.x - 5;
       e.y = g.player.y;
+      // Hoppers and wraiths derive y from baseY each frame; keep the injected
+      // target at the cat's height so the pass-through collision is testable.
+      e.baseY = g.player.y;
       e.platform = 0;
       e.shadowKilled = false;
     }
@@ -252,6 +242,28 @@ try {
     assert.equal(ended.active, 0);
     assert.equal(ended.speed, ended.baseSpeed);
     assert.equal(ended.invincible, false);
+  });
+
+  // A shadow wraith cannot be shot or stomped; only a Shift pass removes it.
+  await page.evaluate(() => {
+    const g = window.__SP;
+    g.enemies.length = 0;
+    g.boss = null;
+    g.enemies.push({
+      x: g.player.x + 8, y: g.player.y, width: 42, height: 44,
+      velocityX: 0, type: 6, isShadow: true, platform: 0,
+      baseY: g.player.y, shootTimer: 0, chargeTimer: 0,
+    });
+    g.bullets.push({ x: g.player.x + 20, y: g.player.y + 20, vx: 0, vy: 0, radius: 8, life: 120 });
+  });
+  await page.clock.runFor(160);
+  const wraith = await page.evaluate(() => ({
+    alive: window.__SP.enemies.some((e) => e.isShadow && e.x > -500),
+    lives: window.__SP.lives,
+  }));
+  check('shadow wraiths survive bullets and normal collisions', () => {
+    assert.equal(wraith.alive, true);
+    assert.ok(wraith.lives >= 1);
   });
 
   check('no runtime errors', () => {

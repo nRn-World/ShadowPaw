@@ -8,11 +8,10 @@
  *
  * Usage: node scripts/record-gameplay.mjs   (dev server must run on :3000)
  */
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const FINAL = path.join('public', 'gameplay-loop.webm');
 const CLIP_SECONDS = Number(process.env.CLIP_SECONDS || 16);
@@ -24,7 +23,7 @@ const BITRATE = Number(process.env.BITRATE || 1_400_000);
 
 fs.mkdirSync('public', { recursive: true });
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const context = await browser.newContext({
   viewport: { width: 1280, height: 720 },
   acceptDownloads: true,

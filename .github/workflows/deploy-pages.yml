@@ -34,22 +34,43 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      # Fail before deploying instead of shipping a broken bundle: a type error
-      # or a badly shaped translation row stops the job here.
-      - name: Type check
-        run: npm run typecheck
+      # Fail before deploying instead of shipping a broken bundle. `check`
+      # bundles typecheck, the translation-table guard and the production build.
+      - name: Check (types + translations + build)
+        run: npm run check
 
-      - name: Check translations
-        run: npm run check:i18n
+      - name: Unit tests (level, difficulty, perks, quality, daily, telemetry)
+        run: npm run test:units
 
-      - name: Build
-        run: npm run build
+      - name: Start dev server for browser tests
+        run: |
+          npm run dev -- --host 0.0.0.0 > /tmp/shadow-paw-dev.log 2>&1 &
+          echo $! > /tmp/shadow-paw-dev.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/ > /dev/null; then echo "dev server ready"; exit 0; fi
+            sleep 1
+          done
+          cat /tmp/shadow-paw-dev.log
+          exit 1
+
+      # Portable Chromium comes from @sparticuz/chromium; no Windows Chrome path.
+      - name: Gameplay smoke test
+        run: npm run test:smoke
+
+      - name: UI smoke test (pause, results, game over, shop, 5 languages / RTL)
+        run: npm run test:ui
+
+      - name: Stop dev server
+        if: always()
+        run: |
+          if [ -f /tmp/shadow-paw-dev.pid ]; then kill "$(cat /tmp/shadow-paw-dev.pid)" || true; fi
+          cat /tmp/shadow-paw-dev.log || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

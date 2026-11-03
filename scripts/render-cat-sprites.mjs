@@ -40,17 +40,7 @@ if (!existsSync(MODEL)) {
   process.exit(1);
 }
 
-const chromePath = [
-  process.env.CHROME_PATH,
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-].filter(Boolean).find((p) => existsSync(p));
-if (!chromePath) {
-  console.error('Chrome not found. Set CHROME_PATH.');
-  process.exit(1);
-}
+const { executablePath: chromePath } = await resolveExecutable();
 
 // A tiny page that imports three.js from node_modules and exposes a render
 // function the harness calls once per sprite.
@@ -148,7 +138,7 @@ async function main() {
   await new Promise((r) => server.listen(PORT, r));
 
   const chrome = spawn(chromePath, [
-    '--headless=new',
+    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
     '--remote-debugging-port=9341',
     `--user-data-dir=${join(tmpdir(), 'shadow-paw-sprite-profile')}`,
     '--no-first-run', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
