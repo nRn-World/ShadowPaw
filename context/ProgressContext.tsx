@@ -64,7 +64,7 @@ const defaultProgress: PlayerProgress = {
     uiScale: 1,
     textScale: 1,
     colorBlindMode: false,
-    reduceMotion: false,
+    reduceMotion: 'system',
     debugOverlay: false,
     haptics: true,
     muted: false,
@@ -154,6 +154,18 @@ const clampCampaignLevel = (value: unknown, fallback = 1) => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.min(999, Math.max(1, Math.floor(n))) : fallback;
 };
+
+/** True when the player's device asks for less animation. Read on every frame
+    from the game loop, so it must stay a plain function - no React state. */
+export const prefersReducedMotion = () => {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+};
+
+/** 'system' means "whatever the device says"; a stored boolean is a choice the
+    player made in Settings and always wins over the device. */
+export const isReducedMotion = (value: boolean | 'system' | undefined) =>
+  value === true || (value !== false && prefersReducedMotion());
 
 const LANG_CODES = ['en', 'sv', 'tr', 'es', 'ar'];
 const cleanLang = (s: PlayerProgress['settings']): PlayerProgress['settings'] =>

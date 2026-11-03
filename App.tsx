@@ -5,6 +5,7 @@ import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverVi
 import LevelSelectView from './components/LevelSelectView';
 import { AppView } from './types';
 import { ProgressProvider, useProgress } from './context/ProgressContext';
+import { InstallProvider } from './context/InstallContext';
 import { AudioEngine } from './services/AudioEngine';
 import { useT } from './i18n';
 
@@ -226,7 +227,9 @@ const App: React.FC = () => {
 
 const WrappedApp: React.FC = () => (
   <ProgressProvider>
-    <App />
+    <InstallProvider>
+      <App />
+    </InstallProvider>
   </ProgressProvider>
 );
 

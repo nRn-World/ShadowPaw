@@ -70,7 +70,9 @@ export interface PlayerProgress {
     uiScale: number;
     textScale: number;
     colorBlindMode: boolean;
-    reduceMotion: boolean;
+    /** `'system'` follows the device's reduced-motion setting until the player
+        picks a side; booleans from older saves are accepted when reading. */
+    reduceMotion: boolean | 'system';
     debugOverlay: boolean;
     haptics: boolean;
     /** Master switch: when true nothing is audible, whatever the volumes are. */

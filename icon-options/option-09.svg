@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="bg" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#3a1050"/><stop offset="1" stop-color="#0a0620"/></linearGradient><filter id="g" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect width="512" height="512" rx="112" fill="url(#bg)"/><circle cx="256" cy="150" r="96" fill="#ff7a59" opacity=".9"/><path d="M0 430 H512 V512 H0 Z" fill="#06030f"/>
+<path d="M30 430 V360 H90 V330 H130 V400 H170 V350 H220 V430 M300 430 V380 H350 V320 H400 V370 H440 V340 H490 V430" fill="#06030f"/>
+<g fill="#06030f" stroke="#06030f" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="256" cy="200" rx="86" ry="34" transform="rotate(-18 256 200)"/><circle cx="332" cy="170" r="30"/>
+<path d="M314 150 L318 118 L338 140 Z M344 142 L362 118 L360 156 Z"/>
+<path d="M176 214 Q120 220 100 168 Q92 144 112 140" fill="none" stroke-width="12"/>
+<path d="M296 224 L342 252 M276 232 L296 270 M222 216 L170 244 M206 204 L152 214" stroke-width="12" fill="none"/></g>
+<circle cx="338" cy="168" r="4" fill="#ffe14a"/></svg>

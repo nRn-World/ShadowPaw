@@ -564,10 +564,11 @@ input[type='range']::-moz-range-thumb {
 
 /* ============================================================ GAME CANVAS */
 
-/* The canvas wrapper should never show a scrollbar – the game fills it. */
+/* The game canvas is a smooth vector scene rendered at 1280x720 and scaled
+   down by the browser. Forcing nearest-neighbour here made every curve and
+   neon glow jagged, so the default smooth filtering is intentional. */
 canvas {
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  image-rendering: auto;
 }
 
 /* Boss HP bar in the HTML overlay */

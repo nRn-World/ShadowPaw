@@ -1,5 +1,10 @@
 Resultat: GODKÄND
 
+> **VARNING (verifierad 2026-10-27):** GODKÄND gäller **endast** grenen `agents/build-20261020-r6b`,
+> aldrig `main`. Funktionerna som verifieras här (ISGLID, SKUGGJAKT, haptik, skuggpassager,
+> hit-stop, skins Umbra/Guldtass) saknas i koden på `main`. Kontrollera alltid mot aktuell branch
+> innan rapporten används som underlag.
+
 Omverifiering varv 2 av varv 6 (branch agents/build-20261020-r6b, bas agents/build-20261020-r6).
 
 ## Kontroller

@@ -40,6 +40,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Fail before deploying instead of shipping a broken bundle: a type error
+      # or a badly shaped translation row stops the job here.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Check translations
+        run: npm run check:i18n
+
       - name: Build
         run: npm run build
 

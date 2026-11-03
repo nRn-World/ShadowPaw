@@ -2,13 +2,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry } from '../types';
-import LiveRunDemo from './LiveRunDemo';
+import GameplayVideo from './GameplayVideo';
 import { drawCatSprite } from './catSprite';
+import { drawCatAtlasSprite, getCatMuzzle } from './catAtlasSprite';
 import CatPreview from './CatPreview';
+import { drawNeonSkyline, drawAtmosphere, drawGroundRim, drawBloom } from './worldArt';
 import { getJerryTaunt } from '../services/taunts';
-import { useProgress } from '../context/ProgressContext';
+import { useProgress, isReducedMotion } from '../context/ProgressContext';
+import { useInstall } from '../context/InstallContext';
 import { AudioEngine } from '../services/AudioEngine';
 import { useT, tr, renderRich, LanguageButtons } from '../i18n';
+
+/** Permanent cinematic crop for the stage. Kept as one constant so the render
+    transform and the pointer→world conversion can never drift apart. */
+const STAGE_ZOOM = 1.14;
 
 const getSeasonTheme = () => {
   const month = new Date().getMonth();
@@ -39,12 +46,14 @@ const CHAPTER_NAMES = [
   'Oändligheten', 'Transcendens', 'Upplysningen', 'Uppstigningen', 'Legenden',
 ];
 
-const SKINS: Record<string, { name: string; color: string; accent: string; unlockHint: string }> = {
-  default: { name: 'Neon Blue', color: '#4169E1', accent: '#333', unlockHint: 'Standardskinn' },
-  ember: { name: 'Ember', color: '#e85d2c', accent: '#4a1d0d', unlockHint: 'Besegra 60 fiender' },
-  frost: { name: 'Frost', color: '#62b7ff', accent: '#27415f', unlockHint: 'Samla 300 fiskar' },
-  shadow: { name: 'Shadow', color: '#4f5d75', accent: '#141b2d', unlockHint: 'Nå combo x10' },
-  aurora: { name: 'Aurora', color: '#29b88f', accent: '#0a3d33', unlockHint: 'Besegra 3 bossar' },
+const SKINS: Record<string, { name: string; color: string; accent: string; unlockHint: string; original?: boolean }> = {
+  // The default skin shows the baked art in its own colours (no tint), so the
+  // cat looks exactly like the source artwork instead of a recoloured variant.
+  default: { name: 'Original', color: '#4169E1', accent: '#2bee79', unlockHint: 'Standardskinn', original: true },
+  ember: { name: 'Ember', color: '#e85d2c', accent: '#ffcf6b', unlockHint: 'Besegra 60 fiender' },
+  frost: { name: 'Frost', color: '#62b7ff', accent: '#9df3ff', unlockHint: 'Samla 300 fiskar' },
+  shadow: { name: 'Shadow', color: '#4f5d75', accent: '#b07cff', unlockHint: 'Nå combo x10' },
+  aurora: { name: 'Aurora', color: '#29b88f', accent: '#5ffbd0', unlockHint: 'Besegra 3 bossar' },
 };
 
 const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: string }> = [
@@ -180,13 +189,13 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level
   const t = useT();
   return (
     <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
-      {/* Attract mode: a looping slice of real play. The cat sprints through the
-          park, hops a crate, shoots a drone, crosses the rainy night and takes
-          down a boss, so the first screen shows what the game *is* before the
+      {/* Attract mode: a real gameplay clip recorded from the game itself. The
+          cat sprints through a level, hops crates, shoots drones and grabs fish,
+          so the first screen shows how Shadow Paw actually plays before the
           visitor presses anything. */}
       <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
         <div className="absolute inset-0">
-          <LiveRunDemo />
+          <GameplayVideo label={t('Spelvideo: katten springer, hoppar och skjuter genom banan')} />
         </div>
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
           <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
@@ -389,6 +398,7 @@ export const StartMenuView: React.FC<{
 /** SETTINGS **/
 export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, updateSettings, toggleMuted, exportProgressCode, importProgressCode } = useProgress();
+  const { canInstall, installed, offlineReady, install } = useInstall();
   const t = useT();
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [importCode, setImportCode] = useState('');
@@ -574,17 +584,63 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </div>
           </button>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4">
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button onClick={() => updateSettings({ colorBlindMode: !progress.settings.colorBlindMode })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
               {t('Färgblind: {v}', { v: progress.settings.colorBlindMode ? t('På') : t('Av') })}
-            </button>
-            <button onClick={() => updateSettings({ reduceMotion: !progress.settings.reduceMotion })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
-              {t('Reducera motion: {v}', { v: progress.settings.reduceMotion ? t('På') : t('Av') })}
             </button>
             <button onClick={() => updateSettings({ debugOverlay: !progress.settings.debugOverlay })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
               {t('Debug HUD: {v}', { v: progress.settings.debugOverlay ? t('På') : t('Av') })}
             </button>
           </div>
+
+          {/* Reduced motion follows the device until the player chooses. Auto is
+              the default so a phone that already asks for less animation is
+              respected without anyone digging into this menu. */}
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-base text-primary">motion_photos_off</span>
+              <span className="text-sm font-semibold text-white/85">{t('Reducera motion: {v}', { v: progress.settings.reduceMotion === 'system' ? t('Automatiskt') : progress.settings.reduceMotion ? t('På') : t('Av') })}</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-white/40">{t('Följer din systeminställning på enheten')}</p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label={t('Reducera motion: {v}', { v: '' }).replace(/:\s*$/, '')}>
+              {([
+                { value: 'system' as const, label: t('Automatiskt') },
+                { value: true as const, label: t('På') },
+                { value: false as const, label: t('Av') },
+              ]).map((opt) => {
+                const active = progress.settings.reduceMotion === opt.value;
+                return (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => updateSettings({ reduceMotion: opt.value })}
+                    className={`rounded-lg border px-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${
+                      active ? 'border-primary/60 bg-primary/15 text-primary' : 'border-white/10 bg-white/[0.04] text-white/60 hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Haptics already fired on seven places in the game; until now there
+              was no way to turn the buzz off on a phone that was asked to. */}
+          <button
+            onClick={() => updateSettings({ haptics: !progress.settings.haptics })}
+            aria-pressed={progress.settings.haptics}
+            className="mt-2 flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 transition-colors hover:border-white/20"
+          >
+            <span className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-base text-white/60">vibration</span>
+              <span className="text-xs font-bold text-white">{t('Vibration: {v}', { v: progress.settings.haptics ? t('På') : t('Av') })}</span>
+            </span>
+            <span className={`h-5 w-10 relative rounded-full transition-colors ${progress.settings.haptics ? 'bg-primary' : 'bg-white/20'}`} aria-hidden="true">
+              <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-all ${progress.settings.haptics ? 'left-5' : 'left-0.5'}`} />
+            </span>
+          </button>
         </div>
 
         {/* Save Sync Section */}
@@ -631,6 +687,42 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             className="w-full h-20 bg-black/30 rounded-xl border border-white/10 p-3 text-xs text-white/80"
           />
           {syncMessage && <p className="text-primary text-xs mt-2 font-bold">{syncMessage}</p>}
+        </div>
+
+        {/* Install / offline. Shown on every device so the state is honest:
+            "ready to play offline" only appears once the worker controls the
+            page, and the install button only when the browser offers one. */}
+        <div className="p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">install_mobile</span>
+            <span className="text-sm font-bold uppercase tracking-wider text-white">{t('Installera appen')}</span>
+          </div>
+          <p className="mb-3 text-xs leading-relaxed text-white/45">
+            {t('Spela i helskärm utan adressfält och fungera offline')}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {installed ? (
+              <span className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-primary">
+                <span className="material-symbols-outlined text-base">check_circle</span>
+                {t('Redan installerad')}
+              </span>
+            ) : canInstall ? (
+              <button
+                onClick={async () => { await install(); }}
+                className="rounded-lg border border-primary bg-primary px-4 py-2 text-xs font-black uppercase tracking-wider text-[#112218]"
+              >
+                {t('Installera')}
+              </button>
+            ) : null}
+            <span
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold ${
+                offlineReady ? 'border-cyan-300/35 bg-cyan-300/10 text-cyan-200' : 'border-white/10 bg-white/[0.03] text-white/45'
+              }`}
+            >
+              <span className="material-symbols-outlined text-base">{offlineReady ? 'cloud_done' : 'cloud_off'}</span>
+              {offlineReady ? t('Redo att spela utan nät') : t('Förbereder…')}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1004,7 +1096,9 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
       perfectLevel: !!lastRun.perfectLevel,
       bestCombo: lastRun.bestCombo || 0,
       bossDefeated: !!lastRun.bossDefeated,
-      deaths: 1,
+      // Lives actually lost this run. A quit from the pause menu costs none,
+      // and an enemy hit is as real a death as a fall in the pit.
+      deaths: lastRun.deaths || 0,
       // Near misses are this game's version of a shadow pass: skimming a hazard
       // without touching it. They feed the weekly quest and the lifetime stat.
       shadowPasses: lastRun.nearMisses || 0,
@@ -1076,13 +1170,50 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     ctx.font = 'bold 24px Outfit, sans-serif';
     ctx.fillText('shadow-paw-game.vercel.app', 48, 430);
 
+    const summary = t('Jag fick {n} poäng i Shadow Paw!', { n: score });
+
+    // Phones already have a share sheet that reaches every app the player
+    // uses. Hand it the actual picture instead of only downloading a file into
+    // a folder most people never open.
+    const shareSupported = typeof navigator !== 'undefined'
+      && typeof navigator.canShare === 'function'
+      && typeof navigator.share === 'function';
+    let file: File | null = null;
+    if (shareSupported) {
+      try {
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (blob) {
+          const candidate = new File([blob], `shadow-paw-score-${score}.png`, { type: 'image/png' });
+          // canShare with the file is the only reliable test: Safari exposes
+          // share() but rejects files it cannot handle.
+          if (navigator.canShare({ files: [candidate] })) file = candidate;
+        }
+      } catch {
+        file = null;
+      }
+    }
+
+    if (file) {
+      try {
+        await navigator.share({ files: [file], text: summary, title: 'Shadow Paw' });
+        // No confirmation here: the share sheet is its own feedback, and the
+        // text would linger for a while after the player switches apps.
+        return;
+      } catch (err) {
+        // AbortError means the player closed the sheet on purpose - don't nag.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        // Anything else (no permission, unsupported target) falls back below.
+      }
+    }
+
+    // Desktop and browsers without a file share sheet: download the card, then
+    // copy the text so the whole result is still one paste away.
     const dataUrl = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = `shadow-paw-score-${score}.png`;
     a.click();
 
-    const summary = t('Jag fick {n} poäng i Shadow Paw!', { n: score });
     // The clipboard is blocked in insecure contexts and by some permission
     // settings, so a failed copy must not swallow the confirmation.
     let copied = false;
@@ -1213,7 +1344,13 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
               <span className="material-symbols-outlined text-base">home</span>
               {t('Huvudmeny')}
             </button>
-            <button onClick={handleShareCard} className="btn-ghost flex-1 py-3.5 text-xs uppercase tracking-wider">
+            <button
+              onClick={handleShareCard}
+              // Announced as the share sheet on phones and as a download
+              // elsewhere, so a screen reader says what will actually happen.
+              aria-label={typeof navigator !== 'undefined' && typeof navigator.share === 'function' ? t('Öppna Share-meny') : t('Dela')}
+              className="btn-ghost flex-1 py-3.5 text-xs uppercase tracking-wider"
+            >
               <span className="material-symbols-outlined text-base text-primary">ios_share</span>
               {t('Dela')}
             </button>
@@ -1473,9 +1610,26 @@ const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLe
     if (width <= 4) return;
     platforms.push({ x, y: groundY, width, height: 44 + Math.round(rng() * 46), color: GROUND_COLOR, isGround: true });
   };
-  const ledge = (x: number, y: number, width: number, height = 20, color = LEDGE_COLOR) => {
+  const ledge = (x: number, y: number, width: number, height = 20, solid = false, color = LEDGE_COLOR) => {
     if (width <= 4) return;
-    platforms.push({ x, y, width, height, color });
+    platforms.push({ x, y, width, height, color, solid: solid && height >= 80 });
+  };
+  /** A moving lift. `x`/`y` are the resting centre points: the sim re-derives
+      the actual rectangle from `Math.sin(phase)`, so the start frame matches
+      the placed position exactly. */
+  const moverLedge = (x: number, y: number, width: number, axis: 'h' | 'v', amp: number, speed: number) => {
+    if (width <= 8) return;
+    const phase = rng() * Math.PI * 2;
+    platforms.push({
+      x: axis === 'h' ? x + Math.sin(phase) * amp : x,
+      y: axis === 'v' ? y + Math.sin(phase) * amp : y,
+      width,
+      height: 18,
+      color: LEDGE_COLOR,
+      baseX: x,
+      baseY: y,
+      mover: { axis, amp, speed, phase },
+    });
   };
   const pit = (x: number, width: number) => {
     if (width <= 0) return;
@@ -1570,6 +1724,11 @@ const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLe
       // A real pit between staircases: the stairs are the only way across.
       const gap = 84 + Math.round(rng() * 46) + Math.min(40, pitBonus);
       pit(x - 4, gap + 8);
+      // A shuttle crossing the gap while the cat rides it: the classic moving
+      // platform. It swings well short of both ledges, so timing still matters.
+      if (rng() > 0.3) {
+        moverLedge(x - 4 + gap / 2, groundY - 46, 88, 'h', Math.min(56, gap * 0.38), 0.013 + rng() * 0.007);
+      }
       x += gap;
       if (climb && rng() > 0.6) {
         // Optional high reward ledge above the gap.
@@ -1592,6 +1751,10 @@ const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLe
       const gap = 88 + Math.round(rng() * 54) + Math.min(40, pitBonus);
       if (x + gap > end - 80) break;
       pit(x, gap);
+      // Shuttle ferrying the cat between islands over the black water.
+      if (rng() > 0.4) {
+        moverLedge(x, groundY - 42, 90, 'h', Math.min(64, gap * 0.42), 0.012 + rng() * 0.006);
+      }
       x += gap;
     }
     return finish();
@@ -1607,6 +1770,12 @@ const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLe
       const gap = 104 + Math.round(rng() * 44) + Math.min(46, pitBonus);
       if (x + gap > end - 80) break;
       pit(x, gap);
+      // Wide canyon rifts get a lift running partway down into the cleft:
+      // dropping onto it mid-fall is the second-chance save that makes the
+      // risky rim route worth trying.
+      if (rng() > 0.5) {
+        moverLedge(x, groundY - 40, 96, 'h', Math.min(70, gap * 0.4), 0.012 + rng() * 0.005);
+      }
       x += gap;
     }
     return finish();
@@ -1639,10 +1808,17 @@ const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLe
       const towerH = 110 + Math.round(rng() * 130);
       const towerW = 66 + Math.round(rng() * 26);
       // Solid pillar: the cat lands on top and hops from ledge to ledge.
-      platforms.push({ x, y: groundY - towerH, width: towerW, height: towerH, color: LEDGE_COLOR });
+      // `solid` also let it act as a wall the cat can slide down and kick off
+      // (wall jump) - the tower silhouette finally has a second use.
+      platforms.push({ x, y: groundY - towerH, width: towerW, height: towerH, color: LEDGE_COLOR, solid: true });
       ledge(x - 78, groundY - 74, 68);
       ledge(x + towerW + 12, groundY - 140, 68);
       if (rng() > 0.4) ledge(x + towerW + 96, groundY - towerH + 10, 84);
+      // A vertical lift beside the tower so the sky ledges are rideable even
+      // without using up the double jump.
+      if (rng() > 0.45) {
+        moverLedge(x + towerW + 120, groundY - 80, 62, 'v', 78, 0.011 + rng() * 0.005);
+      }
       x += 260 + Math.round(rng() * 70);
       if (rng() > 0.6) {
         const gap = 96 + Math.round(rng() * 40);
@@ -1658,7 +1834,9 @@ const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLe
     while (x < end - 200) {
       const h = 50 + Math.round(rng() * 130);
       const w = 60 + Math.round(rng() * 60);
-      ledge(x, groundY - h, w, h);
+      // Tall ruin blocks double as climbable walls: they are solid, so the cat
+      // can slide down their face and wall-jump off it like the towers can.
+      ledge(x, groundY - h, w, h, h >= 110);
       if (rng() > 0.5) ledge(x + w + 70, groundY - Math.max(70, h - 70), 74);
       x += 190 + Math.round(rng() * 90);
       if (rng() > 0.66) {
@@ -2857,9 +3035,12 @@ export const PlayingView: React.FC<{
         lastGroundedY: 0,
         color: skin.color, invincible: false, invincibleTimer: 0,
         accent: skin.accent,
+        original: skin.original,
         isBlinking: false, blinkTimer: 0,
+        wallDir: 0, wallLock: 0, wallSlideTick: 0, ridingRef: null,
         facing: 1 // 1 for right, -1 for left
       },
+      springPads: [] as any[],
       jerry: { x: levelLength - 150, y: canvas.height - 96 - 50, width: 40, height: 50, rescued: false },
       platforms: [],
       holes: [],
@@ -3293,6 +3474,62 @@ export const PlayingView: React.FC<{
       });
     }
 
+    // --- Hovering drone patrols -------------------------------------------
+    // A slow, thoroughly telegraphed air threat: it bobs on the spot until the
+    // cat gets close, then drifts in. Jump-bouncing on its cap kills it, just
+    // like a ground enemy, which keeps the rulebook tiny.
+    if (level >= 4 && levelMode !== 'Boss Battle') {
+      const droneCount = Math.min(4, 1 + Math.floor(level / 4));
+      let dronesPlaced = 0;
+      let droneAttempts = 0;
+      while (dronesPlaced < droneCount && droneAttempts < 70) {
+        droneAttempts++;
+        const bias = 1 - Math.pow(Math.random(), 1 + difficultyProfile.inLevelRamp);
+        const dsx = 560 + bias * Math.max(300, levelLength - 1500);
+        if (dsx < 500 || dsx > levelLength - 900) continue;
+        if (game.enemies.some((en: any) => Math.abs(en.x - dsx) < 250)) continue;
+        // Keep drones and shuttle platforms clear of each other's lane.
+        if (game.platforms.some((pl: any) => pl.mover && pl.mover.axis === 'h' && dsx > pl.x - 220 && dsx < pl.x + pl.width + 220)) continue;
+        const dsy = game.groundY - 150 - Math.random() * 110;
+        const anchorIdx = game.platforms.findIndex((pl: any) => dsx >= pl.x && dsx <= pl.x + pl.width);
+        game.enemies.push({
+          x: dsx, y: dsy, width: 40, height: 30,
+          velocityX: 0, type: 5,
+          platform: anchorIdx < 0 ? 0 : anchorIdx,
+          baseY: dsy,
+          hover: Math.random() * Math.PI * 2,
+          aggroTo: false,
+          shootTimer: 0,
+          chargeTimer: 0,
+        });
+        dronesPlaced++;
+      }
+    }
+
+    // --- Neon bounce pads ---------------------------------------------------
+    // Spring mattresses embedded in the ground. Stepping on one flings the cat
+    // skyward with a fresh double jump, which ties the high optional ledges
+    // back into the route. Level 1 stays untouched: it teaches only the basics.
+    const springCount = level <= 1 ? 0 : Math.min(5, 1 + Math.floor(level / 3));
+    let springAttempts = 0;
+    while (game.springPads.length < springCount && springAttempts < 90) {
+      springAttempts++;
+      const springPlats = game.platforms.filter((pl: any) =>
+        pl.isGround && !pl.bossWalkway && !pl.bossArena && pl.width >= 150 &&
+        pl.x > 420 && pl.x + pl.width < levelLength - (level % 5 === 0 ? 1500 : 620),
+      );
+      if (!springPlats.length) break;
+      const plat2 = springPlats[Math.floor(Math.random() * springPlats.length)];
+      const sxx = plat2.x + 24 + Math.random() * Math.max(20, plat2.width - 92);
+      if (game.springPads.some((s: any) => Math.abs(s.x - sxx) < 480)) continue;
+      if (game.hazards.some((h: any) => Math.abs(h.x - sxx) < 160)) continue;
+      if (game.enemies.some((en: any) => Math.abs(en.x - sxx) < 170)) continue;
+      if (game.pickups.some((pk: any) => Math.abs(pk.x - sxx) < 160)) continue;
+      // A pad needs empty sky above it: never inside a platform body.
+      if (game.platforms.some((pl: any) => !pl.isGround && pl.y < plat2.y && pl.y + pl.height > plat2.y && sxx > pl.x - 40 && sxx < pl.x + pl.width + 40)) continue;
+      game.springPads.push({ x: sxx, y: plat2.y - 12, width: 46, height: 12, press: 0 });
+    }
+
     // Garantera att nivå 1 är väldigt lätt
     if (level === 1) {
       game.holes = [];
@@ -3350,6 +3587,35 @@ export const PlayingView: React.FC<{
 
   const triggerJump = () => {
     requestJump();
+  };
+
+  /**
+   * A jump executed while touching a solid pillar: launch diagonally away from
+   * the wall, restore the double jump and lock the task to avoid stick cycling.
+   */
+  const doWallJump = (game: any) => {
+    const p = game.player;
+    if (!p.wallDir) return false;
+    p.velocityY = -p.jumpPower * 0.98;
+    p.velocityX = -p.wallDir * p.speed * 1.4;
+    p.facing = -p.wallDir;
+    p.isJumping = true;
+    p.hasDoubleJumped = false;
+    p.wallLock = 10;
+    p.stretch = 1.38;
+    game.zoomPunch = Math.max(game.zoomPunch, 5);
+    for (let i = 0; i < 9; i++) {
+      game.particles.push({
+        x: p.wallDir === 1 ? p.x + p.width : p.x,
+        y: p.y + p.height * (0.2 + Math.random() * 0.7),
+        vx: -p.wallDir * (1.2 + Math.random() * 2.4),
+        vy: (Math.random() - 0.4) * 2,
+        life: 20, color: 'rgba(190, 225, 255, 0.9)', size: Math.random() * 3 + 1.2,
+      });
+    }
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(10);
+    AudioEngine.playWallJump();
+    return true;
   };
 
   // Touch players hold the fire button during a boss fight; a single shot per
@@ -3460,6 +3726,7 @@ export const PlayingView: React.FC<{
         noHit: !!game.noHit,
         runLevel: game.runLevel || 1,
         coins: game.coinsThisLevel || 0,
+        deaths: game.deathsInRun || 0,
       }));
     } catch {
       // Private browsing can reject writes; losing the summary must not stop
@@ -3534,6 +3801,9 @@ export const PlayingView: React.FC<{
     }
 
     game.lives--;
+    // Counted here so every damage source (enemy, hazard, boss) reaches the
+    // results screen; only fall-in-pit and the Speed Run clock used to.
+    game.deathsInRun = (game.deathsInRun || 0) + 1;
     p.invincible = true;
     // Long enough to actually escape contact: the old 1.6s window could expire
     // while the cat was still pressed against the same enemy or wall.
@@ -3674,14 +3944,31 @@ export const PlayingView: React.FC<{
     }
     const playerCenterX = game.player.x + game.player.width / 2;
     const playerCenterY = game.player.y + game.player.height / 2;
+    const facing: 1 | -1 = game.player.facing === -1 ? -1 : 1;
+    // Fire from the blaster the cat holds in its mouth, not the middle of its
+    // body, so the bullet leaves exactly where the muzzle flash is drawn. The
+    // sprite is centred on the hitbox and stands on its bottom edge, so the
+    // muzzle world point is (centre + dx, feet - dyUp).
+    const feetY = game.player.y + game.player.height;
+    const moving = Math.abs(game.player.velocityX || 0) > 0.35 && !!game.player.onGround && !(game.player.dashing > 0);
+    const muzzle = getCatMuzzle({
+      facing,
+      moving,
+      air: !game.player.onGround,
+      dashing: (game.player.dashing || 0) > 0,
+      t: Date.now() / 1000,
+      w: 66,
+    });
+    const originX = muzzle ? playerCenterX + muzzle.dx : playerCenterX;
+    const originY = muzzle ? feetY - muzzle.dyUp : playerCenterY;
 
     let dx, dy;
     if (targetX !== null && targetY !== null) {
-      dx = targetX - (playerCenterX - game.scrollX);
-      dy = targetY - playerCenterY;
+      dx = targetX - (originX - game.scrollX);
+      dy = targetY - originY;
     } else {
       // Shoot framåt i den riktning katten tittar om ingen koordinat ges
-      dx = game.player.facing * 500;
+      dx = facing * 500;
       dy = 0;
     }
 
@@ -3694,8 +3981,8 @@ export const PlayingView: React.FC<{
     spread.forEach((offset) => {
       const angle = Math.atan2(dy, dx) + offset;
       game.bullets.push({
-        x: playerCenterX,
-        y: playerCenterY,
+        x: originX,
+        y: originY,
         vx: Math.cos(angle) * bulletSpeed,
         vy: Math.sin(angle) * bulletSpeed,
         radius: rapid ? 7 : 6,
@@ -3739,6 +4026,23 @@ export const PlayingView: React.FC<{
     (window as any).__SP = game;
     (window as any).__SP_NEXT = startNextLevel;
 
+    // Convert a pointer position in the CSS-scaled canvas into the stage
+    // coordinate system the game draws in. The base camera zoom sits between
+    // those two spaces, so aiming at a drone must invert it or every shot
+    // lands high and to the left.
+    const screenToStage = (clientX: number, clientY: number) => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = (clientX - rect.left) * (canvas.width / rect.width);
+      const sy = (clientY - rect.top) * (canvas.height / rect.height);
+      const g = gameRef.current || game;
+      const focusX = g.player.x - g.scrollX + g.player.width / 2;
+      const focusY = g.player.y + g.player.height / 2;
+      return {
+        x: (sx - focusX) / STAGE_ZOOM + focusX,
+        y: (sy - focusY) / STAGE_ZOOM + focusY,
+      };
+    };
+
     // Keys the game owns: prevent the browser from scrolling the page or
     // moving focus while the player is running and jumping.
     const GAME_KEYS = new Set([16, 17, 27, 32, 37, 38, 39, 65, 68, 70, 74, 75, 80, 87, 88, 90]);
@@ -3755,34 +4059,30 @@ export const PlayingView: React.FC<{
     };
     const handleMouseDown = (e: MouseEvent) => {
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
-      const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
-      fireBullet(mouseX, mouseY);
+      const p = screenToStage(e.clientX, e.clientY);
+      fireBullet(p.x, p.y);
     };
 
     // Touch controls for mobile
     const handleTouchStart = (e: TouchEvent) => {
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
       const touch = e.touches[0];
-      const touchX = (touch.clientX - rect.left) * (canvas.width / rect.width);
-      const touchY = (touch.clientY - rect.top) * (canvas.height / rect.height);
+      const p = screenToStage(touch.clientX, touch.clientY);
 
       // Jump on left half of screen
-      if (touchX < canvas.width / 2) {
+      if (p.x < canvas.width / 2) {
         triggerJump();
       } else {
         // Shoot on right half of screen
-        fireBullet(touchX, touchY);
+        fireBullet(p.x, p.y);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
       const touch = e.touches[0];
-      const touchX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+      const p = screenToStage(touch.clientX, touch.clientY);
+      const touchX = p.x;
 
       // Move left/right based on touch position
       if (touchX < canvas.width * 0.3) {
@@ -3837,13 +4137,31 @@ export const PlayingView: React.FC<{
       // countdown).
       game.levelSeconds = (game.levelSeconds || 0) + 1 / 60;
       // Accessibility: motion-sensitive players can turn off shake and punch-in.
-      if (progress.settings.reduceMotion) {
+      if (isReducedMotion(progress.settings.reduceMotion)) {
         game.screenShake = 0;
         game.zoomPunch = 0;
       }
 
       // Player Logic
       const p = game.player;
+      // Moving platforms step first, so a rider is carried along before physics
+      // recomputes its velocity. The lift re-derives its rectangle from the
+      // sine phase, which is why `baseX`/`baseY` store the resting centre.
+      game.platforms.forEach((plat: any) => {
+        if (!plat.mover) return;
+        const mv = plat.mover;
+        mv.phase += mv.speed;
+        const nextX = mv.axis === 'h' ? plat.baseX + Math.sin(mv.phase) * mv.amp : plat.baseX;
+        const nextY = mv.axis === 'v' ? plat.baseY + Math.sin(mv.phase) * mv.amp : plat.baseY;
+        plat.moverDx = nextX - plat.x;
+        plat.moverDy = nextY - plat.y;
+        plat.x = nextX;
+        plat.y = nextY;
+      });
+      if (p.ridingRef && p.ridingRef.mover) {
+        p.x += p.ridingRef.moverDx || 0;
+        p.y += p.ridingRef.moverDy || 0;
+      }
       const gravityMod = game.miniEvent.active && game.miniEvent.type === 'LOW_GRAVITY' ? 0.65 : 1;
       p.velocityY += game.gravity * gravityMod;
       if (p.velocityY > 18) p.velocityY = 18;
@@ -3895,6 +4213,10 @@ export const PlayingView: React.FC<{
       if (p.jumpBuffer > 0 && (p.onGround || p.coyoteTimer > 0)) {
         tryPerformJump(game);
         p.jumpBuffer = 0;
+      } else if (p.jumpBuffer > 0 && p.wallDir && p.wallLock <= 0) {
+        // Touching a wall beats the air jump: the kick off is stronger and it
+        // refreshes the double jump, so chimney-climbs stay possible.
+        if (doWallJump(game)) p.jumpBuffer = 0;
       } else if (p.jumpBuffer > 0 && p.isJumping && p.canDoubleJump && !p.hasDoubleJumped && p.velocityY > -2) {
         tryPerformJump(game);
         p.jumpBuffer = 0;
@@ -3903,10 +4225,62 @@ export const PlayingView: React.FC<{
       p.x += p.velocityX;
       p.y += p.velocityY;
 
+      // Solid pillars act as true walls: the cat is pushed back out to the side
+      // it came from. That also gives wall contact, which the slide + wall kick
+      // use below. Top landing is untouched - classic one-way platform rules.
+      p.wallDir = 0;
+      if (p.wallLock > 0) p.wallLock--;
+      for (const wallPlat of game.platforms) {
+        if (!wallPlat.solid) continue;
+        const verticalBody = p.y + p.height > wallPlat.y + 10 && p.y < wallPlat.y + wallPlat.height - 6;
+        if (!verticalBody) continue;
+        const wl = wallPlat.x;
+        const wr = wallPlat.x + wallPlat.width;
+        if (p.x + p.width > wl && p.x < wr) {
+          const prevRight = p.x + p.width - p.velocityX;
+          const prevLeft = p.x - p.velocityX;
+          if (prevRight <= wl + 2) {
+            p.x = wl - p.width - 0.6;
+            if (p.velocityX > 0) p.velocityX = 0;
+            p.wallDir = 1;
+          } else if (prevLeft >= wr - 2) {
+            p.x = wr + 0.6;
+            if (p.velocityX < 0) p.velocityX = 0;
+            p.wallDir = -1;
+          } else {
+            // Fully inside the body (spawned or teleported): push out sideways.
+            if (p.x + p.width / 2 < (wl + wr) / 2) { p.x = wl - p.width - 0.6; p.wallDir = 1; }
+            else { p.x = wr + 0.6; p.wallDir = -1; }
+          }
+          break;
+        }
+      }
+      // Wall slide: clawing down the face drags the fall to a crawl, dust rubs
+      // off the wall, and the buffered jump becomes an away-facing wall kick.
+      if (p.wallDir && !p.onGround && p.velocityY > 1.2 && p.wallLock <= 0) {
+        p.velocityY = Math.min(p.velocityY, 2.4);
+        p.facing = p.wallDir;
+        p.wallSlideTick = ((p.wallSlideTick || 0) + 1) % 6;
+        if (p.wallSlideTick === 0) {
+          game.particles.push({
+            x: p.wallDir === 1 ? p.x + p.width + 2 : p.x - 2,
+            y: p.y + p.height * 0.35 + Math.random() * p.height * 0.5,
+            vx: -p.wallDir * (0.6 + Math.random()),
+            vy: 1 + Math.random(),
+            life: 16, color: 'rgba(200, 225, 255, 0.8)', size: Math.random() * 2 + 1,
+          });
+        }
+      }
+
       // Squash and stretch relax back toward neutral.
       p.squash += (1 - p.squash) * 0.12;
       p.stretch += (1 - p.stretch) * 0.12;
-      if (Math.abs(p.velocityX) > 0.4) p.runCycle += 0.28;
+      // The gait is driven by distance travelled, not by a fixed clock: a slow
+      // walk takes short steps and a sprint takes long ones, and the paws stop
+      // paddling the moment the cat stops.
+      if (Math.abs(p.velocityX) > 0.25) {
+        p.runCycle += 0.11 + Math.abs(p.velocityX) * 0.036;
+      }
 
       // Slow motion and zoom punch decay.
       if (game.slowMo > 0) game.slowMo--;
@@ -4136,6 +4510,7 @@ export const PlayingView: React.FC<{
             game.player.onGround = true;
             game.player.coyoteTimer = 7;
             game.player.lastGroundedY = game.player.y;
+            game.player.ridingRef = plat;
             if (!wasOnGround) {
               // Landing squash + dust so the moment reads clearly.
               game.player.squash = 1 + Math.min(0.5, impactSpeed * 0.04);
@@ -4160,6 +4535,43 @@ export const PlayingView: React.FC<{
       if (!game.player.onGround && wasOnGround) {
         game.player.coyoteTimer = 7;
       }
+      // A walked-off edge stops being a moving platform the cat is glued to.
+      if (!game.player.onGround) game.player.ridingRef = null;
+
+      // Neon bounce pads: stepping or landing on the disc flings the cat
+      // skyward with a fresh double jump, so the optional sky ledges blend
+      // back into the route without needing an upgrade.
+      for (const s of game.springPads) {
+        if (game.player.velocityY < 0) break;
+        const feetY = game.player.y + game.player.height;
+        if (feetY >= s.y - 6 && feetY <= s.y + 26 &&
+          game.player.x + game.player.width > s.x + 6 && game.player.x < s.x + s.width - 6) {
+          game.player.y = s.y - game.player.height;
+          game.player.velocityY = -game.player.jumpPower * 1.55;
+          game.player.isJumping = true;
+          game.player.hasDoubleJumped = false;
+          game.player.onGround = false;
+          game.player.ridingRef = null;
+          game.player.coyoteTimer = 0;
+          game.player.squash = 0.62;
+          game.player.stretch = 1.5;
+          s.press = 12;
+          game.zoomPunch = Math.max(game.zoomPunch, 7);
+          for (let i = 0; i < 12; i++) {
+            game.particles.push({
+              x: s.x + s.width / 2 + (Math.random() - 0.5) * s.width,
+              y: s.y,
+              vx: (Math.random() - 0.5) * 6,
+              vy: -Math.random() * 4 - 1,
+              life: 24, color: '#7ee7ff', size: Math.random() * 3.5 + 1.5,
+            });
+          }
+          AudioEngine.playBounce();
+          if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(16);
+          break;
+        }
+      }
+      game.springPads.forEach((s: any) => { if (s.press > 0) s.press--; });
 
       // Enemies - with better null safety
       game.enemies.forEach(e => {
@@ -4197,6 +4609,22 @@ export const PlayingView: React.FC<{
             }
             if (e.x < p.x) { e.x = p.x; e.velocityX = Math.abs(e.velocityX); }
             if (e.x + e.width > p.x + p.width) { e.x = p.x + p.width - e.width; e.velocityX = -Math.abs(e.velocityX); }
+          } else if (e.type === 5) {
+            // Hover drone: bobs on station, then drifts toward the cat once it
+            // is close - slow enough that the route stays readable, and it
+            // respects the same one-hit-bounce top rule as every ground enemy.
+            e.hover += 0.055;
+            e.y += ((e.baseY + Math.sin(e.hover) * 12) - e.y) * 0.12;
+            const droneDx = (game.player.x + game.player.width / 2) - (e.x + e.width / 2);
+            if (Math.abs(droneDx) < 460) e.aggroTo = true;
+            if (e.aggroTo) {
+              e.x += Math.sign(droneDx) * (0.9 + (game.level || 1) * 0.03);
+            } else {
+              e.x += Math.sin(e.hover * 0.4) * 0.35;
+            }
+            // Never crash-land into the floor or drift through the ceiling.
+            if (e.y > game.groundY - 78 - e.height) e.y = game.groundY - 78 - e.height;
+            if (e.y < 70) e.y = 70;
           } else if (e.type === 3) {
             // Turret: immobile, but it aims a slow orb at the cat on a timer.
             e.shootTimer = (e.shootTimer ?? 90) - 1;
@@ -4388,6 +4816,7 @@ export const PlayingView: React.FC<{
       // into the same hole and drain several lives in a row.
       if (game.player.y > canvas.height + 100) {
         game.lives--;
+        game.deathsInRun = (game.deathsInRun || 0) + 1;
         game.noHit = false;
         game.slowMo = 10;
         game.screenShake = 12;
@@ -4552,6 +4981,16 @@ export const PlayingView: React.FC<{
         ctx.scale(zoom, zoom);
         ctx.translate(-focusX, -focusY);
       }
+      // A permanent 1.14x camera crop. The old stage showed so much sky that
+      // the cat read as a speck; this keeps the action large and cinematic
+      // without changing the 1280x720 simulation or the HUD layout.
+      {
+        const focusX = game.player.x - game.scrollX + game.player.width / 2;
+        const focusY = game.player.y + game.player.height / 2;
+        ctx.translate(focusX, focusY);
+        ctx.scale(STAGE_ZOOM, STAGE_ZOOM);
+        ctx.translate(-focusX, -focusY);
+      }
 
       // Background - neon sky driven by time of day and season
       const now = Date.now();
@@ -4571,11 +5010,14 @@ export const PlayingView: React.FC<{
       // cheerful blue so sunny levels never read as a drab orange wash.
       // Daylight keeps a saturated blue at the top and only softens near the
       // horizon; a uniformly pale sky was what made the sunny stages look foggy.
+      // Daylight is a saturated "neon noon", not a pale screensaver blue. A
+      // deeper top and a coloured horizon keep the skyline readable instead of
+      // dissolving into white haze.
       const seasonPalette: Record<string, { night: [string, string, string]; day: [string, string, string] }> = {
-        winter: { night: ['#0b1a3a', '#1b2f5c', '#3a6ea5'], day: ['#57b2e0', '#9ed6f2', '#dceffb'] },
-        spring: { night: ['#0d2b2a', '#134a3f', '#2b8a6f'], day: ['#2ba3e6', '#74c9f2', '#bce7fb'] },
-        summer: { night: ['#0a1f3d', '#123a6b', '#2f7fb8'], day: ['#1596dd', '#5fc2f0', '#b2e2fa'] },
-        autumn: { night: ['#2b1430', '#4a1f3d', '#8a3b4a'], day: ['#2fa5e0', '#79cbf1', '#bfe9fb'] },
+        winter: { night: ['#0b1a3a', '#1b2f5c', '#3a6ea5'], day: ['#0d2a4a', '#3a7fa8', '#a8d8ea'] },
+        spring: { night: ['#0d2b2a', '#134a3f', '#2b8a6f'], day: ['#0a2a3a', '#1f7a70', '#7fd8c8'] },
+        summer: { night: ['#0a1f3d', '#123a6b', '#2f7fb8'], day: ['#061a33', '#0f4f70', '#5fb8d0'] },
+        autumn: { night: ['#2b1430', '#4a1f3d', '#8a3b4a'], day: ['#1a2a3a', '#3a6a88', '#a8c8d8'] },
       };
       // Golden hour is warmer than a season tint, so it is shared by every
       // chapter: deep indigo overhead falling into magenta and hot orange.
@@ -4600,11 +5042,11 @@ export const PlayingView: React.FC<{
       const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, canvas.height * (isGolden ? 0.75 : 0.55));
       // Daylight glow stays near-white; a warm amber wash desaturated the blue sky.
       sunGlow.addColorStop(0, isNight
-        ? 'rgba(180,200,255,0.22)'
-        : isGolden ? 'rgba(255,193,122,0.55)' : 'rgba(255,252,232,0.32)');
+        ? 'rgba(180,200,255,0.16)'
+        : isGolden ? 'rgba(255,193,122,0.42)' : 'rgba(255,252,232,0.18)');
       sunGlow.addColorStop(0.45, isNight
-        ? 'rgba(120,150,220,0.07)'
-        : isGolden ? 'rgba(255,140,80,0.18)' : 'rgba(255,246,214,0.12)');
+        ? 'rgba(120,150,220,0.05)'
+        : isGolden ? 'rgba(255,140,80,0.12)' : 'rgba(255,246,214,0.06)');
       sunGlow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = sunGlow;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -4613,7 +5055,7 @@ export const PlayingView: React.FC<{
       // light source gives the whole scene direction and depth.
       ctx.save();
       ctx.globalAlpha = isNight ? 0.9 : 0.85;
-      const sunRadius = isGolden ? 58 : 46;
+      const sunRadius = isGolden ? 72 : isNight ? 58 : 64;
       const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
       disc.addColorStop(0, isNight ? '#eef4ff' : isGolden ? '#fff3d2' : '#fffbe8');
       disc.addColorStop(0.55, isNight ? 'rgba(214,228,255,0.95)' : isGolden ? 'rgba(255,196,120,0.95)' : 'rgba(255,246,206,0.95)');
@@ -4622,6 +5064,15 @@ export const PlayingView: React.FC<{
       ctx.beginPath();
       ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
       ctx.fill();
+      // A thin atmospheric ring makes the disc read as a distant celestial
+      // body instead of a glowing dot.
+      ctx.globalAlpha = isNight ? 0.24 : 0.18;
+      ctx.strokeStyle = isNight ? '#bcd8ff' : isGolden ? '#ffd9a0' : '#fff6d8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, sunRadius * 1.28, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = isNight ? 0.9 : 0.85;
       if (isGolden) {
         // A hot rim and a low, mirrored shimmer on the horizon sell the hour.
         ctx.strokeStyle = 'rgba(255,232,180,0.55)';
@@ -4705,16 +5156,38 @@ export const PlayingView: React.FC<{
       // Smaller, softer clouds: at full scale three of them filled the whole
       // sky and made the level look like a screensaver.
       const clouds = [
-        { scale: 0.5, y: 176, alpha: isNight ? 0.6 : 0.9 },
-        { scale: 0.34, y: 104, alpha: isNight ? 0.44 : 0.72 },
-        { scale: 0.58, y: 148, alpha: isNight ? 0.64 : 0.92 },
-        { scale: 0.4, y: 112, alpha: isNight ? 0.48 : 0.78 },
+        { scale: 0.36, y: 176, alpha: isNight ? 0.5 : 0.72, speed: 8 },
+        { scale: 0.24, y: 104, alpha: isNight ? 0.36 : 0.55, speed: 5 },
+        { scale: 0.42, y: 148, alpha: isNight ? 0.54 : 0.76, speed: 10 },
+        { scale: 0.3, y: 112, alpha: isNight ? 0.4 : 0.6, speed: 6 },
+        { scale: 0.19, y: 66, alpha: isNight ? 0.26 : 0.42, speed: 3.5 },
+        { scale: 0.27, y: 238, alpha: isNight ? 0.32 : 0.5, speed: 7.5 },
       ];
       clouds.forEach((cloud, i) => {
-        const drift = timeSec * 8;
-        const x = ((((i * canvas.width / 3 + drift) % cloudSpan) + cloudSpan) % cloudSpan) - 110;
+        const drift = timeSec * cloud.speed;
+        const x = ((((i * canvas.width / 2.6 + drift) % cloudSpan) + cloudSpan) % cloudSpan) - 110;
         drawCloud(ctx, x, cloud.y, cloud.scale, cloud.alpha, i, isNight, isGolden);
       });
+
+      // A loose flock in the daylight sky. Tiny silhouettes give the eye a
+      // sense of scale and make the sky feel inhabited rather than empty.
+      if (!isNight && !isReducedMotion(progress.settings.reduceMotion)) {
+        ctx.save();
+        ctx.strokeStyle = isGolden ? 'rgba(90,50,70,0.55)' : 'rgba(20,60,80,0.5)';
+        ctx.lineWidth = 1.6;
+        ctx.lineCap = 'round';
+        const flockX = ((timeSec * 12) % (canvas.width + 240)) - 120;
+        for (let i = 0; i < 6; i++) {
+          const bx = flockX + i * 18 + Math.sin(i * 1.7) * 8;
+          const by = 118 + Math.sin(i * 0.9) * 10 + (i % 2) * 8;
+          const wing = 4 + (i % 3);
+          ctx.beginPath();
+          ctx.moveTo(bx - wing, by);
+          ctx.quadraticCurveTo(bx, by - wing * 0.8, bx + wing, by);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
 
       // Distant land: two soft ridgelines with a very slow parallax drift. They
       // give the horizon depth and stop the sky from meeting the ground in one
@@ -4747,77 +5220,26 @@ export const PlayingView: React.FC<{
       // silhouette into the same pastel grey. A thin, tinted band keeps the
       // depth readable while still softening the horizon.
       haze.addColorStop(1, isNight
-        ? 'rgba(30,60,95,0.5)'
-        : isGolden ? 'rgba(255,168,120,0.24)' : 'rgba(232,248,255,0.16)');
+        ? 'rgba(30,60,95,0.34)'
+        : isGolden ? 'rgba(255,168,120,0.16)' : 'rgba(200,238,255,0.08)');
       ctx.globalAlpha = 1;
       ctx.fillStyle = haze;
       ctx.fillRect(0, ridgeBase - 230, canvas.width, 210);
       ctx.restore();
 
-      // Depth layer: a far skyline (urban chapters) or treeline (green chapters)
-      // with slow parallax. It sits behind the hand-placed scenery and gives the
-      // horizon several planes instead of one painted backdrop.
-      {
-        const themeName = String(game.theme || '');
-        const urbanTheme = /park|suburban|city|downtown|industrial|construction|rooftop|power|highway|space|data|warzone|quantum|harbor|sewer|nuclear|laboratory|underground|roof/.test(themeName);
-        const drawDepthLayer = (parallax: number, baseH: number, alpha: number, seedBase: number, color: string) => {
-          const span = 240;
-          const offset = ((game.scrollX * parallax) % span + span) % span;
-          ctx.globalAlpha = alpha;
-          ctx.fillStyle = color;
-          for (let i = -1; i < Math.ceil(canvas.width / span) + 2; i++) {
-            const r1 = skyHash(seedBase + i * 3.7);
-            const r2 = skyHash(seedBase + i * 7.1 + 5);
-            const w = 46 + r1 * 84;
-            const h = baseH * (0.3 + r2 * 0.55);
-            const x = i * span - offset + r1 * 60;
-            const y = ridgeBase - h;
-            if (urbanTheme) {
-              ctx.fillRect(x, y, w, h);
-              if (r2 > 0.65) ctx.fillRect(x + w * 0.2, y - 14, 3, 14);
-              if (r1 > 0.55) ctx.fillRect(x + w * 0.55, y - 22, w * 0.25, 22);
-              // Lit windows in cyan / magenta / amber plus a neon roof edge, so the
-              // far skyline reads as a living neon city rather than flat blocks.
-              const neon = ['#5af0ff', '#ff4fd8', '#ffd166'][Math.floor(skyHash(seedBase + i * 11.3) * 3)];
-              const lit = isNight ? 0.9 : isGolden ? 0.7 : 0.4;
-              ctx.save();
-              ctx.fillStyle = neon;
-              ctx.globalAlpha = Math.min(1, alpha * lit * 1.4);
-              for (let wy = y + 8; wy < ridgeBase - 10; wy += 13) {
-                for (let wx = x + 6; wx < x + w - 8; wx += 11) {
-                  if (skyHash(wx * 0.37 + wy * 1.91 + seedBase) > 0.42) ctx.fillRect(wx, wy, 4, 5);
-                }
-              }
-              ctx.globalAlpha = Math.min(1, alpha * lit * 1.6);
-              ctx.fillRect(x, y, w, 2);
-              ctx.restore();
-              ctx.globalAlpha = alpha;
-              ctx.fillStyle = color;
-            } else {
-              // Distant pines stand ON the horizon: a trunk plus three stacked
-              // canopy tiers. The old single triangle floated above the ridge
-              // and read as a pale ghost shape behind the playfield.
-              const baseY = ridgeBase - 2;
-              const treeH = h * 0.86;
-              ctx.fillRect(x + w * 0.5 - Math.max(1.5, w * 0.03), baseY - treeH * 0.22, Math.max(3, w * 0.06), treeH * 0.22);
-              for (let tier = 0; tier < 3; tier++) {
-                const tierTop = baseY - treeH * (1 - tier * 0.3);
-                const tierBase = baseY - treeH * (0.38 - tier * 0.13);
-                const tierW = w * (0.52 + tier * 0.26);
-                ctx.beginPath();
-                ctx.moveTo(x + w * 0.5, tierTop);
-                ctx.lineTo(x + w * 0.5 + tierW / 2, tierBase);
-                ctx.lineTo(x + w * 0.5 - tierW / 2, tierBase);
-                ctx.closePath();
-                ctx.fill();
-              }
-            }
-          }
-          ctx.globalAlpha = 1;
-        };
-        drawDepthLayer(0.025, 260, isNight ? 0.62 : isGolden ? 0.34 : 0.3, 11, isNight ? '#071224' : isGolden ? '#4b2a52' : '#548ba3');
-        drawDepthLayer(0.065, 190, isNight ? 0.72 : isGolden ? 0.42 : 0.38, 47, isNight ? '#0a1830' : isGolden ? '#3a2044' : '#43768d');
-      }
+      // Deep skyline: three procedural planes with setbacks, antennas, lit
+      // windows and neon roof edges. This is the layer that turns a flat blue
+      // gradient into a city with real depth.
+      drawNeonSkyline(ctx, {
+        width: canvas.width,
+        height: canvas.height,
+        ridgeBase,
+        scrollX: game.scrollX,
+        isNight,
+        isGolden,
+        theme: String(game.theme || ''),
+        time: timeSec,
+      });
 
       // Scenery has two layers. Buildings are the fixed skyline and stay in
       // screen space; animals - on the ground and in the sky - are anchored in
@@ -4831,10 +5253,13 @@ export const PlayingView: React.FC<{
       // bright sky it disappeared into the haze, so it gets more body during
       // daylight while staying soft at night.
       const sceneryLayers: Array<[number, any[]]> = [
-        [isNight ? 0.6 : isGolden ? 0.7 : 0.72, game.backgroundElements.filter((el: any) => el.kind === 'building')],
+        // Buildings are a midground, not the subject: a little darker and
+        // quieter than before so the procedural skyline behind them stays
+        // readable and the cat remains the brightest thing on screen.
+        [isNight ? 0.46 : isGolden ? 0.42 : 0.38, game.backgroundElements.filter((el: any) => el.kind === 'building')],
         // Animals sit between the skyline and the level, so they are muted
         // compared to the cat: vivid scenery stole attention from the player.
-        [isNight ? 0.62 : isGolden ? 0.62 : 0.66, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
+        [isNight ? 0.5 : isGolden ? 0.48 : 0.5, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
       ];
       sceneryLayers.forEach(([layerAlpha, elements]) => {
         ctx.globalAlpha = layerAlpha;
@@ -5953,6 +6378,39 @@ export const PlayingView: React.FC<{
           ctx.stroke();
         }
       }
+
+      // Glowing mineral veins in the exposed soil. They give the cross-section
+      // a reason to exist and echo the neon palette above ground.
+      const veinStep = 116;
+      const veinStart = Math.floor(game.scrollX / veinStep) - 1;
+      const veinEnd = veinStart + Math.ceil(canvas.width / veinStep) + 2;
+      for (let i = veinStart; i < veinEnd; i++) {
+        const h = skyHashNoise(i * 5.7);
+        if (h < 0.4) continue;
+        const sx = i * veinStep - game.scrollX + h * 40;
+        const sy = game.groundY + 24 + h * Math.max(8, soilH - 46);
+        const tint = h > 0.72 ? '#4ce8ff' : h > 0.55 ? '#ff4fd8' : '#2bee79';
+        ctx.save();
+        ctx.globalAlpha = 0.28 + h * 0.22;
+        ctx.strokeStyle = tint;
+        ctx.fillStyle = tint;
+        ctx.shadowColor = tint;
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + 7);
+        ctx.lineTo(sx + 4, sy - 5);
+        ctx.lineTo(sx + 9, sy + 2);
+        ctx.lineTo(sx + 5, sy + 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(sx + 9, sy + 4);
+        ctx.lineTo(sx + 14, sy - 2);
+        ctx.lineTo(sx + 15, sy + 8);
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.restore();
 
       // Platforms - dark neon slabs with a glowing top edge
@@ -5973,14 +6431,14 @@ export const PlayingView: React.FC<{
               gGrad.addColorStop(0.3, '#667788');  // Frusen jord
               gGrad.addColorStop(1, '#445566');    // Djup jord
             } else if (game.timeOfDay === 'NIGHT') {
-              gGrad.addColorStop(0, '#2a4a32');   // Nattgräs
-              gGrad.addColorStop(0.2, '#1a3422'); // Mörk yta
-              gGrad.addColorStop(1, '#0a1a10');   // Djup jord
+              gGrad.addColorStop(0, '#1e3a2a');   // Nattgräs
+              gGrad.addColorStop(0.2, '#12281a'); // Mörk yta
+              gGrad.addColorStop(1, '#070f0a');   // Djup jord
             } else {
-              gGrad.addColorStop(0, '#6cc44f');   // Ljust gräs
-              gGrad.addColorStop(0.16, '#3a7a2c'); // Gräs
-              gGrad.addColorStop(0.34, '#4a3418'); // Jord
-              gGrad.addColorStop(1, '#241608');   // Djup jord
+              gGrad.addColorStop(0, '#4a9e42');   // Ljust gräs
+              gGrad.addColorStop(0.16, '#26602a'); // Gräs
+              gGrad.addColorStop(0.34, '#2e2010'); // Jord
+              gGrad.addColorStop(1, '#120a05');   // Djup jord
             }
             ctx.fillStyle = gGrad;
           } else if (!plat.bossArena) {
@@ -6029,19 +6487,59 @@ export const PlayingView: React.FC<{
             ctx.lineCap = 'round';
             const start = Math.max(platX + 3, -4);
             const end = Math.min(platX + plat.width - 2, canvas.width + 4);
-            for (let gx = start; gx < end; gx += 8) {
-              const blade = 3 + (Math.sin(gx * 0.63) + 1) * 3.6;
+            for (let gx = start; gx < end; gx += 6) {
+              const blade = 3.4 + (Math.sin(gx * 0.63) + 1) * 4.4;
               ctx.beginPath();
               ctx.moveTo(gx, platY + 1);
-              ctx.quadraticCurveTo(gx + Math.sin(gx * 0.31) * 2, platY - blade * 0.6, gx + Math.sin(gx * 0.31) * 3, platY - blade);
+              ctx.quadraticCurveTo(gx + Math.sin(gx * 0.31) * 2.4, platY - blade * 0.6, gx + Math.sin(gx * 0.31) * 3.4, platY - blade);
+              ctx.stroke();
+              // A second, darker blade behind the first adds density without
+              // turning the fringe into a solid comb.
+              if (gx % 12 === 0) {
+                ctx.strokeStyle = night ? 'rgba(40,96,64,0.65)' : 'rgba(70,150,60,0.7)';
+                ctx.beginPath();
+                ctx.moveTo(gx + 2, platY + 1);
+                ctx.quadraticCurveTo(gx + 5, platY - blade * 0.4, gx + 6, platY - blade * 0.8);
+                ctx.stroke();
+                ctx.strokeStyle = game.weather === 'SNÖIGT'
+                  ? 'rgba(235,248,255,0.9)'
+                  : night ? 'rgba(74,160,108,0.85)' : 'rgba(120,214,96,0.9)';
+              }
+            }
+            // Tiny wildflowers every few metres. They are deterministic, so
+            // they never pop in and out as the camera moves.
+            for (let gx = start + 18; gx < end; gx += 54) {
+              const h = skyHashNoise(gx * 0.21);
+              if (h < 0.45) continue;
+              const fy = platY - 5 - h * 4;
+              ctx.fillStyle = h > 0.8 ? '#ffd166' : h > 0.62 ? '#ff9ecb' : '#9df3ff';
+              ctx.beginPath();
+              ctx.arc(gx, fy, 1.5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.strokeStyle = night ? 'rgba(74,160,108,0.8)' : 'rgba(90,180,80,0.8)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(gx, fy + 1.5);
+              ctx.lineTo(gx, platY);
               ctx.stroke();
             }
           }
 
-          // Kant-highlight (top edge)
+          // Kant-highlight (top edge). Ground gets a soft mint rim, floating
+          // ledges a brighter neon line, so the two read as different materials.
           if (!plat.isGround || plat.y < game.groundY) {
-            ctx.fillStyle = plat.bossArena ? '#ffd18a' : plat.bossWalkway ? '#53e5a0' : 'rgba(255,255,255,0.15)';
+            const rimColor = plat.bossArena
+              ? '#ffd18a'
+              : plat.bossWalkway
+                ? '#53e5a0'
+                : game.weather === 'SNÖIGT'
+                  ? '#eaf8ff'
+                  : game.timeOfDay === 'NIGHT'
+                    ? '#5fe6a0'
+                    : '#a8ff9a';
+            ctx.fillStyle = rimColor;
             ctx.fillRect(platX, platY, plat.width, plat.bossArena || plat.bossWalkway ? 4 : 2);
+            drawGroundRim(ctx, platX, platY, plat.width, rimColor, plat.isGround ? 0.35 : 0.65);
           }
           if (plat.bossWalkway) {
             ctx.save();
@@ -6063,11 +6561,30 @@ export const PlayingView: React.FC<{
           // Floating platforms get a neon underglow and a soft drop shadow, so
           // they read as hovering rather than pasted onto the sky.
           if (!plat.isGround) {
+            if (plat.mover) {
+              // A faint dashed rail spanning the shuttle's travel: the player
+              // reads the lane before the platform ever reaches the edge.
+              ctx.save();
+              ctx.strokeStyle = 'rgba(126, 220, 255, 0.28)';
+              ctx.lineWidth = 2;
+              ctx.setLineDash([6, 9]);
+              ctx.beginPath();
+              if (plat.mover.axis === 'h') {
+                ctx.moveTo(plat.baseX - plat.mover.amp - game.scrollX, plat.baseY + plat.height / 2);
+                ctx.lineTo(plat.baseX + plat.mover.amp - game.scrollX, plat.baseY + plat.height / 2);
+              } else {
+                const railCx = plat.baseX - game.scrollX + plat.width / 2;
+                ctx.moveTo(railCx, plat.baseY - plat.mover.amp);
+                ctx.lineTo(railCx, plat.baseY + plat.mover.amp + plat.height);
+              }
+              ctx.stroke();
+              ctx.restore();
+            }
             ctx.save();
             ctx.globalAlpha = 0.5;
-            ctx.shadowColor = plat.bossArena ? '#ff9f43' : '#2bee79';
+            ctx.shadowColor = plat.bossArena ? '#ff9f43' : plat.mover ? '#4ce8ff' : '#2bee79';
             ctx.shadowBlur = 18;
-            ctx.fillStyle = plat.bossArena ? 'rgba(255,159,67,0.5)' : 'rgba(43,238,121,0.45)';
+            ctx.fillStyle = plat.bossArena ? 'rgba(255,159,67,0.5)' : plat.mover ? 'rgba(76, 232, 255, 0.5)' : 'rgba(43,238,121,0.45)';
             ctx.beginPath();
             ctx.roundRect(platX + 10, platY + plat.height - 1, Math.max(0, plat.width - 20), 2.5, 2);
             ctx.fill();
@@ -6174,6 +6691,52 @@ export const PlayingView: React.FC<{
         }
       });
 
+      // Neon bounce pads: an embedded spring mattress with a cyan disc that
+      // compresses for a few frames after use, plus a bobbing chevron hint.
+      game.springPads.forEach((s: any) => {
+        const sx = s.x - game.scrollX;
+        if (sx + s.width < -24 || sx > canvas.width + 24) return;
+        const gotPress = s.press > 0 ? Math.max(0.3, s.press / 12) : 1;
+        const discTop = s.y + 12 - 12 * gotPress;
+        // Base plate sunk into the ground
+        ctx.fillStyle = '#1d2a3d';
+        ctx.beginPath();
+        ctx.roundRect(sx - 5, s.y + 6, s.width + 10, 9, 3);
+        ctx.fill();
+        // Coil
+        ctx.strokeStyle = '#5a7ea6';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx + 8, s.y + 9);
+        ctx.lineTo(sx + s.width - 8, s.y + 6);
+        ctx.lineTo(sx + 8, s.y + 3);
+        ctx.stroke();
+        // Disc (squashes down when pressed)
+        ctx.save();
+        ctx.shadowColor = '#2bd8ee';
+        ctx.shadowBlur = 10;
+        const padGrad = ctx.createLinearGradient(sx, discTop, sx, s.y + 12);
+        padGrad.addColorStop(0, gotPress < 1 ? '#ffffff' : '#7ff3ff');
+        padGrad.addColorStop(1, '#1a8fa3');
+        ctx.fillStyle = padGrad;
+        ctx.beginPath();
+        ctx.roundRect(sx, discTop, s.width, 10, 5);
+        ctx.fill();
+        ctx.restore();
+        // Upward chevron hint: pulses until the pad is used.
+        if (s.press === 0) {
+          const hint = Math.sin(Date.now() / 260) * 2;
+          ctx.strokeStyle = 'rgba(126, 231, 255, 0.7)';
+          ctx.lineWidth = 2;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(sx + s.width / 2 - 7, s.y - 15 - hint * 0.5);
+          ctx.lineTo(sx + s.width / 2, s.y - 21 - hint);
+          ctx.lineTo(sx + s.width / 2 + 7, s.y - 15 - hint * 0.5);
+          ctx.stroke();
+        }
+      });
+
       // Bullets - a glowing core with a short motion trail. Rapid-fire shots are
       // icy cyan so the temporary weapon state is obvious at a glance.
       ctx.globalCompositeOperation = 'lighter';
@@ -6203,11 +6766,13 @@ export const PlayingView: React.FC<{
         const ew = e.width;
         const eh = e.height;
 
-        // Ground shadow for enemies
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-        ctx.beginPath();
-        ctx.ellipse(ex + ew / 2, ey + eh + 2, ew * 0.45, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
+        // Ground shadow for enemies (hovering drones get their own beacon glow)
+        if (e.type !== 5) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+          ctx.beginPath();
+          ctx.ellipse(ex + ew / 2, ey + eh + 2, ew * 0.45, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
         if (e.type === 0) { // Dog enemy - Bulldog with spiked collar and jowls
           const dogFacing = e.velocityX >= 0 ? 1 : -1;
@@ -6485,6 +7050,83 @@ export const PlayingView: React.FC<{
           ctx.beginPath();
           ctx.arc(cx, cy, winding ? 9.5 : 8, 0, Math.PI * 2);
           ctx.stroke();
+        } else if (e.type === 5) {
+          // Hover drone: patrolling neon sentinel with spinning rotors and a
+          // scanning eye that turns red and tracks the cat once it is close.
+          const dcx = ex + ew / 2;
+          const dcy = ey + eh / 2;
+          const rotorT = Date.now() / 30;
+          const aggro = !!e.aggroTo;
+          // Hover beacon on the ground far below reads the threat's lane.
+          ctx.save();
+          ctx.globalAlpha = 0.35 + 0.25 * Math.sin(Date.now() / 240);
+          ctx.shadowColor = aggro ? '#ff4060' : '#7ee7ff';
+          ctx.shadowBlur = 12;
+          ctx.fillStyle = aggro ? 'rgba(255, 64, 96, 0.5)' : 'rgba(126, 231, 255, 0.4)';
+          ctx.beginPath();
+          ctx.ellipse(dcx, game.groundY - 4, 13, 3.2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          // Rotor blur lines above the pod
+          ctx.strokeStyle = 'rgba(190, 220, 255, 0.75)';
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          [-1, 1].forEach((side) => {
+            const rotorX = dcx + side * 14;
+            ctx.beginPath();
+            ctx.moveTo(rotorX - 9 + Math.sin(rotorT) * 1.5, ey + 3);
+            ctx.lineTo(rotorX + 9, ey + 3);
+            ctx.stroke();
+            ctx.fillStyle = '#3a4a66';
+            ctx.beginPath();
+            ctx.arc(rotorX, ey + 5, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          // Armoured pod
+          const droneGrad = ctx.createLinearGradient(dcx, ey, dcx, ey + eh);
+          droneGrad.addColorStop(0, '#8ea4c6');
+          droneGrad.addColorStop(0.55, '#42526e');
+          droneGrad.addColorStop(1, '#1d2738');
+          ctx.fillStyle = droneGrad;
+          ctx.beginPath();
+          ctx.ellipse(dcx, dcy, ew * 0.42, eh * 0.42, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          // Panel seam
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(dcx - ew * 0.24, dcy + 4);
+          ctx.lineTo(dcx + ew * 0.24, dcy + 4);
+          ctx.stroke();
+          // Scanning eye tracks the cat
+          ctx.save();
+          ctx.shadowColor = aggro ? '#ff4060' : '#7ee7ff';
+          ctx.shadowBlur = aggro ? 16 : 8;
+          ctx.fillStyle = aggro ? '#ff4060' : '#7ee7ff';
+          ctx.beginPath();
+          ctx.arc(dcx, dcy - 1, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#0b1020';
+          const pupilOffset = Math.sin(rotorT / 40) * 1.4;
+          ctx.beginPath();
+          ctx.arc(dcx + pupilOffset, dcy - 1, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          // Tail antenna with a running light
+          ctx.strokeStyle = '#93a7c4';
+          ctx.lineWidth = 2;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(dcx - ew * 0.4, dcy + 2);
+          ctx.lineTo(dcx - ew * 0.62, dcy + 7);
+          ctx.stroke();
+          ctx.fillStyle = aggro ? '#ff4060' : '#2bee79';
+          ctx.beginPath();
+          ctx.arc(dcx - ew * 0.62, dcy + 7, 2.2, 0, Math.PI * 2);
+          ctx.fill();
         } else {
           // Charger beetle: wide, low, with a glowing horn and splayed legs.
           const charging = (e.chargeTimer ?? 0) > 0;
@@ -7485,29 +8127,72 @@ export const PlayingView: React.FC<{
       });
 
       // Contact shadow keeps the cat glued to the platform instead of floating.
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.26)';
-      ctx.beginPath();
-      ctx.ellipse(px + pw / 2, py + ph + 3, pw * 0.46, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      // Only drawn while the cat is actually on the ground/grass - it must not
+      // linger under the cat mid-jump.
+      if (game.player.onGround) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.26)';
+        ctx.beginPath();
+        // Sized to the atlas cat's drawn width (66 px) rather than the hitbox.
+        ctx.ellipse(px + pw / 2, py + ph + 3, 33, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
 
       ctx.save();
-      if (game.player.invincible) ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 50);
-      // Same cat as the start-screen demo (components/catSprite.ts). Scaled per
-      // axis from the hitbox so squash and stretch still show.
-      drawCatSprite(ctx, px + pw / 2, py + ph, {
+      if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Date.now() / 55);
+      // One hero cat everywhere: the same articulated drawing as the menu,
+      // shop and attract loop. The origin is the paw line (py + ph), so the cat
+      // stands on the exact top of the platform rather than hovering above it.
+      const catFacing: 1 | -1 = game.player.facing === -1 ? -1 : 1;
+      const catGrounded = !!game.player.onGround;
+      const catSpeed = game.player.velocityX || 0;
+      // The baked 3D atlas is the hero now; the vector cat stays as the
+      // fallback for the frames before the PNG has decoded.
+      const atlasDrawn = drawCatAtlasSprite(ctx, px + pw / 2, py + ph, {
         color: game.player.color,
         accent: game.player.accent,
+        original: game.player.original,
         t: Date.now() / 1000,
-        running: Math.abs(game.player.velocityX) > 0.4 && game.player.onGround,
-        jumping: !game.player.onGround,
+        running: Math.abs(catSpeed) > 0.4 && catGrounded,
+        jumping: !catGrounded,
+        grounded: catGrounded,
+        speed: catSpeed,
+        vy: game.player.velocityY || 0,
+        phase: game.player.runCycle || 0,
+        dashing: (game.player.dashing || 0) > 0,
         // The blaster flashes for a few frames after each shot.
         shooting: (game.shootCooldown || 0) > 6,
-        facing: game.player.facing === -1 ? -1 : 1,
-        sx: pw / 40,
-        sy: ph / 56,
+        facing: catFacing,
+        // The tight art is roughly 1.56:1; 66 px wide puts it at about the
+        // same presence as the old 50 x 56 vector cat inside the 50 x 70
+        // hitbox.
+        w: 66,
       });
+      if (!atlasDrawn) {
+        drawCatSprite(ctx, px + pw / 2, py + ph, {
+          color: game.player.color,
+          accent: game.player.accent,
+          t: Date.now() / 1000,
+          running: Math.abs(catSpeed) > 0.4 && catGrounded,
+          jumping: !catGrounded,
+          grounded: catGrounded,
+          speed: catSpeed,
+          vy: game.player.velocityY || 0,
+          phase: game.player.runCycle || 0,
+          dashing: (game.player.dashing || 0) > 0,
+          blinking: !!game.player.isBlinking,
+          // The blaster flashes for a few frames after each shot.
+          shooting: (game.shootCooldown || 0) > 6,
+          facing: catFacing,
+          // The drawing is about 46 x 46 at scale 1 (paws at y=0, ear tips at
+          // y=-46). Scale it into the hitbox without stretching the anatomy:
+          // ~50 px wide and ~56 px tall, feet on the platform. The hitbox
+          // stays 50 x 70 so the collision code is unchanged.
+          sx: pw / 46,
+          sy: ph / 62,
+        });
+      }
       ctx.restore();
 
       // Buff auras. Shield is a solid bubble; magnet and rapid fire get a thin
@@ -7641,7 +8326,7 @@ export const PlayingView: React.FC<{
 
       // Lightning is drawn in world space, underneath the rain, so the drops
       // read as falling in front of a strike behind them.
-      drawLightning(ctx, game, progress.settings.reduceMotion);
+      drawLightning(ctx, game, isReducedMotion(progress.settings.reduceMotion));
 
       // Weather Particles Rendering
       if (game.weather === 'REGNIGT' || game.weather === 'STORMIGT') {
@@ -7681,7 +8366,7 @@ export const PlayingView: React.FC<{
         const f = game.lightning.flash;
         // A day sky is already near white, so it takes a much lighter wash to
         // read as a flash instead of fogging the whole frame.
-        const wash = (game.timeOfDay === 'DAY' ? 0.13 : 0.26) * (progress.settings.reduceMotion ? 0.4 : 1);
+        const wash = (game.timeOfDay === 'DAY' ? 0.13 : 0.26) * (isReducedMotion(progress.settings.reduceMotion) ? 0.4 : 1);
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = `rgba(150, 185, 255, ${0.12 * f})`;
@@ -7694,7 +8379,7 @@ export const PlayingView: React.FC<{
       // Fireflies on night stages. They drift against the camera at half speed,
       // so they read as a near layer without ever hinting at a collision. Their
       // soft pulse gives the empty night sky something alive to watch.
-      if (isNight && !progress.settings.reduceMotion) {
+      if (isNight && !isReducedMotion(progress.settings.reduceMotion)) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         const span = canvas.width + 240;
@@ -7717,6 +8402,27 @@ export const PlayingView: React.FC<{
       }
 
       ctx.restore();
+
+      // Bright-pass bloom first, then the filmic grade on top. The bloom is
+      // what makes the neon windows, fish and muzzle flashes feel like light
+      // rather than paint.
+      if (!isReducedMotion(progress.settings.reduceMotion)) {
+        drawBloom(ctx, canvas, isNight ? 0.22 : 0.14);
+      }
+
+      // Screen-space finish: volumetric light, ground mist, vignette and a
+      // whisper of grain. It sits under the HTML HUD, so the interface keeps
+      // its crisp contrast while the world gains a filmic grade.
+      drawAtmosphere(ctx, {
+        width: canvas.width,
+        height: canvas.height,
+        time: timeSec,
+        isNight,
+        isGolden,
+        weather: game.weather,
+        reducedMotion: isReducedMotion(progress.settings.reduceMotion),
+        groundY: game.groundY,
+      });
 
       // Throttle React state updates to prevent infinite loops and improve performance
       if (Date.now() - game.lastStatUpdate > 250) {
@@ -7982,10 +8688,14 @@ export const PlayingView: React.FC<{
                   <span className="material-symbols-outlined text-[15px] text-primary">set_meal</span>
                   <span className="tabular text-xs font-black">
                     {Math.min(stats.collectedCount, stats.fishGoal)}/{stats.fishGoal}
-                    {stats.collectedCount >= stats.fishGoal && stats.collectedCount < stats.totalFish && (
-                      <span className="ml-1 text-[9px] text-primary/70">{stats.collectedCount}/{stats.totalFish}</span>
-                    )}
                   </span>
+                  {/* Past the quota every extra fish is optional, so it gets its
+                      own faint counter instead of being glued to the quota. */}
+                  {stats.collectedCount > stats.fishGoal && stats.collectedCount <= stats.totalFish && (
+                    <span className="tabular ml-1 text-[9px] font-black text-primary/70">
+                      +{stats.collectedCount - stats.fishGoal}
+                    </span>
+                  )}
                 </div>
                 <div className={`hud-chip border-yellow-500/25 bg-yellow-500/10 ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`}>
                   <span className="material-symbols-outlined text-[15px] text-yellow-400">monetization_on</span>
@@ -8424,7 +9134,9 @@ export const PlayingView: React.FC<{
               onTouchEnd={(e) => { e.preventDefault(); stopTouchShoot(); }}
               onTouchCancel={stopTouchShoot}
             >
-              <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">bolt</span>
+              {/* The dash button uses a bolt too; the shot needs its own mark
+                  or the two thumbs buttons look identical. */}
+              <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">my_location</span>
               <span className="text-[10px] font-black uppercase tracking-widest opacity-90">{t('SKJUT')}</span>
             </button>
           </div>
@@ -8503,9 +9215,9 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="mt-5 grid gap-4 lg:grid-cols-[300px_1fr]">
         {/* Studio: the cat as it will look in the game */}
         <aside className="overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/80 backdrop-blur-md lg:sticky lg:top-20 lg:self-start">
-          <div className="relative flex h-44 items-end justify-center bg-[radial-gradient(ellipse_at_50%_100%,rgba(43,238,121,0.16),transparent_70%)] lg:h-56">
+          <div className="relative flex h-56 items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_50%_100%,rgba(43,238,121,0.16),transparent_70%)] lg:h-64">
             <div className="absolute inset-x-6 bottom-6 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
-            <CatPreview color={shown.color} accent={shown.accent} width={260} height={176} scale={2.6} animated className="relative max-w-full" />
+            <CatPreview color={shown.color} accent={shown.accent} original={shown.original} width={220} height={150} scale={2.2} animated className="max-w-full" />
           </div>
           <div className="space-y-3 p-4">
             <div className="flex items-center justify-between gap-2">
@@ -8611,8 +9323,8 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         preview === id ? 'border-primary/60 bg-primary/[0.08]' : 'border-white/10 bg-white/[0.03] hover:border-white/25'
                       }`}
                     >
-                      <div className={`flex justify-center rounded-xl bg-black/25 pt-2 ${unlocked ? '' : 'opacity-40 grayscale'}`}>
-                        <CatPreview color={skin.color} accent={skin.accent} width={92} height={74} scale={1.1} />
+                      <div className={`flex justify-center rounded-xl bg-black/25 pt-2 ${unlocked ? '' : 'opacity-60 grayscale'}`}>
+                        <CatPreview color={skin.color} accent={skin.accent} original={skin.original} width={92} height={74} scale={1.1} />
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-1 px-1">
                         <p className={`truncate text-xs font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{skin.name}</p>

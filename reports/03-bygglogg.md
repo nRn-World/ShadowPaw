@@ -1,5 +1,11 @@
 # 03 - Bygglogg (Agent 3), varv 6
 
+> **VARNING (verifierad 2026-10-27):** punkterna B-031...B-036 nedan finns **inte** i koden på `main`.
+> Sökning i `components/Views.tsx` gav noll träffar för `ISGLID`, `SKUGGJAKT`, `shadowChain`,
+> `haptic(`, `shadowPassesInLevel`, `FAST_DASH` och `levelSummary?.lives`. Arbetet gjordes på den
+> separata grenen `agents/build-20261020-r6b` (som finns kvar på `origin`), men den har aldrig
+> mergats in i `main`. Läs inte den här loggen som en beskrivning av nuvarande spel.
+
 Branch: `agents/build-20261020-r6b`. Alla sex punkter byggda, en commit per punkt, `npm run build` OK efter varje. Ingen push/fetch gjord.
 
 ## B-031: SHADOWFLOW/FAST_DASH och liv i perkOffer

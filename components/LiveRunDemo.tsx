@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useProgress } from '../context/ProgressContext';
+import { isReducedMotion, useProgress } from '../context/ProgressContext';
 import { drawCatSprite } from './catSprite';
+import { drawCatAtlasSprite, catAtlasReady, whenCatAtlasReady } from './catAtlasSprite';
 import { useT, tr } from '../i18n';
 
 /**
@@ -209,6 +210,32 @@ const drawGround = (ctx: CanvasRenderingContext2D, scene: Scene, t: number) => {
     ctx.quadraticCurveTo(bx + 1.5, GROUND_Y - blade * 0.6, bx + 3, GROUND_Y - blade);
     ctx.stroke();
   }
+
+  // Near-layer props below the turf line. They scroll at exactly the crate
+  // speed (92 px over the 21 s loop = one full 480 px wrap), so the ground
+  // reads as moving under the cat and the dead brown band gets some life.
+  const nearSpan = H - GROUND_Y - 8;
+  for (let i = 0; i < 7; i++) {
+    const x = (((i * 79 - 18) - t * 92) % W + W) % W;
+    const y = GROUND_Y + 10 + ((i * 53) % nearSpan);
+    if (i % 3 === 0) {
+      // A pebble catching the scene light.
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 6 + (i % 2) * 3, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // A darker grass tuft silhouetted in the soil.
+      ctx.strokeStyle = scene.kind === 'park' ? 'rgba(30,64,26,0.55)' : 'rgba(10,26,18,0.6)';
+      ctx.lineWidth = 1.4;
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.moveTo(x + k * 3 - 3, y);
+        ctx.quadraticCurveTo(x + k * 3 - 1, y - 4, x + k * 3 + (k === 1 ? 2 : -2), y - 7);
+        ctx.stroke();
+      }
+    }
+  }
 };
 
 const drawCrate = (ctx: CanvasRenderingContext2D, x: number, scene: Scene) => {
@@ -291,21 +318,58 @@ const drawDrone = (ctx: CanvasRenderingContext2D, x: number, y: number, alive: b
   ctx.restore();
 };
 
-const drawCat = (ctx: CanvasRenderingContext2D, x: number, y: number, t: number, jumping: boolean, shooting: boolean) => {
+const drawCat = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  t: number,
+  jumping: boolean,
+  shooting: boolean,
+  lift: number,
+  /** Signed jump offset: negative while rising, positive while falling. */
+  jumpDelta = 0,
+) => {
   ctx.save();
-  ctx.translate(x, y);
-  // Feet stay planted at the origin, so scaling up does not lift the cat off
-  // the ground; it just makes the sprite readable at hero-card size.
-  ctx.scale(1.25, 1.25);
-  // A one-pixel body bob is what sells "running" at this size.
-  if (!jumping) ctx.translate(0, -Math.abs(Math.sin(t * 14)) * 1.8);
-  // Shadow shrinks while airborne.
-  const lift = Math.max(0, -y);
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  // Ground shadow first: it stays on the floor and shrinks while the cat is in
+  // the air, which sells the jump more than any amount of extra fur detail.
+  const shadowScale = 1 - Math.min(0.55, lift / 150);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.beginPath();
-  ctx.ellipse(2, -lift - 1, 17 - Math.min(8, lift * 0.1), 3.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(x + 2, GROUND_Y + 2, 19 * shadowScale, 3.6 * shadowScale, 0, 0, Math.PI * 2);
   ctx.fill();
-  drawCatSprite(ctx, 0, 0, { color: '#4169E1', t, running: true, jumping, shooting });
+  ctx.translate(x, y);
+  // The baked atlas is the hero now; the vector cat stands in for the first
+  // frames until the PNG has decoded. 52 px wide matches the old 1.35x vector
+  // drawing's footprint on the 480x270 card.
+  const atlasDrawn = drawCatAtlasSprite(ctx, 0, 0, {
+    color: '#4169E1',
+    accent: '#2bee79',
+    t,
+    running: !jumping,
+    jumping,
+    grounded: !jumping,
+    speed: jumping ? 0 : 5.4,
+    // Nose down while rising, nose up while falling.
+    vy: jumping ? (jumpDelta < 0 ? -6 : 6) : 0,
+    phase: t * 13,
+    shooting,
+    w: 52,
+  });
+  if (!atlasDrawn) {
+    ctx.scale(1.35, 1.35);
+    drawCatSprite(ctx, 0, 0, {
+      color: '#4169E1',
+      accent: '#2bee79',
+      t,
+      running: !jumping,
+      jumping,
+      grounded: !jumping,
+      speed: jumping ? 0 : 5.4,
+      vy: 0,
+      phase: t * 13,
+      shooting,
+    });
+  }
   ctx.restore();
 };
 
@@ -403,7 +467,7 @@ const LiveRunDemo: React.FC = () => {
   const { progress } = useProgress();
   const t = useT();
   const lang = progress.settings.language;
-  const reduceMotion = progress.settings.reduceMotion;
+  const motionSetting = progress.settings.reduceMotion;
   const [supported, setSupported] = useState(true);
 
   useEffect(() => {
@@ -479,7 +543,7 @@ const LiveRunDemo: React.FC = () => {
 
       const jump = jumpOffset(t);
       const shooting = SHOTS.some((s) => t >= s && t < s + 0.12);
-      drawCat(ctx, CAT_X, GROUND_Y + jump, t, jump !== 0, shooting);
+      drawCat(ctx, CAT_X, GROUND_Y + jump, t, jump !== 0, shooting, Math.abs(jump), jump);
 
       // Rain, only in the night stretch.
       if (scene.kind === 'rain') {
@@ -545,8 +609,21 @@ const LiveRunDemo: React.FC = () => {
       ctx.textAlign = 'left';
     };
 
+    // 'system' is a truthy string - it must be resolved through isReducedMotion
+    // or every default player gets the still frame and a frozen demo.
+    const reduceMotion = isReducedMotion(motionSetting);
+
     if (reduceMotion) {
-      render(3.0);
+      // Paint one frame as soon as the atlas can be shown, so the still hero is
+      // the 3D cat rather than the vector fallback from the very first tick.
+      let painted = false;
+      const paint = () => {
+        if (disposed || painted) return;
+        painted = true;
+        render(3.0);
+      };
+      whenCatAtlasReady().then(paint);
+      if (catAtlasReady()) paint(); // already decoded: skip the vector frame
       return;
     }
 
@@ -575,7 +652,7 @@ const LiveRunDemo: React.FC = () => {
       document.removeEventListener('visibilitychange', onVisibility);
       observer?.disconnect();
     };
-  }, [reduceMotion, lang]);
+  }, [motionSetting, lang]);
 
   if (!supported) return null;
 

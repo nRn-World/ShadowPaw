@@ -164,6 +164,18 @@ export class AudioEngine {
         this.tone({ type: 'square', from: 1500 + shift, to: 2100 + shift, duration: 0.09, gain: 0.05, delay: 0.05 });
     }
 
+    /** Springy boing for a neon bounce pad flinging the cat skyward. */
+    public static playBounce() {
+        this.tone({ type: 'sine', from: 150, to: 1050, duration: 0.22, gain: 0.26 });
+        this.noise({ duration: 0.08, gain: 0.05, from: 2600, to: 900 });
+    }
+
+    /** Quick scritch when the cat kicks off a wall: claw + air split. */
+    public static playWallJump() {
+        this.tone({ type: 'triangle', from: 420, to: 880, duration: 0.12, gain: 0.16 });
+        this.noise({ duration: 0.1, gain: 0.08, from: 3800, to: 900, type: 'bandpass', q: 1.8 });
+    }
+
     /** Soft "whoosh" for grazing a hazard without dying. */
     public static playNearMiss() {
         this.tone({ type: 'sine', from: 1400, to: 700, duration: 0.14, gain: 0.08 });

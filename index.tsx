@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { registerServiceWorker } from './services/registerServiceWorker';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -15,3 +16,6 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// The worker only caches; it never blocks the first render.
+registerServiceWorker();
