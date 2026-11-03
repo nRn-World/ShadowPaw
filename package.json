@@ -8,6 +8,7 @@
     "build": "vite build && node -e \"require('fs').cpSync('Sounds', 'dist/Sounds', {recursive: true})\"",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "verify:round": "node scripts/verify-round.mjs",
     "bake:cat-atlas": "node scripts/bake-cat-atlas.mjs",
     "check:i18n": "node scripts/check-i18n.mjs"
   },

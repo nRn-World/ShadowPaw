@@ -11,11 +11,17 @@ import { getJerryTaunt } from '../services/taunts';
 import { useProgress, isReducedMotion } from '../context/ProgressContext';
 import { useInstall } from '../context/InstallContext';
 import { AudioEngine } from '../services/AudioEngine';
+import { getNeonShift, msUntilNextShift, formatShiftCountdown } from '../services/neonShift';
 import { useT, tr, renderRich, LanguageButtons } from '../i18n';
 
 /** Permanent cinematic crop for the stage. Kept as one constant so the render
     transform and the pointer→world conversion can never drift apart. */
 const STAGE_ZOOM = 1.14;
+
+/** Skuggkraft: grazing an enemy without touching it charges this meter. A full
+    meter turns the next dash into a screen-clearing Skuggsprängning. */
+const SHADOW_CHARGE_MAX = 5;
+const SHADOW_COLOR = '#b07cff';
 
 const getSeasonTheme = () => {
   const month = new Date().getMonth();
@@ -54,6 +60,7 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   frost: { name: 'Frost', color: '#62b7ff', accent: '#9df3ff', unlockHint: 'Samla 300 fiskar' },
   shadow: { name: 'Shadow', color: '#4f5d75', accent: '#b07cff', unlockHint: 'Nå combo x10' },
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#5ffbd0', unlockHint: 'Besegra 3 bossar' },
+  nebula: { name: 'Nebula', color: '#8b5cf6', accent: '#e0b3ff', unlockHint: 'Utlös en skuggsprängning' },
 };
 
 const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: string }> = [
@@ -64,6 +71,7 @@ const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: strin
   { id: 'boss_3', label: 'Bossjägare', desc: 'Besegra 3 bossar', icon: 'swords' },
   { id: 'streak_20', label: 'Streak x20', desc: 'Håll en streak på 20', icon: 'bolt' },
   { id: 'close_call', label: 'Nära ögat', desc: '5 nästan-träffar i en runda', icon: 'warning' },
+  { id: 'shadow_burst', label: 'Skuggsprängare', desc: 'Utlös en skuggsprängning', icon: 'blur_on' },
 ];
 
 
@@ -228,6 +236,56 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level
   );
 };
 
+/** Live card for the rotating ten-minute bonus. It owns its own one-second
+    tick, so the heavy hero demo on the start screen does not re-render every
+    second just because the countdown changed. */
+const NeonShiftCard: React.FC = () => {
+  const t = useT();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const shift = getNeonShift(now);
+  const nextShiftIn = formatShiftCountdown(msUntilNextShift(now));
+
+  return (
+    <div
+      className="mt-3 overflow-hidden rounded-2xl border bg-white/[0.035] p-3.5 backdrop-blur-md"
+      style={{ borderColor: `${shift.color}55`, boxShadow: `0 0 30px -22px ${shift.color}` }}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className="material-symbols-outlined flex size-10 shrink-0 items-center justify-center rounded-xl text-xl"
+          style={{ color: shift.color, background: `${shift.color}18` }}
+        >
+          {shift.icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/45">
+              {t('Neon-skift · ny bonus var 10:e minut')}
+            </p>
+            <span
+              className="tabular rounded-md border border-white/10 bg-black/25 px-1.5 py-0.5 text-[9px] font-black text-white/60"
+              title={t('Nytt skift om {t}', { t: nextShiftIn })}
+            >
+              {nextShiftIn}
+            </span>
+          </div>
+          <p className="mt-1 font-display text-base font-black uppercase tracking-tight" style={{ color: shift.color }}>
+            {t(shift.label)}
+          </p>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-white/50">{t(shift.desc)}</p>
+          <p className="mt-1 text-[8px] font-black uppercase tracking-[0.16em] text-white/30">
+            {t('Alltid en bonus – aldrig en nackdel.')}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const StartMenuView: React.FC<{
   onNavigate: (v: AppView) => void;
   onStart: (level?: number) => void;
@@ -312,6 +370,9 @@ export const StartMenuView: React.FC<{
           <div className="hidden lg:block">
             <HeroShowcase storyLevel={storyLevel} rank={progress.level} onStart={onStart} />
           </div>
+
+          {/* Neon-skift: a fresh, always-positive bonus every ten minutes. */}
+          <NeonShiftCard />
 
           {/* Career stats */}
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -811,6 +872,31 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
       </div>
 
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Skuggkraft & Neon-skift')}</h2>
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        <div className="rounded-2xl border border-violet-400/25 bg-violet-400/[0.06] p-4 backdrop-blur-md">
+          <span className="material-symbols-outlined text-2xl text-[#b07cff]">blur_on</span>
+          <h3 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Skuggkraft')}</h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
+            {renderRich(t('Smyg förbi fiender utan att röra dem så fylls mätaren. Är den full blir nästa dash en <b>skuggsprängning</b> som rensar skärmen, ger poäng och skadar bossen. En smäll halverar laddningen.'), 'text-[#d8b4fe]')}
+          </p>
+          <div className="mt-3 flex items-center gap-1.5" aria-hidden="true">
+            {Array.from({ length: SHADOW_CHARGE_MAX }).map((_, i) => (
+              <span
+                key={i}
+                className="h-1.5 flex-1 rounded-full"
+                style={{ background: i === SHADOW_CHARGE_MAX - 1 ? SHADOW_COLOR : `${SHADOW_COLOR}77` }}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-primary/25 bg-primary/[0.05] p-4 backdrop-blur-md">
+          <span className="material-symbols-outlined text-2xl text-primary">auto_awesome</span>
+          <h3 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Neon-skift')}</h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/55">{t('Var tionde minut byter neonstaden skepnad. Skiftet är alltid en bonus – snabbare dash, lättare hopp, extra mynt eller något annat – och det fryses när nivån startar så att banan aldrig ändras mitt i ett hopp.')}</p>
+        </div>
+      </div>
+
       <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Power-ups')}</h2>
       <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
         {powerups.map((p) => (
@@ -1125,6 +1211,12 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     }
     if ((lastRun.nearMisses || 0) >= 5) {
       unlockAchievement('close_call');
+    }
+    // The new mechanic pays out a permanent reward the very first time it is
+    // used, so the player has a reason to try it straight away.
+    if ((lastRun.shadowBursts || 0) >= 1) {
+      unlockAchievement('shadow_burst');
+      unlockSkin('nebula');
     }
     if ((lastRun.bestStreak || 0) >= 20) {
       unlockAchievement('streak_20');
@@ -2836,7 +2928,7 @@ export const PlayingView: React.FC<{
     };
   }, []);
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0, shadowCharge: 0, shadowChargeMax: SHADOW_CHARGE_MAX, comboWindow: 150, shiftName: '', shiftIcon: 'auto_awesome', shiftColor: SHADOW_COLOR, shiftDesc: '' });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -2849,6 +2941,10 @@ export const PlayingView: React.FC<{
 
   const gameRef = useRef<any>(null);
   const gameContainerRef = useRef<HTMLDivElement>(null);
+  // Shadow charge and burst count live outside the per-level game object so
+  // they survive startNextLevel(), but reset when a new run remounts the view.
+  const shadowChargeRef = useRef(0);
+  const shadowBurstsRef = useRef(0);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
   useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume, isPaused);
@@ -2910,6 +3006,10 @@ export const PlayingView: React.FC<{
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
+    // Freeze the ten-minute bonus for this whole level: a stage must never
+    // change its rules in the middle of a jump.
+    const activeShift = getNeonShift();
+
     const difficultyProfile = getDifficultyProfile(level, progress.level);
     const levelLength = difficultyProfile.levelLength;
     const baseLevelDesign = getLevelDesign(level);
@@ -2940,15 +3040,24 @@ export const PlayingView: React.FC<{
       level: level,
       score: existingScore,
       lives: existingLives,
+      // Frozen Neon Shift. Every effect is positive; nothing is removed when
+      // the ten-minute window rolls over.
+      shift: activeShift,
+      dashCooldownMax: activeShift.dashCooldown,
+      comboWindow: activeShift.comboWindow,
+      // Skuggkraft is carried between levels by the refs above.
+      shadowCharge: shadowChargeRef.current,
+      shadowChargeMax: SHADOW_CHARGE_MAX,
+      burstWaves: [] as any[],
       // Boss stages get enough extra shots for missed shots and a few regular
       // enemies, without turning their required fight into an ammo soft-lock.
-      ammo: progress.upgrades.maxAmmo + (progress.level >= 10 ? 2 : 0) + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0),
+      ammo: progress.upgrades.maxAmmo + (progress.level >= 10 ? 2 : 0) + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0) + activeShift.ammoBonus,
       levelLength: levelLength,
       weather: weather,
       intensity: intensity,
       timeOfDay: timeOfDay,
       scrollX: 0,
-      gravity: levelMode === 'Speed Run' ? 0.75 : 0.8,
+      gravity: (levelMode === 'Speed Run' ? 0.75 : 0.8) * activeShift.gravityScale,
       friction: 0.85,
       levelType: levelMode,
       levelTimer: levelMode === 'Speed Run' ? speedRunTimer : 0,
@@ -3637,8 +3746,12 @@ export const PlayingView: React.FC<{
     if (!game || !game.running) return;
     const p = game.player;
     if (p.dashCooldown > 0 || p.dashing > 0) return;
+    // A full shadow meter turns this dash into a screen-clearing burst.
+    if ((game.shadowCharge || 0) >= (game.shadowChargeMax || SHADOW_CHARGE_MAX)) {
+      triggerShadowBurst(game);
+    }
     p.dashing = 12;
-    p.dashCooldown = 45;
+    p.dashCooldown = game.dashCooldownMax || 45;
     p.dashDir = p.facing;
     p.velocityX = p.dashDir * p.speed * 3.4;
     p.velocityY = Math.min(p.velocityY, -1.5);
@@ -3661,7 +3774,7 @@ export const PlayingView: React.FC<{
 
   const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
     game.combo = (game.combo || 0) + 1;
-    game.comboTimer = 150;
+    game.comboTimer = game.comboWindow || 150;
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
 
     // Streak feeds the visible multiplier, so fast play is worth much more.
@@ -3707,6 +3820,131 @@ export const PlayingView: React.FC<{
     if (game.toasts.length > 3) game.toasts.shift();
   };
 
+  /** Near misses feed the shadow meter. The ref keeps the charge when the next
+      level rebuilds the game object. */
+  const addShadowCharge = (game: any, amount: number) => {
+    const max = game.shadowChargeMax || SHADOW_CHARGE_MAX;
+    const before = game.shadowCharge || 0;
+    const next = Math.min(max, before + amount);
+    game.shadowCharge = next;
+    shadowChargeRef.current = next;
+    if (before < max && next >= max) {
+      pushToast(game, tr('SKUGGSPRÄNGNING REDO · DASHA!'), SHADOW_COLOR);
+      AudioEngine.playPowerup();
+      if (progress.settings.haptics && navigator.vibrate) navigator.vibrate([10, 35, 10]);
+    }
+  };
+
+  /** Shared boss-defeat payoff, so a bullet and a shadow burst always award the
+      same score, coins, XP and celebration. */
+  const defeatBoss = (game: any, boss: any) => {
+    registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
+    grantXp(game, 200 + boss.phase * 100);
+    awardCoins(game, 50 + boss.phase * 20);
+    game.bossDefeatedInRun = true;
+    game.screenShake = 30;
+    game.slowMo = 45;
+    for (let pi = 0; pi < 40; pi++) {
+      game.particles.push({
+        x: boss.x + Math.random() * boss.width,
+        y: boss.y + Math.random() * boss.height,
+        vx: (Math.random() - 0.5) * 18, vy: (Math.random() - 0.5) * 18,
+        life: 50, color: ['#ff6b35', '#ffcc00', '#ff2222', '#ffffff'][Math.floor(Math.random() * 4)],
+        size: Math.random() * 8 + 3,
+      });
+    }
+    pushToast(game, tr('{name} BESEGRAD! +{n} MYNT', { name: boss.name, n: 50 + boss.phase * 20 }), '#ff9f43');
+    AudioEngine.playExplosion();
+    AudioEngine.playLevelUp();
+  };
+
+  /** The payoff for a full meter: clears nearby enemies, cancels their
+      projectiles, chips the boss and opens a safe window. Purely additive - it
+      never removes a collectible or changes level geometry. */
+  const triggerShadowBurst = (game: any) => {
+    const p = game.player;
+    const cx = p.x + p.width / 2;
+    const cy = p.y + p.height / 2;
+    const reduce = isReducedMotion(progress.settings.reduceMotion);
+
+    game.shadowCharge = 0;
+    shadowChargeRef.current = 0;
+    shadowBurstsRef.current += 1;
+    if (!game.burstWaves) game.burstWaves = [];
+    game.burstWaves.push({ x: cx, y: cy, life: 30, maxLife: 30 });
+
+    // A short safety window makes the dash aggressive instead of defensive:
+    // that decision is the whole risk/reward of the mechanic.
+    p.invincible = true;
+    p.invincibleTimer = Math.max(p.invincibleTimer || 0, 42);
+    game.enemyBullets.length = 0;
+
+    let killed = 0;
+    game.enemies.forEach((e: any) => {
+      if (e.x < -500 || Math.abs(e.x + e.width / 2 - cx) > 660) return;
+      const ex = e.x + e.width / 2;
+      const ey = e.y + e.height / 2;
+      e.x = -1000;
+      e.nearMissed = true;
+      killed++;
+      for (let i = 0; i < 10; i++) {
+        game.particles.push({
+          x: ex, y: ey,
+          vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12,
+          life: 28, color: i % 2 ? SHADOW_COLOR : '#7ee7ff', size: Math.random() * 4 + 2,
+        });
+      }
+    });
+    game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + killed;
+    game.killsThisLevel = (game.killsThisLevel || 0) + killed;
+
+    if (game.boss && game.boss.hp > 0 && Math.abs(game.boss.x - cx) < 760) {
+      const boss = game.boss;
+      boss.hp = Math.max(0, boss.hp - 2);
+      boss.stunTimer = 20;
+      game.floatingTexts.push({
+        x: boss.x + boss.width / 2, y: boss.y - 10,
+        text: tr('BOSS HP {a}/{b}', { a: boss.hp, b: boss.maxHp }),
+        life: 40, color: SHADOW_COLOR,
+      });
+      for (let pi = 0; pi < 16; pi++) {
+        game.particles.push({
+          x: boss.x + boss.width / 2, y: boss.y + boss.height / 2,
+          vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14,
+          life: 30, color: SHADOW_COLOR, size: Math.random() * 5 + 2,
+        });
+      }
+      if (boss.hp <= 0) defeatBoss(game, boss);
+    }
+
+    registerCombo(game, 200 + killed * 120, cx, cy);
+    grantXp(game, 40 + killed * 15);
+    awardCoins(game, 5 + killed * 2);
+    pushToast(
+      game,
+      killed > 0 ? tr('SKUGGSPRÄNGNING! · {n} FIENDER', { n: killed }) : tr('SKUGGSPRÄNGNING!'),
+      SHADOW_COLOR,
+    );
+    AudioEngine.playShadowBurst();
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate([18, 30, 26]);
+
+    // Ring of sparks: legible feedback even with reduced motion (no shake).
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      game.particles.push({
+        x: cx + Math.cos(a) * 24, y: cy + Math.sin(a) * 24,
+        vx: Math.cos(a) * 9, vy: Math.sin(a) * 9,
+        life: 32, color: i % 3 ? SHADOW_COLOR : '#ffffff', size: Math.random() * 3 + 2,
+      });
+    }
+    if (!reduce) {
+      game.screenShake = Math.max(game.screenShake || 0, 18);
+      game.zoomPunch = Math.max(game.zoomPunch || 0, 14);
+      game.slowMo = Math.max(game.slowMo || 0, 8);
+      game.hitStop = Math.max(game.hitStop || 0, 3);
+    }
+  };
+
   /** Coin payout helper that keeps the counter in sync with the HUD. */
   const awardCoins = (game: any, amount: number) => {
     game.coinsThisLevel = (game.coinsThisLevel || 0) + amount;
@@ -3727,6 +3965,7 @@ export const PlayingView: React.FC<{
         runLevel: game.runLevel || 1,
         coins: game.coinsThisLevel || 0,
         deaths: game.deathsInRun || 0,
+        shadowBursts: shadowBurstsRef.current,
       }));
     } catch {
       // Private browsing can reject writes; losing the summary must not stop
@@ -3814,6 +4053,9 @@ export const PlayingView: React.FC<{
     game.streak = 0;
     game.multiplier = 1;
     game.noHit = false;
+    // Taking a hit costs half the charge: staying aggressive is a decision.
+    game.shadowCharge = Math.floor((game.shadowCharge || 0) / 2);
+    shadowChargeRef.current = game.shadowCharge;
     game.slowMo = 10;
     game.zoomPunch = 14;
     game.screenShake = Math.max(game.screenShake, 14);
@@ -4351,29 +4593,16 @@ export const PlayingView: React.FC<{
             }
             game.floatingTexts.push({ x: boss.x + boss.width/2, y: boss.y - 10, text: tr('BOSS HP {a}/{b}', { a: boss.hp, b: boss.maxHp }), life: 30, color: '#ff6b6b' });
             if (boss.hp <= 0) {
-              registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
-              grantXp(game, 200 + boss.phase * 100);
-              awardCoins(game, 50 + boss.phase * 20);
-              game.bossDefeatedInRun = true;
-              game.screenShake = 30;
-              game.slowMo = 45;
-              // Stor explosion
-              for (let pi = 0; pi < 40; pi++) {
-                game.particles.push({
-                  x: boss.x + Math.random()*boss.width,
-                  y: boss.y + Math.random()*boss.height,
-                  vx: (Math.random()-0.5)*18, vy: (Math.random()-0.5)*18,
-                  life: 50, color: ['#ff6b35','#ffcc00','#ff2222','#ffffff'][Math.floor(Math.random()*4)],
-                  size: Math.random()*8+3
-                });
-              }
-              pushToast(game, tr('{name} BESEGRAD! +{n} MYNT', { name: boss.name, n: 50 + boss.phase * 20 }), '#ff9f43');
-              AudioEngine.playExplosion();
-              AudioEngine.playLevelUp();
+              defeatBoss(game, boss);
             }
           }
         }
       });
+
+      // Expanding shadow-burst rings are visual only; they never collide.
+      if (game.burstWaves?.length) {
+        game.burstWaves = game.burstWaves.filter((w: any) => --w.life > 0);
+      }
 
       // Update Particles
       game.particles = game.particles.filter((p: any) => p.life > 0);
@@ -4585,6 +4814,7 @@ export const PlayingView: React.FC<{
             e.nearMissed = true;
             game.nearMisses = (game.nearMisses || 0) + 1;
             game.score += 75;
+            addShadowCharge(game, game.shift?.chargePerNearMiss || 1);
             game.floatingTexts.push({ x: e.x, y: e.y - 20, text: tr('NÄSTAN! +75'), life: 40, color: '#7ef7c2' });
             AudioEngine.playNearMiss();
           }
@@ -7963,7 +8193,7 @@ export const PlayingView: React.FC<{
           if (fullCatchBonus > 0) pushToast(game, tr('ALLA FISKAR! +{n}', { n: fullCatchBonus }), '#ffd166');
           if (noHitBonus > 0) pushToast(game, tr('OHIT! +750'), '#2bee79');
           if (nearMissBonus > 0) pushToast(game, tr('{a} NÄSTAN! +{b}', { a: game.nearMisses, b: nearMissBonus }), '#7ef7c2');
-          awardCoins(game, 25 + (perfectLevel ? 15 : 0) + (game.noHit ? 15 : 0));
+          awardCoins(game, 25 + (perfectLevel ? 15 : 0) + (game.noHit ? 15 : 0) + (game.shift?.levelClearCoinBonus || 0));
           grantXp(game, 150);
           persistRunSummary(game, perfectLevel);
           setTotalScore(game.score);
@@ -8244,6 +8474,28 @@ export const PlayingView: React.FC<{
       });
       ctx.globalCompositeOperation = 'source-over';
 
+      // Shadow-burst shockwave: clean fading rings that still read clearly
+      // when screen shake and motion effects are turned off.
+      (game.burstWaves || []).forEach((w: any) => {
+        const t = 1 - w.life / w.maxLife;
+        const radius = 40 + t * 700;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = (1 - t) * 0.85;
+        ctx.strokeStyle = SHADOW_COLOR;
+        ctx.lineWidth = Math.max(1, 10 * (1 - t));
+        ctx.beginPath();
+        ctx.arc(w.x - game.scrollX, w.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = (1 - t) * 0.4;
+        ctx.strokeStyle = '#7ee7ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(w.x - game.scrollX, w.y, radius * 0.72, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+
       // Draw Floating Texts
       ctx.font = 'bold 24px "Outfit", sans-serif';
       ctx.textAlign = 'center';
@@ -8442,8 +8694,15 @@ export const PlayingView: React.FC<{
           multiplier: game.multiplier || 1,
           streak: game.streak || 0,
           dashReady: game.player.dashCooldown <= 0,
-          dashPct: Math.max(0, 1 - game.player.dashCooldown / 45),
+          dashPct: Math.max(0, 1 - game.player.dashCooldown / (game.dashCooldownMax || 45)),
           comboTimer: game.comboTimer || 0,
+          comboWindow: game.comboWindow || 150,
+          shadowCharge: game.shadowCharge || 0,
+          shadowChargeMax: game.shadowChargeMax || SHADOW_CHARGE_MAX,
+          shiftName: game.shift?.label || '',
+          shiftIcon: game.shift?.icon || 'auto_awesome',
+          shiftColor: game.shift?.color || SHADOW_COLOR,
+          shiftDesc: game.shift?.desc || '',
           noHit: !!game.noHit,
           nearMisses: game.nearMisses || 0,
           toasts: game.toasts || [],
@@ -8585,6 +8844,32 @@ export const PlayingView: React.FC<{
                 )}
               </div>
 
+              {/* Skuggkraft: five pips fill from near misses. Full meter ->
+                  the next dash becomes a screen-clearing burst. */}
+              <div
+                className={`hud-panel flex items-center gap-1.5 px-2 py-1 ${stats.shadowCharge >= stats.shadowChargeMax ? 'animate-pulse' : ''}`}
+                title={t('Skuggkraft: {a} av {b}', { a: stats.shadowCharge, b: stats.shadowChargeMax })}
+              >
+                <span className="material-symbols-outlined text-[13px]" style={{ color: SHADOW_COLOR }}>blur_on</span>
+                <span className="flex items-center gap-[2px]">
+                  {Array.from({ length: stats.shadowChargeMax }).map((_, i) => (
+                    <span
+                      key={i}
+                      className="h-1.5 w-2 rounded-[2px]"
+                      style={{
+                        background: i < stats.shadowCharge ? SHADOW_COLOR : 'rgba(255,255,255,0.14)',
+                        boxShadow: i < stats.shadowCharge ? `0 0 6px ${SHADOW_COLOR}` : undefined,
+                      }}
+                    />
+                  ))}
+                </span>
+                {stats.shadowCharge >= stats.shadowChargeMax && (
+                  <span className="hidden text-[8px] font-black uppercase tracking-wider text-[#d8b4fe] sm:inline">
+                    {t('Skuggsprängning redo')}
+                  </span>
+                )}
+              </div>
+
               <div className="flex items-center gap-1.5">
                 <div className={`hud-chip ${stats.ammo <= 0 ? 'border-[#ff5f7a]/60 bg-[#ff5f7a]/10 animate-pulse' : ''}`}>
                   <span className="material-symbols-outlined text-[15px] text-[#ff9d9d]">bolt</span>
@@ -8661,7 +8946,7 @@ export const PlayingView: React.FC<{
                   <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-white/10">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-primary to-yellow-300"
-                      style={{ width: `${Math.min(100, (stats.comboTimer / 150) * 100)}%` }}
+                      style={{ width: `${Math.min(100, (stats.comboTimer / (stats.comboWindow || 150)) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -8704,6 +8989,16 @@ export const PlayingView: React.FC<{
               </div>
 
               <div className="flex items-center gap-1.5">
+                {stats.shiftName && (
+                  <div
+                    className="hud-chip hidden sm:inline-flex"
+                    title={`${t('Neon-skift')} · ${t(stats.shiftDesc)}`}
+                    style={{ borderColor: `${stats.shiftColor}66`, color: stats.shiftColor }}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">{stats.shiftIcon}</span>
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t(stats.shiftName)}</span>
+                  </div>
+                )}
                 <div className={`hud-chip ${isMobile ? 'hidden' : 'hidden sm:inline-flex'}`} title={t('Väder')}>
                   <span
                     className={`material-symbols-outlined text-[15px] ${
@@ -8799,6 +9094,12 @@ export const PlayingView: React.FC<{
               <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
                 {t(LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name)}
               </p>
+              {stats.shiftName && (
+                <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: stats.shiftColor }}>
+                  <span className="material-symbols-outlined text-[12px]">{stats.shiftIcon}</span>
+                  {t('Skift · {name}', { name: t(stats.shiftName) })}
+                </p>
+              )}
               {currentLevel === 1 && (
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-white/10 pt-3 text-[9px] font-bold uppercase tracking-[0.14em] text-white/45">
                   {(isTouchDevice

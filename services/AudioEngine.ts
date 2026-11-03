@@ -192,6 +192,15 @@ export class AudioEngine {
         this.tone({ type: 'square', from: 420, to: 110, duration: 0.35, gain: 0.18, filter: 1600 });
     }
 
+    /** Skuggsprängning: a deep shockwave followed by a bright rising shimmer,
+        so the new mechanic has its own recognisable sound. */
+    public static playShadowBurst() {
+        this.noise({ duration: 0.5, gain: 0.28, from: 4200, to: 110 });
+        this.tone({ type: 'sawtooth', from: 190, to: 44, duration: 0.48, gain: 0.2, filter: 900 });
+        this.tone({ type: 'sine', from: 880, to: 1760, duration: 0.3, gain: 0.1, delay: 0.08 });
+        this.chord([523.25, 659.25, 783.99, 1046.5], 0.36, 0.1, 0.12, 'triangle');
+    }
+
     /** Quick, soft confirmation for buttons in the menus. */
     public static playUiClick() {
         this.tone({ type: 'triangle', from: 720, to: 980, duration: 0.07, gain: 0.09 });

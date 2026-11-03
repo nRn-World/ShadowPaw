@@ -26,3 +26,11 @@ Starta om flödet när som helst: Agent 1 skriver över `01-analys.md`, och så 
 
 Hittar Agent 4 fel (`Resultat: UNDERKÄND`) skickas felrapporten till alla agenter och omgången börjar om med rättning (högst 3 varv, därefter revertas de felande punkterna).
 Hittar Agent 4 inga fel (`Resultat: GODKÄND`) pushas grenen och en pull request öppnas och mergas, så att uppdateringar går live direkt efter varandra. Blockeras mergen av en behörighetskontroll lämnas PR:en öppen.
+
+## Ständiga förbättringsrundor (från 2026-11-03)
+
+Utöver agentflödet finns ett lättare, löpande spår i
+[`FORBATTRINGSRUNDOR.md`](FORBATTRINGSRUNDOR.md): en liten verifierbar förbättring
+per runda, en kö med kommande idéer och kommandot `npm run verify:round` som kör
+enhetstester, typkontroll, översättningskontroll och bygge. Spelet har också en
+inbyggd 10-minutersrytm via `services/neonShift.ts`.

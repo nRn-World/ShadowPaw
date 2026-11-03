@@ -32,6 +32,8 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 💰 **Shop System** - Upgrade your cat with better stats
 - 📱 **Mobile Support** - Hold-to-fire touch controls, portrait and landscape
 - 🌅 **Living Skies** - Dawn, sunset, rain, snow, storms and firefly nights
+- 💥 **Shadow Charge** - Graze enemies to fill the meter, then dash into a screen-clearing Shadow Burst
+- 🔟 **Neon Shifts** - A fresh, always-positive bonus rotates every ten minutes, with no penalties or FOMO
 - 🎵 **Epic Soundtrack** - Background music and sound effects
 - ♿ **Comfort Options** - Reduced motion, colour-blind mode, text and UI scaling
 

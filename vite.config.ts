@@ -8,6 +8,9 @@ export default defineConfig(() => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      // Remote dev previews (CI sandboxes, phone testing on the LAN, tunnels)
+      // use a generated hostname. Vite otherwise rejects those requests.
+      allowedHosts: true as const,
     },
     plugins: [react()],
     resolve: {
