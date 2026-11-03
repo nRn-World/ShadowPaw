@@ -183,36 +183,6 @@ export const drawNeonSkyline = (ctx: CanvasRenderingContext2D, o: SkylineOptions
     drawLayer(0.085, 166, 0.82, '#0b2a3a', '#2bee79', 'rgba(255, 236, 180, 0.8)', 83, 2);
   }
 
-  // Catenary cables between rooftops, with a tiny lamp at each sag. They are a
-  // small detail, but they make the skyline feel connected and inhabited.
-  if (urban) {
-    ctx.save();
-    for (let c = 0; c < 2; c++) {
-      const y = ridgeBase - (276 + c * 58);
-      const offset = ((scrollX * 0.1) % 420 + 420) % 420;
-      ctx.strokeStyle = isNight ? 'rgba(2,6,14,0.72)' : 'rgba(6,20,30,0.4)';
-      ctx.lineWidth = 1.2;
-      for (let x = -420; x < width + 420; x += 420) {
-        const sx = x - offset;
-        ctx.beginPath();
-        ctx.moveTo(sx, y);
-        ctx.quadraticCurveTo(sx + 210, y + 24, sx + 420, y - 4);
-        ctx.stroke();
-        const lamp = c % 2 === 0 ? 'rgba(76,232,255,0.7)' : 'rgba(255,79,216,0.7)';
-        ctx.fillStyle = lamp;
-        if (isNight) {
-          ctx.shadowColor = lamp;
-          ctx.shadowBlur = 7;
-        }
-        ctx.beginPath();
-        ctx.arc(sx + 210, y + 12, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-    }
-    ctx.restore();
-  }
-
   // A few slow airships / drones crossing the sky at night. They add a second
   // scale to the city and a moving light source without competing with play.
   if (isNight) {
