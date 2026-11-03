@@ -53,6 +53,7 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   ember: { name: 'Ember', color: '#e85d2c', accent: '#ffcf6b', unlockHint: 'Besegra 60 fiender' },
   frost: { name: 'Frost', color: '#62b7ff', accent: '#9df3ff', unlockHint: 'Samla 300 fiskar' },
   shadow: { name: 'Shadow', color: '#4f5d75', accent: '#b07cff', unlockHint: 'Nå combo x10' },
+  umbra: { name: 'Umbra', color: '#6d28d9', accent: '#d8b4fe', unlockHint: 'Använd skuggskifte' },
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#5ffbd0', unlockHint: 'Besegra 3 bossar' },
 };
 
@@ -64,6 +65,7 @@ const ACHIEVEMENTS: Array<{ id: string; label: string; desc: string; icon: strin
   { id: 'boss_3', label: 'Bossjägare', desc: 'Besegra 3 bossar', icon: 'swords' },
   { id: 'streak_20', label: 'Streak x20', desc: 'Håll en streak på 20', icon: 'bolt' },
   { id: 'close_call', label: 'Nära ögat', desc: '5 nästan-träffar i en runda', icon: 'warning' },
+  { id: 'shadow_shift', label: 'Skuggtass', desc: 'Använd skuggskifte för första gången', icon: 'dark_mode' },
 ];
 
 
@@ -788,6 +790,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               { k: 'A / D  ← →', v: 'Rör dig' },
               { k: 'Mellanslag', v: 'Hoppa · dubbelhopp' },
               { k: 'Shift', v: 'Dash' },
+              { k: 'E / Q', v: 'Skuggskifte' },
               { k: 'Klick / F', v: 'Skjuta' },
               { k: 'Esc / P', v: 'Paus' },
             ].map((c) => (
@@ -807,6 +810,27 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">{t('UTAN SKADA +750')}</span>
             <span className="rounded-md border border-yellow-300/25 bg-yellow-300/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-200">{t('NÄSTAN +75')}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* The one mechanic that is uniquely Shadow Paw, given its own card. */}
+      <div className="mt-3 rounded-2xl border border-[#c084fc]/35 bg-gradient-to-br from-[#2a1145]/80 to-[#0a1220]/80 p-4 md:p-5">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-3xl text-[#d8b4fe]">dark_mode</span>
+          <div className="min-w-0">
+            <p className="eyebrow text-[#c084fc]">{t('Signaturförmåga')}</p>
+            <h2 className="mt-0.5 font-display text-xl font-black uppercase tracking-tight text-white">{t('Skuggskifte')}</h2>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-white/55">
+              {renderRich(t('Fiskar, besegrade fiender och <b>nästan-träffar</b> laddar mätaren. Vid 100 % trycker du <b>E</b> eller på mätaren: i fyra sekunder är katten osårbar, snabbare, drar till sig fiskar, ger 75 % extra poäng och <b>löser upp fiender</b> bara genom att springa igenom dem.'), 'text-[#e9d5ff]')}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[t('Osårbar'), t('+30 % fart'), t('Fiskmagnet'), t('+75 % poäng'), t('Skuggpass +300')].map((chip) => (
+                <span key={chip} className="rounded-md border border-[#c084fc]/30 bg-[#a855f7]/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#d8b4fe]">
+                  {chip}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -855,6 +879,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             'Rapid fire gör dig till en kulspruta: spara den till bossen.',
             'Hämta dagliga uppdrag mellan rundorna för extra mynt.',
             'Byt skinn i butiken när du låst upp dem.',
+            'Skuggskiftet laddas snabbast av nära-träffar: våga springa tätt förbi farorna.',
           ].map((tip) => (
             <div key={tip} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-white/45">
               <span className="text-primary">•</span>
@@ -1125,6 +1150,10 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
     }
     if ((lastRun.nearMisses || 0) >= 5) {
       unlockAchievement('close_call');
+    }
+    if ((lastRun.shadowShifts || 0) >= 1) {
+      unlockAchievement('shadow_shift');
+      unlockSkin('umbra');
     }
     if ((lastRun.bestStreak || 0) >= 20) {
       unlockAchievement('streak_20');
@@ -2541,10 +2570,10 @@ const GROUND_WORLD_W = 2600;
 type GameState = any;
 
 /** Fisher-Yates on a copy, so callers never mutate the theme config. */
-const shuffled = <T,>(items: T[]): T[] => {
+const shuffled = <T,>(items: T[], rng: () => number = Math.random): T[] => {
   const out = items.slice();
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
@@ -2561,7 +2590,7 @@ const SCALE_RANGE = { building: [0.62, 1.15] as const, animal: [0.6, 0.88] as co
 /** Gives a flying animal its own flight profile: heading, cruise speed, altitude,
     undulation and wingbeat. Every bird then flies its own line instead of
     gliding in lockstep with its neighbours. */
-const assignFlightProfile = (el: BackgroundElement) => {
+const assignFlightProfile = (el: BackgroundElement, rng: () => number = Math.random) => {
   if (!el.isSkyAnimal) {
     el.dir = 1;
     el.speed = 0;
@@ -2590,47 +2619,47 @@ const assignFlightProfile = (el: BackgroundElement) => {
   el.flapRate = 0.75 + Math.random() * 0.8;
 };
 
-const generateBackgroundElements = (theme: string): BackgroundElement[] => {
+const generateBackgroundElements = (theme: string, rng: () => number = Math.random): BackgroundElement[] => {
   const elements: BackgroundElement[] = [];
   const config = getThemeConfig(theme);
   const count = 18;
 
   // Shuffled lanes, so the scenery is irregularly spaced instead of sitting on
   // a metronome grid that made neighbours line up like a row of clones.
-  const lanes = shuffled(Array.from({ length: count }, (_, i) => (i + 0.5) * (BACKDROP_W / count)));
+  const lanes = shuffled(Array.from({ length: count }, (_, i) => (i + 0.5) * (BACKDROP_W / count)), rng);
 
   for (let i = 0; i < count; i++) {
-    const lane = lanes[i] + (Math.random() - 0.5) * 70;
-    const roll = Math.random();
+    const lane = lanes[i] + (rng() - 0.5) * 70;
+    const roll = rng();
 
     // 60% buildings, 40% animals
     if (roll < 0.6) {
-      const bType = config.buildings[Math.floor(Math.random() * config.buildings.length)];
-      const color = config.buildingColors[Math.floor(Math.random() * config.buildingColors.length)];
+      const bType = config.buildings[Math.floor(rng() * config.buildings.length)];
+      const color = config.buildingColors[Math.floor(rng() * config.buildingColors.length)];
       elements.push({
         kind: 'building',
         subtype: bType,
         lane,
-        scale: 0.5 + Math.random() * 0.5,
+        scale: 0.5 + rng() * 0.5,
         color,
         // Buildings stand still: they are the fixed anchor of the skyline.
         drift: 0,
       });
     } else {
-      const aType = config.animals[Math.floor(Math.random() * config.animals.length)];
+      const aType = config.animals[Math.floor(rng() * config.animals.length)];
       const isSkyAnimal = SKY_ANIMALS.includes(aType);
       const el: BackgroundElement = {
         kind: 'animal',
         subtype: aType,
         lane,
-        scale: 1.4 + Math.random() * 0.6,
+        scale: 1.4 + rng() * 0.6,
         drift: 0,
-        phase: Math.random() * Math.PI * 2,
+        phase: rng() * Math.PI * 2,
         waves: WAVING_ANIMALS.includes(aType),
         isSkyAnimal,
         skyY: 0,
       };
-      assignFlightProfile(el);
+      assignFlightProfile(el, rng);
       elements.push(el);
     }
   }
@@ -2647,7 +2676,7 @@ const generateBackgroundElements = (theme: string): BackgroundElement[] => {
   // dead end a "pick something unused" pass hits when a theme only has a
   // handful of animals.
   for (const kind of ['animal', 'building'] as const) {
-    const pool = shuffled(kind === 'building' ? config.buildings : config.animals);
+    const pool = shuffled(kind === 'building' ? config.buildings : config.animals, rng);
     if (!pool.length) continue;
     let idx = 0;
     for (const el of elements) {
@@ -2667,7 +2696,7 @@ const generateBackgroundElements = (theme: string): BackgroundElement[] => {
     if (el.kind === 'animal') {
       el.isSkyAnimal = SKY_ANIMALS.includes(el.subtype);
       el.waves = WAVING_ANIMALS.includes(el.subtype);
-      assignFlightProfile(el);
+      assignFlightProfile(el, rng);
     }
 
     const [lo, hi] = SCALE_RANGE[el.kind];
@@ -2773,6 +2802,10 @@ export const PlayingView: React.FC<{
   // level the player is on.
   const [runId, setRunId] = useState(0);
   const [showIntro, setShowIntro] = useState(true);
+  // The level card is dismissible with any input. A ref keeps the game loop's
+  // key handler from being rebuilt just to read a piece of UI state.
+  const showIntroRef = useRef(true);
+  showIntroRef.current = showIntro;
 
   const togglePause = useCallback(() => {
     setIsPaused(prev => {
@@ -2787,6 +2820,8 @@ export const PlayingView: React.FC<{
     setIsPaused(false);
     isPausedRef.current = false;
     if (gameRef.current) gameRef.current.running = false;
+    // A restart is a fresh attempt, so run-wide tallies start over too.
+    runTotalsRef.current = { nearMisses: 0, shadowPasses: 0, shadowShifts: 0 };
     setRunId((n) => n + 1);
   };
 
@@ -2807,11 +2842,26 @@ export const PlayingView: React.FC<{
 
   // The level card introduces the stage for a beat and then fades away. The
   // very first card stays a little longer because it also teaches the controls.
+  // Any key or tap skips it, so a 40-level campaign never becomes 40 forced
+  // waits between attempts.
   useEffect(() => {
     setShowIntro(true);
-    const timer = window.setTimeout(() => setShowIntro(false), currentLevel === 1 ? 3800 : 2300);
+    const timer = window.setTimeout(() => setShowIntro(false), currentLevel === 1 ? 3200 : 1600);
     return () => window.clearTimeout(timer);
   }, [currentLevel, runId]);
+
+  const skipIntro = () => {
+    if (!showIntroRef.current) return;
+    showIntroRef.current = false;
+    setShowIntro(false);
+    const g = gameRef.current;
+    if (g) {
+      g.introTimer = 0;
+      // Spawn protection ends the moment the player takes control.
+      g.player.invincible = false;
+      g.player.invincibleTimer = 0;
+    }
+  };
 
   // Alt-tabbing out of the game pauses it instead of letting the cat run into
   // a hazard unseen.
@@ -2836,7 +2886,7 @@ export const PlayingView: React.FC<{
     };
   }, []);
 
-  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
+  const [stats, setStats] = useState({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -2848,6 +2898,10 @@ export const PlayingView: React.FC<{
   const isMuted = progress.settings.muted;
 
   const gameRef = useRef<any>(null);
+  // Run-wide tallies. `game` is rebuilt for every level, so these cannot live
+  // on it: the results screen and quests need the whole run, not just the last
+  // stage. A new PlayingView (keyed by start level) starts a fresh run.
+  const runTotalsRef = useRef({ nearMisses: 0, shadowPasses: 0, shadowShifts: 0 });
   const gameContainerRef = useRef<HTMLDivElement>(null);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
@@ -2909,6 +2963,14 @@ export const PlayingView: React.FC<{
   const setupLevel = (level: number, existingScore: number, existingLives: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
+
+    // One seed per level. The structural layout already used a seeded RNG, but
+    // enemies, fish, hazards, pickups and bounce pads were rolled with
+    // rng(), so retrying a stage handed the player a completely
+    // different course. Everything now comes from this generator: a death
+    // replays the exact level you just learned, and a bad roll can never be
+    // silently re-rolled into an impossible one.
+    const rng = makeRng(level * 104729 + 991);
 
     const difficultyProfile = getDifficultyProfile(level, progress.level);
     const levelLength = difficultyProfile.levelLength;
@@ -2998,16 +3060,26 @@ export const PlayingView: React.FC<{
       coinsThisLevel: 0,
       fishedThisLevel: 0,
       startLives: existingLives,
+      // --- Shadow Shift: the cat's signature ability -----------------------
+      // Charge comes from clean, aggressive play (fish, kills, near misses).
+      // At 100 the player can dissolve into shadow for four seconds: immune to
+      // every damage source, faster, drawing fish in, and defeating enemies
+      // simply by passing through them.
+      shadowCharge: 0,
+      shadowActive: 0,
+      shadowPasses: 0,
+      shadowShifts: 0,
       // --- Power-up layer ---
       pickups: [] as any[],
       enemyBullets: [] as any[],
       shield: false,
       buffs: { magnet: 0, rapid: 0 },
       shootCooldown: 0,
-      // A short cinematic intro freezes the world for a beat while the level
-      // card tells the player where they are and what to do.
-      introTimer: level === 1 ? 150 : 110,
-      introMax: level === 1 ? 150 : 110,
+      // Spawn protection while the level card is up. The card covers the
+      // stage, so a patrolling enemy must not be able to hit a player who is
+      // still reading the controls. Skipping the card ends the protection.
+      introTimer: level === 1 ? 192 : 96,
+      introMax: level === 1 ? 192 : 96,
       killsThisLevel: 0,
       // --- Juice timers ---
       slowMo: 0,
@@ -3016,6 +3088,7 @@ export const PlayingView: React.FC<{
         x: 100, y: 150, width: 50, height: 70,
         velocityX: 0, velocityY: 0,
         speed: (4.6 + (level * 0.08)) * (progress.settings.uiScale < 0.95 ? 0.98 : 1),
+        baseSpeed: 0, // set below; Shadow Shift restores this exact value
         jumpPower: progress.upgrades.jumpPower,
         doubleJumpPower: progress.upgrades.jumpPower + 3,
         isJumping: false, canDoubleJump: true, hasDoubleJumped: false,
@@ -3065,9 +3138,13 @@ export const PlayingView: React.FC<{
     if (progress.level >= 5) game.player.speed += 0.6;
     if (progress.level >= 10) game.ammo += 2;
     if (progress.level >= 15) game.player.invincibleTimer = 20;
+    // Shadow Shift temporarily raises `speed`; keep the real value to restore.
+    game.player.baseSpeed = game.player.speed;
+    game.player.invincible = true;
+    game.player.invincibleTimer = game.introTimer;
 
     // Generate background elements
-    game.backgroundElements = generateBackgroundElements(theme);
+    game.backgroundElements = generateBackgroundElements(theme, rng);
 
     // Initialize Weather Particles
     if (weather !== 'SOLIGT') {
@@ -3080,21 +3157,21 @@ export const PlayingView: React.FC<{
       for (let i = 0; i < pCount; i++) {
         if (weather === 'DIMMIGT') {
           game.weatherParticles.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            speed: 0.2 + Math.random() * 0.5,
-            radius: 100 + Math.random() * 150,
-            opacity: 0.05 + Math.random() * 0.1,
-            sway: Math.random() * Math.PI * 2
+            x: rng() * canvas.width,
+            y: rng() * canvas.height,
+            speed: 0.2 + rng() * 0.5,
+            radius: 100 + rng() * 150,
+            opacity: 0.05 + rng() * 0.1,
+            sway: rng() * Math.PI * 2
           });
         } else {
           game.weatherParticles.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            speed: weather === 'SNÖIGT' ? (intensity === 'HEAVY' ? 1.5 + Math.random() * 2 : 1 + Math.random() * 2) : 10 + Math.random() * 5,
-            length: weather === 'SNÖIGT' ? 0 : 10 + Math.random() * 20,
-            radius: weather === 'SNÖIGT' ? 1.5 + Math.random() * 2.5 : 0,
-            sway: Math.random() * Math.PI * 2
+            x: rng() * canvas.width,
+            y: rng() * canvas.height,
+            speed: weather === 'SNÖIGT' ? (intensity === 'HEAVY' ? 1.5 + rng() * 2 : 1 + rng() * 2) : 10 + rng() * 5,
+            length: weather === 'SNÖIGT' ? 0 : 10 + rng() * 20,
+            radius: weather === 'SNÖIGT' ? 1.5 + rng() * 2.5 : 0,
+            sway: rng() * Math.PI * 2
           });
         }
       }
@@ -3146,15 +3223,15 @@ export const PlayingView: React.FC<{
     while (enemiesPlaced < enemyCount && spawnAttempts < 400) {
       spawnAttempts++;
       // Bias spawns toward the far half so the course builds up as you push on.
-      const bias = 1 - Math.pow(Math.random(), 1 + difficultyProfile.inLevelRamp * 1.4);
+      const bias = 1 - Math.pow(rng(), 1 + difficultyProfile.inLevelRamp * 1.4);
       const randomSegment = 3 + Math.floor(bias * Math.max(1, game.platforms.length - 8));
       const plat = game.platforms[randomSegment];
       if (!plat) continue;
 
       // Skip some ground platforms but not all
-      if (plat.isGround && Math.random() > 0.5) continue;
+      if (plat.isGround && rng() > 0.5) continue;
 
-      const ex = plat.x + Math.random() * Math.max(10, plat.width - 40);
+      const ex = plat.x + rng() * Math.max(10, plat.width - 40);
       // Leave the final approach readable, and reserve the boss arena for its fight.
       const finalApproachLength = level % 5 === 0 ? 1450 : 420;
       if (ex < 400 || ex > levelLength - finalApproachLength) continue;
@@ -3168,14 +3245,14 @@ export const PlayingView: React.FC<{
       const depthRamp = 1 + (ex / Math.max(1, levelLength)) * difficultyProfile.inLevelRamp * 0.35;
       // Three archetypes from the start; turrets and chargers join later so the
       // player is never introduced to every threat at once.
-      const roll = Math.random();
-      const enemyType = level >= 5 && roll < 0.16 ? 4 : level >= 3 && roll < 0.32 ? 3 : Math.floor(Math.random() * 3);
+      const roll = rng();
+      const enemyType = level >= 5 && roll < 0.16 ? 4 : level >= 3 && roll < 0.32 ? 3 : Math.floor(rng() * 3);
       const isTurret = enemyType === 3;
       game.enemies.push({
         x: ex, y: plat.y - 40, width: 40, height: 40,
-        velocityX: isTurret ? 0 : difficultyProfile.enemySpeed * depthRamp * (Math.random() > 0.5 ? 1 : -1),
+        velocityX: isTurret ? 0 : difficultyProfile.enemySpeed * depthRamp * (rng() > 0.5 ? 1 : -1),
         direction: 1, platform: randomSegment, type: enemyType,
-        shootTimer: 70 + Math.floor(Math.random() * 70),
+        shootTimer: 70 + Math.floor(rng() * 70),
         baseY: plat.y - 40,
         chargeTimer: 0,
       });
@@ -3292,31 +3369,31 @@ export const PlayingView: React.FC<{
 
     while (placedFish < fishCount && fishPlacementAttempts < fishCount * 25) {
       fishPlacementAttempts++;
-      const randomPlatIndex = Math.floor(Math.random() * game.platforms.length);
+      const randomPlatIndex = Math.floor(rng() * game.platforms.length);
       const plat = game.platforms[randomPlatIndex];
 
       // 30% flying coins, 70% on/near platforms
-      const isFlying = flyingItems && Math.random() > 0.7;
+      const isFlying = flyingItems && rng() > 0.7;
 
       let fx, fy;
       if (isFlying) {
         // Flying coins - but reachable with double jump!
         // Max height from ground with double jump is about 250px
-        fx = 200 + Math.random() * (levelLength - 400);
+        fx = 200 + rng() * (levelLength - 400);
         // Keep flying coins reachable - not too high!
-        fy = canvas.height - 280 + Math.random() * 100;
+        fy = canvas.height - 280 + rng() * 100;
       } else {
         // On platforms - just above the platform
-        fx = plat.x + 10 + Math.random() * (plat.width - 30);
+        fx = plat.x + 10 + rng() * (plat.width - 30);
         // Just above the platform - always reachable
-        fy = plat.y - 30 - Math.random() * 30;
+        fy = plat.y - 30 - rng() * 30;
       }
 
       // Keep everything reachable
       fy = Math.max(canvas.height - 300, Math.min(fy, canvas.height - 60));
-      // Never spawn on top of the cat: the first frame of a level must not
-      // silently hand the player a fish they never went and got.
-      const clampedFx = Math.max(260, Math.min(fx, levelLength - 50));
+      // Never spawn on top of the cat, and never beyond Jerry: a fish past
+      // the goal used to force a run to the end and then all the way back.
+      const clampedFx = Math.max(260, Math.min(fx, levelLength - 240));
 
       let fishCollision = false;
       const fishBounds = { x: clampedFx, y: fy, width: 24, height: 14 };
@@ -3337,8 +3414,13 @@ export const PlayingView: React.FC<{
       for (const f of game.fishes) {
         if (Math.abs(f.x - clampedFx) < requiredGap) { fishTooClose = true; break; }
       }
+      // A collectible over a wide chasm, or sitting in an enemy's patrol
+      // square, is not a reward - it is an unavoidable hit or an impossible
+      // detour. Both are rejected so the quota is always reachable.
+      const overWideHole = game.holes.some((h: any) => h.width > 170 && clampedFx > h.x - 40 && clampedFx < h.x + h.width + 40);
+      const onEnemy = game.enemies.some((e: any) => Math.abs(e.x - clampedFx) < 55);
 
-      if (!fishCollision && !fishTooClose) {
+      if (!fishCollision && !fishTooClose && !overWideHole && !onEnemy) {
         game.fishes.push({
           x: clampedFx,
           y: fy,
@@ -3346,18 +3428,39 @@ export const PlayingView: React.FC<{
           height: 14,
           collected: false,
           isFlying: isFlying,
-          hoverOffset: Math.random() * Math.PI * 2,
+          hoverOffset: rng() * Math.PI * 2,
           baseY: fy
         });
         placedFish++;
       }
     }
 
+    // Last-resort fish on solid ground. The random pass can be unlucky on a
+    // dense layout, and a quota larger than the number of fish that actually
+    // made it onto the board would make the stage literally unwinnable.
+    if (game.fishes.length < 6) {
+      for (let x = 340; x < levelLength - 260 && game.fishes.length < 6; x += 180) {
+        if (game.holes.some((h: any) => x > h.x - 30 && x < h.x + h.width + 30)) continue;
+        if (game.fishes.some((f: any) => Math.abs(f.x - x) < 100)) continue;
+        if (game.enemies.some((e: any) => Math.abs(e.x - x) < 55)) continue;
+        const groundPlat = game.platforms.find((pl: any) => pl.isGround && x >= pl.x && x <= pl.x + pl.width);
+        const fy = (groundPlat ? groundPlat.y : groundY) - 44;
+        game.fishes.push({
+          x, y: fy, width: 24, height: 14, collected: false,
+          isFlying: false, hoverOffset: 0, baseY: fy,
+        });
+      }
+    }
+
     // The level goal is a quota, not a full sweep: hunting the last three fish
-    // across a long course is busywork, and a fish that lands somewhere awkward
-    // used to make a stage outright unwinnable. Collecting everything still pays
-    // a perfect-catch bonus, so completionists are rewarded either way.
-    game.fishGoal = Math.max(5, Math.min(game.fishes.length, Math.ceil(game.fishes.length * (level <= 2 ? 0.6 : 0.72))));
+    // across a long course is busywork. It can never exceed the fish that were
+    // actually placed, however unlucky the generator was. Collecting
+    // everything still pays a perfect-catch bonus.
+    const quotaRatio = level <= 2 ? 0.6 : 0.72;
+    game.fishGoal = Math.min(
+      game.fishes.length,
+      Math.max(3, Math.ceil(game.fishes.length * quotaRatio)),
+    );
 
     // Add fun hazards to keep levels unique and less repetitive.
     const hazardCount = levelMode === 'Boss Battle'
@@ -3367,25 +3470,28 @@ export const PlayingView: React.FC<{
     while (game.hazards.length < hazardCount && hazardAttempts < hazardCount * 20) {
       hazardAttempts++;
       // Like enemies, hazards cluster toward the far end of the level.
-      const bias = 1 - Math.pow(Math.random(), 1 + difficultyProfile.inLevelRamp * 1.2);
+      const bias = 1 - Math.pow(rng(), 1 + difficultyProfile.inLevelRamp * 1.2);
       const randomPlatIndex = 4 + Math.floor(bias * Math.max(1, game.platforms.length - 10));
       const plat = game.platforms[randomPlatIndex];
       if (!plat || plat.width < 80) continue;
 
-      const hx = plat.x + 10 + Math.random() * Math.max(10, plat.width - 70);
+      const hx = plat.x + 10 + rng() * Math.max(10, plat.width - 70);
       if (hx < 450 || hx > levelLength - 400) continue;
 
       // Keep boss arenas readable and free of unrelated hazard clutter.
       if (level % 5 === 0 && hx > levelLength - 1500) continue;
       const tooClose = game.hazards.some((h: any) => Math.abs(h.x - hx) < 180);
       if (tooClose) continue;
+      // A hazard must not be dropped on a fish: that would turn a pickup into
+      // a guaranteed hit and quietly remove it from the reachable quota.
+      if (game.fishes.some((f: any) => Math.abs(f.x - hx) < 65)) continue;
 
       // Never stack a hazard on top of an enemy patrol spot: it turns the level
       // into an unavoidable hit.
       const onEnemy = game.enemies.some((e: any) => Math.abs(e.x - hx) < 90 && Math.abs(e.y - (plat.y - 40)) < 70);
       if (onEnemy) continue;
 
-      const hazardRoll = Math.random();
+      const hazardRoll = rng();
       if (difficultyProfile.variant % 2 === 0 && hazardRoll < 0.45) {
         game.hazards.push({
           type: 'movingSaw',
@@ -3394,9 +3500,9 @@ export const PlayingView: React.FC<{
           y: plat.y - 24,
           width: 28,
           height: 28,
-          range: 35 + Math.random() * 50,
-          phase: Math.random() * Math.PI * 2,
-          speed: 0.03 + Math.random() * 0.04,
+          range: 35 + rng() * 50,
+          phase: rng() * Math.PI * 2,
+          speed: 0.03 + rng() * 0.04,
         });
       } else if (hazardRoll < 0.78) {
         game.hazards.push({
@@ -3413,10 +3519,10 @@ export const PlayingView: React.FC<{
           y: Math.max(120, plat.y - 160),
           width: 10,
           height: Math.min(220, canvas.height - plat.y + 95),
-          active: Math.random() > 0.4,
-          timer: 70 + Math.floor(Math.random() * 60),
-          onDuration: 60 + Math.floor(Math.random() * 70),
-          offDuration: 70 + Math.floor(Math.random() * 90),
+          active: rng() > 0.4,
+          timer: 70 + Math.floor(rng() * 60),
+          onDuration: 60 + Math.floor(rng() * 70),
+          offDuration: 70 + Math.floor(rng() * 90),
         });
       }
     }
@@ -3436,8 +3542,8 @@ export const PlayingView: React.FC<{
       pickupAttempts++;
       const candidatePlatforms = game.platforms.filter((pl: any) => !pl.bossArena && pl.width > 74);
       if (!candidatePlatforms.length) break;
-      const pool = candidatePlatforms[Math.floor(Math.random() * candidatePlatforms.length)];
-      const pxx = pool.x + 30 + Math.random() * Math.max(10, pool.width - 60);
+      const pool = candidatePlatforms[Math.floor(rng() * candidatePlatforms.length)];
+      const pxx = pool.x + 30 + rng() * Math.max(10, pool.width - 60);
       if (pxx < 500 || pxx > levelLength - (level % 5 === 0 ? 1500 : 520)) continue;
       if (game.pickups.some((pk: any) => Math.abs(pk.x - pxx) < 260)) continue;
       if (game.hazards.some((h: any) => Math.abs(h.x - pxx) < 110)) continue;
@@ -3450,8 +3556,8 @@ export const PlayingView: React.FC<{
         height: 32,
         type,
         collected: false,
-        hover: Math.random() * Math.PI * 2,
-        spin: Math.random() * Math.PI * 2,
+        hover: rng() * Math.PI * 2,
+        spin: rng() * Math.PI * 2,
       });
     }
     // Boss arenas need a reliable ammo source: the fight is unwinnable if every
@@ -3467,8 +3573,8 @@ export const PlayingView: React.FC<{
           height: 32,
           type: 'ammo',
           collected: false,
-          hover: Math.random() * Math.PI * 2,
-          spin: Math.random() * Math.PI * 2,
+          hover: rng() * Math.PI * 2,
+          spin: rng() * Math.PI * 2,
           arena: true,
         });
       });
@@ -3484,20 +3590,20 @@ export const PlayingView: React.FC<{
       let droneAttempts = 0;
       while (dronesPlaced < droneCount && droneAttempts < 70) {
         droneAttempts++;
-        const bias = 1 - Math.pow(Math.random(), 1 + difficultyProfile.inLevelRamp);
+        const bias = 1 - Math.pow(rng(), 1 + difficultyProfile.inLevelRamp);
         const dsx = 560 + bias * Math.max(300, levelLength - 1500);
         if (dsx < 500 || dsx > levelLength - 900) continue;
         if (game.enemies.some((en: any) => Math.abs(en.x - dsx) < 250)) continue;
         // Keep drones and shuttle platforms clear of each other's lane.
         if (game.platforms.some((pl: any) => pl.mover && pl.mover.axis === 'h' && dsx > pl.x - 220 && dsx < pl.x + pl.width + 220)) continue;
-        const dsy = game.groundY - 150 - Math.random() * 110;
+        const dsy = game.groundY - 150 - rng() * 110;
         const anchorIdx = game.platforms.findIndex((pl: any) => dsx >= pl.x && dsx <= pl.x + pl.width);
         game.enemies.push({
           x: dsx, y: dsy, width: 40, height: 30,
           velocityX: 0, type: 5,
           platform: anchorIdx < 0 ? 0 : anchorIdx,
           baseY: dsy,
-          hover: Math.random() * Math.PI * 2,
+          hover: rng() * Math.PI * 2,
           aggroTo: false,
           shootTimer: 0,
           chargeTimer: 0,
@@ -3519,8 +3625,8 @@ export const PlayingView: React.FC<{
         pl.x > 420 && pl.x + pl.width < levelLength - (level % 5 === 0 ? 1500 : 620),
       );
       if (!springPlats.length) break;
-      const plat2 = springPlats[Math.floor(Math.random() * springPlats.length)];
-      const sxx = plat2.x + 24 + Math.random() * Math.max(20, plat2.width - 92);
+      const plat2 = springPlats[Math.floor(rng() * springPlats.length)];
+      const sxx = plat2.x + 24 + rng() * Math.max(20, plat2.width - 92);
       if (game.springPads.some((s: any) => Math.abs(s.x - sxx) < 480)) continue;
       if (game.hazards.some((h: any) => Math.abs(h.x - sxx) < 160)) continue;
       if (game.enemies.some((en: any) => Math.abs(en.x - sxx) < 170)) continue;
@@ -3683,7 +3789,18 @@ export const PlayingView: React.FC<{
       AudioEngine.playCombo(game.multiplier);
       pushToast(game, tr('MULTIPLIKATOR x{n}', { n: game.multiplier }), '#ffd166');
     }
-    game.score += baseScore + comboBonus + multiplierBonus;
+    const gained = baseScore + comboBonus + multiplierBonus;
+    game.score += gained;
+    // Shadow Shift is the payoff for a clean, fast streak: every action is
+    // worth 75 % more while the cat is dissolved.
+    if (game.shadowActive > 0) {
+      const shadowBonus = Math.round(gained * 0.75);
+      game.score += shadowBonus;
+      game.floatingTexts.push({
+        x, y: y - 64, text: tr('SKUGGBONUS +{n}', { n: shadowBonus }),
+        life: 45, color: '#c084fc',
+      });
+    }
   };
 
   /** Awards XP and rolls a level-up, which is the core of the reward loop. */
@@ -3713,6 +3830,83 @@ export const PlayingView: React.FC<{
     addCoins(amount);
   };
 
+  /* ---------------------------- SHADOW SHIFT ------------------------------
+     One meter, one button, four seconds of a completely different game. It is
+     deliberately earned by the things a good player already does (collect,
+     defeat, skim past danger) instead of by waiting or paying. */
+  const SHADOW_DURATION = 240; // frames at 60 Hz = 4 seconds
+
+  const gainShadowCharge = (game: any, amount: number) => {
+    // No charging while transformed: otherwise a dense crowd would chain
+    // shifts forever and the ability would never have a downtime.
+    if (!game || game.shadowActive > 0) return;
+    const before = game.shadowCharge || 0;
+    game.shadowCharge = Math.min(100, before + amount);
+    if (before < 100 && game.shadowCharge >= 100) {
+      pushToast(game, tr('SKUGGSKIFTE REDO · E'), '#c084fc');
+      AudioEngine.playPowerup();
+    }
+  };
+
+  const triggerShadowShift = () => {
+    const game = gameRef.current;
+    if (!game || !game.running || isPausedRef.current) return;
+    if ((game.shadowCharge || 0) < 100 || game.shadowActive > 0) return;
+    const p = game.player;
+    game.shadowCharge = 0;
+    game.shadowActive = SHADOW_DURATION;
+    game.shadowShifts = (game.shadowShifts || 0) + 1;
+    runTotalsRef.current.shadowShifts += 1;
+    p.baseSpeed = p.baseSpeed || p.speed;
+    p.speed = p.baseSpeed * 1.3;
+    // Every damage source in the game already respects `invincible`, so the
+    // transformation needs no special case in the collision rules.
+    p.invincible = true;
+    p.invincibleTimer = SHADOW_DURATION;
+    game.slowMo = 12;
+    game.zoomPunch = Math.max(game.zoomPunch || 0, 10);
+    game.screenShake = Math.max(game.screenShake || 0, 7);
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      game.particles.push({
+        x: p.x + p.width / 2 + Math.cos(a) * 18,
+        y: p.y + p.height / 2 + Math.sin(a) * 26,
+        vx: Math.cos(a) * 4, vy: Math.sin(a) * 4 - 1,
+        life: 34, color: i % 2 ? '#c084fc' : '#6d28d9', size: Math.random() * 3 + 2,
+      });
+    }
+    pushToast(game, tr('SKUGGSKIFTE! · {n}s', { n: 4 }), '#c084fc');
+    AudioEngine.playDash();
+    AudioEngine.playPowerup();
+    if (progress.settings.haptics && navigator.vibrate) navigator.vibrate([12, 30, 18]);
+  };
+
+  /** Passing through an enemy while shifted dissolves it instead of hurting
+      the cat. Uses the same reward path as a stomp, with its own colour. */
+  const shadowPassKill = (game: any, e: any) => {
+    const killX = e.x + e.width / 2;
+    const killY = e.y + e.height / 2;
+    e.x = -1000;
+    e.shadowKilled = true;
+    game.shadowPasses = (game.shadowPasses || 0) + 1;
+    runTotalsRef.current.shadowPasses += 1;
+    registerCombo(game, 300, killX, killY);
+    grantXp(game, 30);
+    awardCoins(game, 3);
+    game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
+    game.killsThisLevel = (game.killsThisLevel || 0) + 1;
+    for (let i = 0; i < 18; i++) {
+      game.particles.push({
+        x: killX, y: killY,
+        vx: (Math.random() - 0.5) * 11, vy: (Math.random() - 0.5) * 11,
+        life: 32, color: i % 2 ? '#c084fc' : '#ffffff', size: Math.random() * 4 + 2,
+      });
+    }
+    game.floatingTexts.push({ x: killX, y: killY - 12, text: tr('SKUGGPASS +300'), life: 45, color: '#c084fc' });
+    game.hitStop = Math.max(game.hitStop || 0, 2);
+    AudioEngine.playExplosion();
+  };
+
   const persistRunSummary = (game: any, perfectLevel: boolean) => {
     try {
       localStorage.setItem('shadow_paw_last_run', JSON.stringify({
@@ -3722,7 +3916,9 @@ export const PlayingView: React.FC<{
         bossDefeated: game.bossDefeatedInRun || false,
         perfectLevel,
         bestStreak: game.bestStreak || 0,
-        nearMisses: game.nearMisses || 0,
+        nearMisses: Math.max(game.nearMisses || 0, runTotalsRef.current.nearMisses),
+        shadowPasses: runTotalsRef.current.shadowPasses,
+        shadowShifts: runTotalsRef.current.shadowShifts,
         noHit: !!game.noHit,
         runLevel: game.runLevel || 1,
         coins: game.coinsThisLevel || 0,
@@ -3898,7 +4094,15 @@ export const PlayingView: React.FC<{
     return points >= 4 ? 'S' : points === 3 ? 'A' : points === 2 ? 'B' : 'C';
   };
 
+  /** Clearing a stage restores a life. A 40-level campaign on a single pool of
+      five lives meant one bad level 3 quietly doomed the whole run, so the
+      "Continue" button was really a restart. Flawless and boss clears restore
+      one extra, which makes mastery matter without removing the challenge. */
+  const levelLifeBonus = (game: any) => (game?.noHit || game?.bossDefeatedInRun ? 2 : 1);
+
   const startNextLevel = () => {
+    const finished = gameRef.current;
+    setLives(Math.min(6, (finished?.lives ?? lives) + levelLifeBonus(finished)));
     setShowLevelComplete(false);
     setLevelSummary(null);
     setCurrentLevel(prev => prev + 1);
@@ -3921,6 +4125,10 @@ export const PlayingView: React.FC<{
     }
     if (active && [16, 75, 88].includes(code)) {
       triggerDash();
+    }
+    // E / Q: spend a full Shadow Shift meter.
+    if (active && [69, 81].includes(code)) {
+      triggerShadowShift();
     }
     // Skjut med tangentbord: F (70), J (74), Z (90), Ctrl (17)
     if (active && [70, 74, 90, 17].includes(code)) {
@@ -4045,9 +4253,10 @@ export const PlayingView: React.FC<{
 
     // Keys the game owns: prevent the browser from scrolling the page or
     // moving focus while the player is running and jumping.
-    const GAME_KEYS = new Set([16, 17, 27, 32, 37, 38, 39, 65, 68, 70, 74, 75, 80, 87, 88, 90]);
+    const GAME_KEYS = new Set([16, 17, 27, 32, 37, 38, 39, 65, 68, 69, 70, 74, 75, 80, 81, 87, 88, 90]);
     const handleKeyDown = (e: KeyboardEvent) => {
       if (GAME_KEYS.has(e.keyCode)) e.preventDefault();
+      if (showIntroRef.current && e.keyCode !== 27 && e.keyCode !== 80) skipIntro();
       // Holding Esc/P fires a stream of keydown events; without this guard the
       // pause menu flickered on and off for as long as the key was held.
       if (e.repeat && (e.keyCode === 27 || e.keyCode === 80)) return;
@@ -4059,6 +4268,7 @@ export const PlayingView: React.FC<{
     };
     const handleMouseDown = (e: MouseEvent) => {
       e.preventDefault();
+      skipIntro();
       const p = screenToStage(e.clientX, e.clientY);
       fireBullet(p.x, p.y);
     };
@@ -4066,6 +4276,7 @@ export const PlayingView: React.FC<{
     // Touch controls for mobile
     const handleTouchStart = (e: TouchEvent) => {
       e.preventDefault();
+      skipIntro();
       const touch = e.touches[0];
       const p = screenToStage(touch.clientX, touch.clientY);
 
@@ -4133,6 +4344,28 @@ export const PlayingView: React.FC<{
         return;
       }
 
+      // Shadow Shift is a timed form. When it lapses, restore the real run
+      // speed and drop the invulnerability in one place, even if a hit or a
+      // shield changed the invincibility timer meanwhile.
+      if (game.shadowActive > 0) {
+        game.shadowActive--;
+        if (game.shadowActive === 0) {
+          game.player.speed = game.player.baseSpeed || game.player.speed;
+          game.player.invincible = false;
+          game.player.invincibleTimer = 0;
+          pushToast(game, tr('SKUGAN SVINNER'), '#8b9bb4');
+        } else if (game.shadowActive % 3 === 0) {
+          game.player.trail.push({
+            x: game.player.x + game.player.width / 2,
+            y: game.player.y + game.player.height / 2,
+            life: 16, maxLife: 16, shadow: true,
+          });
+        }
+      }
+
+      // The intro card's spawn-protection clock runs in simulation frames,
+      // not wall-clock time, so it cannot expire while a tab is throttled.
+      if (game.introTimer > 0) game.introTimer--;
       // Level clock (used for the results card, independent of the Speed Run
       // countdown).
       game.levelSeconds = (game.levelSeconds || 0) + 1 / 60;
@@ -4317,6 +4550,7 @@ export const PlayingView: React.FC<{
             awardCoins(game, 3);
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
             game.killsThisLevel = (game.killsThisLevel || 0) + 1;
+            gainShadowCharge(game, 12);
             AudioEngine.playExplosion();
 
             // Explosion particles
@@ -4337,6 +4571,7 @@ export const PlayingView: React.FC<{
           if (boss.x < b.x + b.radius && boss.x + boss.width > b.x - b.radius && boss.y < b.y + b.radius && boss.y + boss.height > b.y - b.radius) {
             b.life = 0;
             boss.hp--;
+            gainShadowCharge(game, 6);
             boss.stunTimer = 8;
             game.hitStop = 2;
             game.screenShake = 10;
@@ -4566,6 +4801,7 @@ export const PlayingView: React.FC<{
               life: 24, color: '#7ee7ff', size: Math.random() * 3.5 + 1.5,
             });
           }
+          gainShadowCharge(game, 5);
           AudioEngine.playBounce();
           if (progress.settings.haptics && navigator.vibrate) navigator.vibrate(16);
           break;
@@ -4584,6 +4820,8 @@ export const PlayingView: React.FC<{
           if (dx < 70 && dy < 60) {
             e.nearMissed = true;
             game.nearMisses = (game.nearMisses || 0) + 1;
+            runTotalsRef.current.nearMisses += 1;
+            gainShadowCharge(game, 20);
             game.score += 75;
             game.floatingTexts.push({ x: e.x, y: e.y - 20, text: tr('NÄSTAN! +75'), life: 40, color: '#7ef7c2' });
             AudioEngine.playNearMiss();
@@ -4649,6 +4887,15 @@ export const PlayingView: React.FC<{
           }
         }
 
+        // Dissolved cat: touching an enemy removes it instead of hurting us.
+        // This runs before the invincibility guard, which would otherwise skip
+        // every collision while shifted.
+        if (game.shadowActive > 0 && !e.shadowKilled && e.x > -500) {
+          const sx = game.player.x + game.player.width > e.x + 3 && game.player.x < e.x + e.width - 3;
+          const sy = game.player.y + game.player.height > e.y + 3 && game.player.y < e.y + e.height - 3;
+          if (sx && sy) shadowPassKill(game, e);
+        }
+
         // ONLY check collision if player is NOT invincible AND there's actual overlap
         if (!game.player.invincible) {
           // More strict collision check - must have CLEAR overlap
@@ -4675,6 +4922,7 @@ export const PlayingView: React.FC<{
             awardCoins(game, 2);
             game.enemiesDefeatedInRun = (game.enemiesDefeatedInRun || 0) + 1;
             game.killsThisLevel = (game.killsThisLevel || 0) + 1;
+            gainShadowCharge(game, 14);
             game.player.velocityY = -12;
             game.zoomPunch = 5;
             AudioEngine.playExplosion();
@@ -4815,9 +5063,18 @@ export const PlayingView: React.FC<{
       // platform - not at a fixed offset that can drop the cat straight back
       // into the same hole and drain several lives in a row.
       if (game.player.y > canvas.height + 100) {
-        game.lives--;
-        game.deathsInRun = (game.deathsInRun || 0) + 1;
-        game.noHit = false;
+        // "Invulnerable" has to include pits: losing a life while dissolved
+        // reads as a bug. The respawn still happens, it just costs nothing.
+        const carriedByShadow = game.shadowActive > 0;
+        if (!carriedByShadow) {
+          game.lives--;
+          game.deathsInRun = (game.deathsInRun || 0) + 1;
+          game.noHit = false;
+          AudioEngine.playLifeLost();
+          pushToast(game, tr('-1 LIV · TILLBAKA PÅ SPÅRET'), '#ff8888');
+        } else {
+          pushToast(game, tr('SKUGGBONUS · FALLET RÄDDAT'), '#c084fc');
+        }
         game.slowMo = 10;
         game.screenShake = 12;
         const safePlatforms = game.platforms
@@ -4830,9 +5087,7 @@ export const PlayingView: React.FC<{
         game.player.velocityX = 0;
         game.player.invincible = true;
         game.player.invincibleTimer = 70;
-        AudioEngine.playLifeLost();
-        pushToast(game, tr('-1 LIV · TILLBAKA PÅ SPÅRET'), '#ff8888');
-        if (game.lives <= 0) endRun(game, 'hole');
+        if (!carriedByShadow && game.lives <= 0) endRun(game, 'hole');
       }
 
 
@@ -4897,7 +5152,7 @@ export const PlayingView: React.FC<{
         if (!f.collected) {
           // Fish magnet: drift nearby fish toward the cat so the pickup feels
           // like a vacuum instead of a larger hitbox.
-          if (game.buffs.magnet > 0) {
+          if (game.buffs.magnet > 0 || game.shadowActive > 0) {
             const mdx = (game.player.x + game.player.width / 2) - (f.x + f.width / 2);
             const mdy = (game.player.y + game.player.height / 2) - (f.y + f.height / 2);
             const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
@@ -4925,6 +5180,7 @@ export const PlayingView: React.FC<{
             awardCoins(game, 2);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
             game.totalCollectedInLevel++;
+            gainShadowCharge(game, 7);
             // The Time Attack goal promises that every fish buys time, and the
             // intro card says so - but only the opening budget ever counted, so
             // the clock could not be refilled. Each fish now adds a little air.
@@ -7980,6 +8236,7 @@ export const PlayingView: React.FC<{
             kills: game.killsThisLevel || 0,
             time: Math.round((game.levelSeconds || 0)),
             levelType: game.levelType,
+            lifeBonus: levelLifeBonus(game),
           };
           setLevelSummary({ ...summary, grade: getGrade(summary) });
           AudioEngine.playGrade();
@@ -8119,7 +8376,7 @@ export const PlayingView: React.FC<{
         const alpha = (t.life / t.maxLife) * 0.35;
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#2bee79';
+        ctx.fillStyle = t.shadow ? '#a855f7' : '#2bee79';
         ctx.beginPath();
         ctx.ellipse(t.x - game.scrollX - pw / 2, t.y - ph / 2, pw * 0.42, ph * 0.42, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -8140,7 +8397,9 @@ export const PlayingView: React.FC<{
       }
 
       ctx.save();
-      if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Date.now() / 55);
+      const shifted = game.shadowActive > 0;
+      if (shifted) ctx.globalAlpha = 0.84;
+      else if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Date.now() / 55);
       // One hero cat everywhere: the same articulated drawing as the menu,
       // shop and attract loop. The origin is the paw line (py + ph), so the cat
       // stands on the exact top of the platform rather than hovering above it.
@@ -8150,9 +8409,9 @@ export const PlayingView: React.FC<{
       // The baked 3D atlas is the hero now; the vector cat stays as the
       // fallback for the frames before the PNG has decoded.
       const atlasDrawn = drawCatAtlasSprite(ctx, px + pw / 2, py + ph, {
-        color: game.player.color,
-        accent: game.player.accent,
-        original: game.player.original,
+        color: shifted ? '#7c3aed' : game.player.color,
+        accent: shifted ? '#e9d5ff' : game.player.accent,
+        original: game.player.original && !shifted,
         t: Date.now() / 1000,
         running: Math.abs(catSpeed) > 0.4 && catGrounded,
         jumping: !catGrounded,
@@ -8171,8 +8430,8 @@ export const PlayingView: React.FC<{
       });
       if (!atlasDrawn) {
         drawCatSprite(ctx, px + pw / 2, py + ph, {
-          color: game.player.color,
-          accent: game.player.accent,
+          color: shifted ? '#7c3aed' : game.player.color,
+          accent: shifted ? '#e9d5ff' : game.player.accent,
           t: Date.now() / 1000,
           running: Math.abs(catSpeed) > 0.4 && catGrounded,
           jumping: !catGrounded,
@@ -8194,6 +8453,33 @@ export const PlayingView: React.FC<{
         });
       }
       ctx.restore();
+
+      // Shadow Shift reads as a different character, not just a HUD number:
+      // a violet bloom, a broken orbit ring and a fading purple afterimage.
+      if (shifted) {
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 110);
+        const gx = px + pw / 2;
+        const gy = py + ph / 2;
+        ctx.save();
+        const glow = ctx.createRadialGradient(gx, gy, 3, gx, gy, 78 + pulse * 12);
+        glow.addColorStop(0, 'rgba(168, 85, 247, 0.5)');
+        glow.addColorStop(0.55, 'rgba(109, 40, 217, 0.18)');
+        glow.addColorStop(1, 'rgba(109, 40, 217, 0)');
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(gx, gy, 90 + pulse * 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = `rgba(216, 180, 254, ${0.45 + pulse * 0.45})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([9, 6]);
+        ctx.lineDashOffset = -Date.now() / 40;
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, pw * 1.05, ph * 0.82, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Buff auras. Shield is a solid bubble; magnet and rapid fire get a thin
       // coloured ring that pulses so the active timers are readable in-world.
@@ -8446,6 +8732,9 @@ export const PlayingView: React.FC<{
           comboTimer: game.comboTimer || 0,
           noHit: !!game.noHit,
           nearMisses: game.nearMisses || 0,
+          shadowCharge: game.shadowCharge || 0,
+          shadowActive: game.shadowActive || 0,
+          shadowPasses: game.shadowPasses || 0,
           toasts: game.toasts || [],
           bossHp: game.boss?.hp || 0,
           bossMaxHp: game.boss?.maxHp || 0,
@@ -8600,6 +8889,40 @@ export const PlayingView: React.FC<{
                   />
                 </div>
               </div>
+
+              {/* Shadow Shift meter. It doubles as the touch button: the HUD
+                  is otherwise pointer-transparent, so one chip can serve
+                  desktop (E / Q), mouse and phone without a sixth thumb key. */}
+              <button
+                type="button"
+                onClick={triggerShadowShift}
+                disabled={stats.shadowCharge < 100 && stats.shadowActive <= 0}
+                aria-label={t('Skuggskifte')}
+                title={t('Skuggskifte: ladda med fisk, fiender och nästan-träffar · E')}
+                className={`hud-chip pointer-events-auto relative overflow-hidden transition-colors ${
+                  stats.shadowActive > 0
+                    ? 'border-[#c084fc]/70 bg-[#a855f7]/20 text-[#e9d5ff]'
+                    : stats.shadowCharge >= 100
+                      ? 'animate-pulse border-[#c084fc]/60 bg-[#a855f7]/10 text-[#d8b4fe]'
+                      : 'border-white/10 text-white/45'
+                } ${isTouchDevice ? 'px-3 py-1.5' : ''}`}
+              >
+                <span className="material-symbols-outlined text-[14px]">dark_mode</span>
+                <span className="text-[9px] font-black uppercase tracking-wider">
+                  {stats.shadowActive > 0
+                    ? t('Skugga {n}s', { n: Math.ceil(stats.shadowActive / 60) })
+                    : t('SKIFT')}
+                </span>
+                {stats.shadowActive === 0 && (
+                  <span className="tabular text-[9px] font-black opacity-75">{Math.floor(stats.shadowCharge)}%</span>
+                )}
+                <span
+                  className="absolute inset-x-0 bottom-0 h-[2px] bg-[#c084fc] transition-[width] duration-150"
+                  style={{
+                    width: `${stats.shadowActive > 0 ? (stats.shadowActive / 240) * 100 : stats.shadowCharge}%`,
+                  }}
+                />
+              </button>
 
               {(stats.magnet > 0 || stats.rapid > 0) && (
                 <div className="flex items-center gap-1">
@@ -8799,6 +9122,9 @@ export const PlayingView: React.FC<{
               <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
                 {t(LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name)}
               </p>
+              <p className="mt-3 text-[9px] font-black uppercase tracking-[0.2em] text-primary/70">
+                {isTouchDevice ? t('Tryck för att börja') : t('Tryck valfri tangent för att börja')}
+              </p>
               {currentLevel === 1 && (
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-white/10 pt-3 text-[9px] font-bold uppercase tracking-[0.14em] text-white/45">
                   {(isTouchDevice
@@ -8806,12 +9132,14 @@ export const PlayingView: React.FC<{
                         ['arrow_back', t('Gå')],
                         ['arrow_upward', t('Hoppa')],
                         ['bolt', t('Skjut')],
+                        ['dark_mode', t('Skift · mätaren')],
                       ]
                     : [
                         ['keyboard', t('A / D · gå')],
                         ['arrow_upward', t('Space · hoppa')],
                         ['my_location', t('F · skjut')],
                         ['bolt', t('Shift · dash')],
+                        ['dark_mode', t('E · skuggskifte')],
                       ]
                   ).map(([icon, label]) => (
                     <span key={label} className="flex items-center gap-1">
@@ -9041,6 +9369,13 @@ export const PlayingView: React.FC<{
                     {levelSummary.noHit ? t('Felfri · utan skada +750') : levelSummary.perfect ? t('Perfekt nivå +500') : t('Nivå avklarad')}
                   </span>
                 </div>
+
+                {levelSummary.lifeBonus > 0 && (
+                  <p className="relative mt-2 flex items-center justify-center gap-1 text-center text-[10px] font-black uppercase tracking-widest text-[#7ef7c2]">
+                    <span className="material-symbols-outlined text-[13px]">favorite</span>
+                    {t('+{n} liv inför nästa nivå', { n: levelSummary.lifeBonus })}
+                  </p>
+                )}
 
                 <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
                   <button onClick={startNextLevel} className="btn-primary w-full py-3.5 text-sm md:text-base">

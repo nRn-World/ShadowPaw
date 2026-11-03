@@ -23,6 +23,9 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 ### Features
 
 - 🎯 **40 Action-Packed Levels** - Eight five-level chapters, each ending in a boss
+- 🌑 **Shadow Shift** - Charge the meter with fish, kills and near misses, then press `E` (or tap the meter): four seconds of invulnerability, +30 % speed, a fish magnet, +75 % score and enemies dissolve when you run through them
+- 🧠 **Learnable Levels** - Every stage is generated from a fixed seed, so a retry replays the exact same course instead of a fresh dice roll
+- ❤️ **Fair Campaigns** - Clearing a level restores a life (two for a flawless or boss clear), and the intro card can be skipped with any key or tap
 - 🗺️ **Chapter Map** - See your progress, jump back into any cleared level
 - 💾 **Campaign Checkpoint** - Continue from the highest chapter you have unlocked
 - 🌍 **Five Languages** - English, Swedish, Turkish, Spanish and Arabic
@@ -34,6 +37,23 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🌅 **Living Skies** - Dawn, sunset, rain, snow, storms and firefly nights
 - 🎵 **Epic Soundtrack** - Background music and sound effects
 - ♿ **Comfort Options** - Reduced motion, colour-blind mode, text and UI scaling
+
+---
+
+## 🧪 Quality checks
+
+```bash
+npm run check        # TypeScript, translation table and production build
+npm run dev          # http://localhost:3000
+npm run test:smoke   # headless gameplay test against the running dev server
+```
+
+`test:smoke` drives the real game in a headless browser and verifies deterministic
+level generation, a reachable fish quota, intro skipping, the life refill and the
+whole Shadow Shift lifecycle. It uses `CHROME_PATH` if you have a local Chrome,
+otherwise the Chromium bundled with the dev dependency
+`@sparticuz/chromium` - so it also runs in CI. Set `BASE_URL` to test a deploy,
+and `FAST_CANVAS=0` to keep real canvas painting (much slower in headless).
 
 ---
 
