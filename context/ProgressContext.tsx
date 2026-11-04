@@ -67,6 +67,10 @@ const defaultProgress: PlayerProgress = {
     reduceMotion: 'system',
     debugOverlay: false,
     haptics: true,
+    difficulty: 'normal',
+    autoQuality: true,
+    cinematicEffects: true,
+    adaptiveAudio: true,
     muted: false,
     musicVolume: 75,
     sfxVolume: 50,
@@ -171,6 +175,16 @@ const LANG_CODES = ['en', 'sv', 'tr', 'es', 'ar'];
 const cleanLang = (s: PlayerProgress['settings']): PlayerProgress['settings'] =>
   LANG_CODES.includes(s.language) ? s : { ...s, language: 'en' };
 
+/** Old saves predate these three switches; fall back to the friendly default
+    instead of crashing on `undefined` deep inside the game loop. */
+const cleanGameSettings = (s: PlayerProgress['settings']): PlayerProgress['settings'] => ({
+  ...s,
+  difficulty: s.difficulty === 'easy' || s.difficulty === 'hard' ? s.difficulty : 'normal',
+  autoQuality: s.autoQuality !== false,
+  cinematicEffects: s.cinematicEffects !== false,
+  adaptiveAudio: s.adaptiveAudio !== false,
+});
+
 const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 50);
 
 export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -187,7 +201,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
               ? readLegacyCheckpoint()
               : clampCampaignLevel(parsed.campaignLevel),
             upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-            settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
+            settings: cleanGameSettings(cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }))),
             stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
             dailyQuests: parsed.dailyQuests || defaultProgress.dailyQuests,
             weeklyQuests: parsed.weeklyQuests || defaultProgress.weeklyQuests,

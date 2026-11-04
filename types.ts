@@ -1,4 +1,6 @@
 
+export type RunMode = 'campaign' | 'daily';
+
 export enum AppView {
   START = 'START',
   SETTINGS = 'SETTINGS',
@@ -75,6 +77,14 @@ export interface PlayerProgress {
     reduceMotion: boolean | 'system';
     debugOverlay: boolean;
     haptics: boolean;
+    /** Fairness dial: scales hazards and enemy pressure, never rewards. */
+    difficulty: 'easy' | 'normal' | 'hard';
+    /** Drops particle count and expensive post-processing when fps sags. */
+    autoQuality: boolean;
+    /** Bloom + filmic atmosphere. Opt-out for low-end devices. */
+    cinematicEffects: boolean;
+    /** Adds a subtle combo-driven music layer and positional SFX. */
+    adaptiveAudio: boolean;
     /** Master switch: when true nothing is audible, whatever the volumes are. */
     muted: boolean;
     musicVolume: number;

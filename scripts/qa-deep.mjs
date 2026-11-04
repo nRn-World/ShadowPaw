@@ -2,15 +2,14 @@
  * Deep QA: seeded save -> boss level, purchases, settings, game over, home demo.
  * Usage: node scripts/qa-deep.mjs
  */
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = 'http://localhost:3000';
 const OUT = 'screenshots/qa-deep';
 fs.mkdirSync(OUT, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console] ${m.text()}`); });

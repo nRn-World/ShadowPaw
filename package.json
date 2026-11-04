@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "bake:cat-atlas": "node scripts/bake-cat-atlas.mjs",
-    "check:i18n": "node scripts/check-i18n.mjs"
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "test:smoke": "node scripts/qa-smoke.mjs",
+    "check": "npm run typecheck && npm run check:i18n && npm run build",
+    "test:units": "node --experimental-strip-types --test scripts/test-units.mjs",
+    "test:ui": "node scripts/qa-ui.mjs"
   },
   "dependencies": {
     "react": "^19.2.3",
@@ -17,6 +21,7 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@sparticuz/chromium": "^153.0.0",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^22.14.0",
     "@types/three": "^0.186.0",

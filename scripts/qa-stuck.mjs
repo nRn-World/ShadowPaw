@@ -1,10 +1,9 @@
 // Reproduce the stuck-at-end situation: run right, then try to finish.
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.log('[PAGEERROR]', e.message));
 

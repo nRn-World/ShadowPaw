@@ -1,9 +1,8 @@
 // Render tint variants side by side to pick the best skin-blend recipe.
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = (process.argv[2] || 'http://localhost:3001').replace(/\/$/, '');
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1400, height: 500 }, deviceScaleFactor: 2 });
 
 const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;background:#0a1220;display:flex;gap:8px;align-items:flex-end;padding:16px">

@@ -23,9 +23,20 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 ### Features
 
 - 🎯 **40 Action-Packed Levels** - Eight five-level chapters, each ending in a boss
+- 🌑 **Shadow Shift** - Charge the meter with fish, kills and near misses, then press `E` (or tap the meter): four seconds of invulnerability, +30 % speed, a fish magnet, +75 % score and enemies dissolve when you run through them
+- 🧠 **Learnable Levels** - Every stage is generated from a fixed seed, so a retry replays the exact same course instead of a fresh dice roll
+- 📅 **Daily Run & Ghost** - One shared date seed for everyone, a local top-10 per day, a play streak and a translucent ghost of your best run on that exact seed
+- 🚩 **Checkpoints** - Two cyan beacons on long stages send a fallen cat back to safe ground while keeping collected fish and score; no free lives
+- 🎚️ **Difficulty** - Avslappnat / Normal / Utmaning scales pits, enemies, hazards, the fish quota and the Speed Run clock, never rewards
+- 👾 **Distinct Enemies** - Hounds chase, skittish foes feint and retreat, hoppers keep a vertical rhythm; shadow wraiths can only be dissolved by a Shadow Shift pass
+- 👑 **Boss Depth** - A miniboss on every third chapter, an exposed glowing core after each attack (double damage), double damage on a Shadow Shift pass, and longer-telegraphed phase-3 crossfire and spiral patterns
+- 🃏 **Risk/Reward Cards** - Choose 1 of 3 seeded cards between levels; every card has both an upside and a cost, and restarting never rerolls the offer
+- 🎧 **Adaptive Audio & Haptics** - Combo-driven music layers, ducking under boss warnings, enemy-position stereo panning and a distinct vibration signature per event
+- ⚡ **Auto Quality** - Measures real frame time, trims particles and weather, caches the static skyline offscreen and makes bloom/atmosphere optional
+- ❤️ **Fair Campaigns** - Clearing a level restores a life (two for a flawless or boss clear), and the intro card can be skipped with any key or tap
 - 🗺️ **Chapter Map** - See your progress, jump back into any cleared level
 - 💾 **Campaign Checkpoint** - Continue from the highest chapter you have unlocked
-- 🌍 **Five Languages** - English, Swedish, Turkish, Spanish and Arabic
+- 🌍 **Five Languages** - English, Swedish, Turkish, Spanish and Arabic (with full RTL layout)
 - 🐱 **Play as a Cat** - Control your feline hero through neon streets
 - 🐰 **Defeat Enemies** - Jump on enemies or shoot them from a distance
 - 🐟 **Collect Fish** - Gather fish, extend the timer and earn coins
@@ -34,6 +45,41 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🌅 **Living Skies** - Dawn, sunset, rain, snow, storms and firefly nights
 - 🎵 **Epic Soundtrack** - Background music and sound effects
 - ♿ **Comfort Options** - Reduced motion, colour-blind mode, text and UI scaling
+
+---
+
+## 🧪 Quality checks
+
+```bash
+npm run check         # TypeScript, translation table and production build
+npm run test:units    # pure level/difficulty/perk/quality/daily/telemetry tests
+npm run dev           # http://localhost:3000  (needed for the browser suites)
+npm run test:smoke    # headless gameplay test against the running dev server
+npm run test:ui       # pause, results, game over, shop and all 5 languages / RTL
+```
+
+Requires Node 22+ (the unit runner uses native TypeScript stripping).
+All three suites run in `.github/workflows/deploy-pages.yml` before a deploy.
+`test:smoke` drives the real game and verifies deterministic level generation,
+a reachable fish quota, checkpoints, seeded perk offers, the miniboss, wraith
+immunity, intro skipping, the life refill and the whole Shadow Shift lifecycle.
+`test:ui` covers pause/results/game over/shop plus all five languages including
+Arabic RTL and the shared daily seed. `test:units` needs no browser at all.
+
+Every harness shares `scripts/browser.mjs`: it uses `CHROME_PATH` (or `--chrome`)
+if you have a local Chrome, otherwise the Chromium bundled with
+`@sparticuz/chromium` - no Windows-only paths, so CI works out of the box. Set
+`BASE_URL` to test a deploy, and `FAST_CANVAS=0` to keep real canvas painting
+(much slower in headless).
+
+### Architecture
+
+The game loop lives in `components/Views.tsx`, with pure, unit-testable modules
+under `game/`: `level.ts` (seeds, layouts, difficulty, weather, checkpoints),
+`types.ts` (real `GameState` / `HudStats` instead of `any`), `enemies.ts`,
+`perks.ts`, `daily.ts`, `quality.ts`, `telemetry.ts` and `haptics.ts`. HUD and
+canvas helpers are split into `components/GameHud.tsx` and
+`components/gameRender.ts`.
 
 ---
 

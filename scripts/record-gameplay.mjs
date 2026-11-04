@@ -7,12 +7,16 @@
  * 16:9 clip of pure gameplay, downloaded straight into public/.
  *
  * Usage: node scripts/record-gameplay.mjs   (dev server must run on :3000)
+ *
+ * Important: the checked-in public/gameplay-loop.webm is a baked asset, not a
+ * live view. Any change to the sky / background art (sun, moon, skyline,
+ * atmosphere) must be followed by re-recording this clip, otherwise the LIVE
+ * RUN card on the start screen keeps showing the old artwork.
  */
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const FINAL = path.join('public', 'gameplay-loop.webm');
 const CLIP_SECONDS = Number(process.env.CLIP_SECONDS || 16);
@@ -24,7 +28,7 @@ const BITRATE = Number(process.env.BITRATE || 1_400_000);
 
 fs.mkdirSync('public', { recursive: true });
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const context = await browser.newContext({
   viewport: { width: 1280, height: 720 },
   acceptDownloads: true,

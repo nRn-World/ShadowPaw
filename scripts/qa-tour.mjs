@@ -2,15 +2,14 @@
  * Full QA tour: every view, a real run, error capture.
  * Usage: node scripts/qa-tour.mjs  (dev server must run on :3000)
  */
-import { chromium } from 'playwright-core';
+import { launchBrowser } from './browser.mjs';
 import fs from 'node:fs';
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const OUT = 'screenshots/qa-tour';
 fs.mkdirSync(OUT, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 const warnings = [];

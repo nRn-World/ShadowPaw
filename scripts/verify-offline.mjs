@@ -46,20 +46,7 @@ if (!existsSync(join(DIST, 'index.html'))) {
   process.exit(1);
 }
 
-const CHROME_CANDIDATES = [
-  process.argv.includes('--chrome') ? process.argv[process.argv.indexOf('--chrome') + 1] : null,
-  process.env.CHROME_PATH,
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-].filter(Boolean);
-
-const chromePath = CHROME_CANDIDATES.find((p) => existsSync(p));
-if (!chromePath) {
-  console.error('Chrome not found. Pass --chrome <path> or set CHROME_PATH.');
-  process.exit(1);
-}
+const { executablePath: chromePath } = await resolveExecutable();
 
 // ---------------------------------------------------------------- static server
 const server = createServer(async (req, res) => {
@@ -122,7 +109,7 @@ async function main() {
   await new Promise((resolve) => server.listen(PORT, resolve));
 
   const chrome = spawn(chromePath, [
-    '--headless=new',
+    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
     '--remote-debugging-port=9333',
     `--user-data-dir=${PROFILE}`,
     '--no-first-run',

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverView, ShopView, QuestsView, PlayingView } from './components/Views';
 import LevelSelectView from './components/LevelSelectView';
-import { AppView } from './types';
+import { AppView, RunMode } from './types';
 import { ProgressProvider, useProgress } from './context/ProgressContext';
 import { InstallProvider } from './context/InstallContext';
 import { AudioEngine } from './services/AudioEngine';
@@ -21,6 +21,9 @@ const App: React.FC = () => {
   // Level the next run starts on. 1 for a normal run, higher for the daily
   // challenge card on the start screen.
   const [startLevel, setStartLevel] = useState(1);
+  // A daily run shares its layout with everyone on the same date; the campaign
+  // always uses the canonical per-level seed.
+  const [startMode, setStartMode] = useState<RunMode>('campaign');
   const [lastScore, setLastScore] = useState(0);
   const [lastFishesCollected, setLastFishesCollected] = useState(0);
   const menuMusicRef = useRef<HTMLAudioElement | null>(null);
@@ -117,12 +120,13 @@ const App: React.FC = () => {
   // views a new callback identity on every render.
   const handleNavigate = useCallback((view: AppView) => {
     // Every menu entry into the game starts a fresh run from level 1.
-    if (view === AppView.PLAYING) setStartLevel(1);
+    if (view === AppView.PLAYING) { setStartLevel(1); setStartMode('campaign'); }
     setCurrentView(view);
   }, []);
 
-  const handleStart = useCallback((level: number = 1) => {
+  const handleStart = useCallback((level: number = 1, mode: RunMode = 'campaign') => {
     setStartLevel(level);
+    setStartMode(mode);
     setCurrentView(AppView.PLAYING);
   }, []);
 
@@ -143,7 +147,7 @@ const App: React.FC = () => {
       case AppView.LEADERBOARD:
         return <LeaderboardView onBack={() => handleNavigate(AppView.START)} onPlay={() => handleNavigate(AppView.PLAYING)} />;
       case AppView.PLAYING:
-        return <PlayingView key={startLevel} startLevel={startLevel} onEnd={handleGameEnd} />;
+        return <PlayingView key={`${startLevel}-${startMode}`} startLevel={startLevel} runMode={startMode} onEnd={handleGameEnd} />;
       case AppView.GAME_OVER:
         return <GameOverView score={lastScore} fishesCollected={lastFishesCollected} onRestart={() => handleNavigate(AppView.PLAYING)} onMenu={() => handleNavigate(AppView.START)} />;
       case AppView.SHOP:

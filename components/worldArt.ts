@@ -183,36 +183,6 @@ export const drawNeonSkyline = (ctx: CanvasRenderingContext2D, o: SkylineOptions
     drawLayer(0.085, 166, 0.82, '#0b2a3a', '#2bee79', 'rgba(255, 236, 180, 0.8)', 83, 2);
   }
 
-  // Catenary cables between rooftops, with a tiny lamp at each sag. They are a
-  // small detail, but they make the skyline feel connected and inhabited.
-  if (urban) {
-    ctx.save();
-    for (let c = 0; c < 2; c++) {
-      const y = ridgeBase - (276 + c * 58);
-      const offset = ((scrollX * 0.1) % 420 + 420) % 420;
-      ctx.strokeStyle = isNight ? 'rgba(2,6,14,0.72)' : 'rgba(6,20,30,0.4)';
-      ctx.lineWidth = 1.2;
-      for (let x = -420; x < width + 420; x += 420) {
-        const sx = x - offset;
-        ctx.beginPath();
-        ctx.moveTo(sx, y);
-        ctx.quadraticCurveTo(sx + 210, y + 24, sx + 420, y - 4);
-        ctx.stroke();
-        const lamp = c % 2 === 0 ? 'rgba(76,232,255,0.7)' : 'rgba(255,79,216,0.7)';
-        ctx.fillStyle = lamp;
-        if (isNight) {
-          ctx.shadowColor = lamp;
-          ctx.shadowBlur = 7;
-        }
-        ctx.beginPath();
-        ctx.arc(sx + 210, y + 12, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-    }
-    ctx.restore();
-  }
-
   // A few slow airships / drones crossing the sky at night. They add a second
   // scale to the city and a moving light source without competing with play.
   if (isNight) {
@@ -272,37 +242,16 @@ export interface AtmosphereOptions {
 }
 
 /**
- * Filmic finish: light shafts, a low fog band, a vignette and a whisper of
- * grain. Everything is screen-space and sits under the HTML HUD.
+ * Filmic finish: a low fog band, weather veil, vignette and a whisper of
+ * grain. Deliberately no light shafts - see the note below. Everything is
+ * screen-space and sits under the HTML HUD.
  */
 export const drawAtmosphere = (ctx: CanvasRenderingContext2D, o: AtmosphereOptions) => {
-  const { width, height, time, isNight, isGolden, weather, reducedMotion, groundY } = o;
+  const { width, height, time, isNight, weather, reducedMotion, groundY } = o;
 
-  // Volumetric shafts from the moon / sun. Two broad wedges are enough; more
-  // reads as a lens flare rather than light in the air.
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const shaftX = width * (isGolden ? 0.71 : 0.78);
-  const shaftY = height * (isGolden ? 0.58 : 0.2);
-  // Two very soft wedges. Three wide, opaque beams read as searchlights and
-  // washed the whole stage out; these are barely-there atmospheric shafts.
-  for (let i = 0; i < 2; i++) {
-    const angle = -0.42 + i * 0.24 + Math.sin(time * 0.06 + i) * 0.02;
-    const len = height * 1.3;
-    const grad = ctx.createLinearGradient(shaftX, shaftY, shaftX + Math.sin(angle) * len, shaftY + Math.cos(angle) * len);
-    grad.addColorStop(0, isNight ? 'rgba(150, 210, 255, 0.055)' : isGolden ? 'rgba(255, 190, 120, 0.06)' : 'rgba(220, 250, 255, 0.045)');
-    grad.addColorStop(0.6, isNight ? 'rgba(120, 180, 255, 0.012)' : 'rgba(255, 220, 170, 0.012)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(shaftX - 8, shaftY);
-    ctx.lineTo(shaftX + 8, shaftY);
-    ctx.lineTo(shaftX + Math.sin(angle) * len + 90, shaftY + Math.cos(angle) * len);
-    ctx.lineTo(shaftX + Math.sin(angle) * len - 90, shaftY + Math.cos(angle) * len);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
+  // No artificial god-rays. The sun/moon lights the sky through the broad,
+  // edge-free radial glow drawn in the background pass; hard wedges or cones
+  // reaching down onto the playfield read as a lens flare / generated light.
 
   // Low mist pooling over the ground. It separates the playfield from the
   // background and hides the hard seam where the soil meets the horizon.
