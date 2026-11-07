@@ -301,6 +301,8 @@ export const STRINGS: Row[] = [
   ['Space · hoppa', 'Space · jump', 'Space · zıpla', 'Space · saltar', 'Space · اقفز'],
   ['F · skjut', 'F · shoot', 'F · ateş et', 'F · dispara', 'F · أطلق'],
   ['Shift · dash', 'Shift · dash', 'Shift · atıl', 'Shift · embestir', 'Shift · اندفع'],
+  ['Shift · → → / D D', 'Shift · → → / D D', 'Shift · → → / D D', 'Shift · → → / D D', 'Shift · → → / D D'],
+  ['Spring, hoppa och skjut – allt du behöver på 30 sekunder.', 'Run, jump and shoot – everything you need in 30 seconds.', 'Koş, zıpla ve ateş et – 30 saniyede ihtiyacın olan her şey.', 'Corre, salta y dispara: todo lo que necesitas en 30 segundos.', 'اركض واقفز وأطلق النار – كل ما تحتاجه في 30 ثانية.'],
   ['NIVÅ {n}', 'LEVEL {n}', 'SEVİYE {n}', 'NIVEL {n}', 'المستوى {n}'],
   ['RANK {r} · {a}/{b} XP', 'RANK {r} · {a}/{b} XP', 'RÜTBE {r} · {a}/{b} XP', 'RANGO {r} · {a}/{b} XP', 'الرتبة {r} · {a}/{b} خبرة'],
   ['Combo', 'Combo', 'Kombo', 'Combo', 'كومبو'],

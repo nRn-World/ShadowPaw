@@ -205,7 +205,7 @@ const InjuredCatVisual: React.FC = () => (
 /** The attract-mode card on the start screen: a live slice of play, the next
     story goal and the player's rank. It renders once in the mobile flow and
     once in the desktop hero column, so both share this single definition. */
-const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level?: number, mode?: RunMode) => void }> = ({ storyLevel, rank, onStart }) => {
+const HeroShowcase: React.FC<{ storyLevel: number; rank: number }> = ({ storyLevel, rank }) => {
   const t = useT();
   return (
     <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
@@ -221,16 +221,6 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number; onStart: (level
           <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
           <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
         </div>
-        <button
-          onClick={() => onStart(1)}
-          className="absolute inset-0 z-10 flex items-end justify-end p-3"
-          aria-label={t('Spela Shadow Paw')}
-        >
-          <span className="flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-white/80 backdrop-blur-md transition-all duration-200 group-hover/canvas:border-primary/50 group-hover/canvas:bg-primary/20 group-hover/canvas:text-white">
-            <span className="material-symbols-outlined text-[13px] text-primary">play_arrow</span>
-            {t('Spela själv')}
-          </span>
-        </button>
       </div>
 
       <div className="relative border-t border-white/10 bg-white/[0.02] px-4 py-3">
@@ -263,6 +253,14 @@ export const StartMenuView: React.FC<{
   // Campaign progress, not account rank: these are different things, and the
   // card used to promise chapter 1 forever even after clearing a dozen levels.
   const storyLevel = progress.campaignLevel;
+  const clearedLevels = Math.min(40, Math.max(0, storyLevel - 1));
+  // A first visit deserves a way in, not six zeroes.
+  const hasPlayed =
+    clearedLevels > 0 ||
+    progress.stats.totalFishCollected > 0 ||
+    progress.stats.totalEnemiesDefeated > 0 ||
+    progress.stats.bossesDefeated > 0 ||
+    progress.stats.perfectLevels > 0;
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 md:py-10 animate-fade-in-up">
@@ -281,7 +279,7 @@ export const StartMenuView: React.FC<{
           </h1>
 
           <div className="mt-5 lg:hidden">
-            <HeroShowcase storyLevel={storyLevel} rank={progress.level} onStart={onStart} />
+            <HeroShowcase storyLevel={storyLevel} rank={progress.level} />
           </div>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
@@ -357,28 +355,44 @@ export const StartMenuView: React.FC<{
         {/* ----------------------------------------------------- hero panel */}
         <div className="relative">
           <div className="hidden lg:block">
-            <HeroShowcase storyLevel={storyLevel} rank={progress.level} onStart={onStart} />
+            <HeroShowcase storyLevel={storyLevel} rank={progress.level} />
           </div>
 
-          {/* Career stats */}
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {[
-              { icon: 'monetization_on', label: t('Mynt'), value: progress.coins, tone: 'text-yellow-400' },
-              { icon: 'local_fire_department', label: t('Bästa combo'), value: progress.stats.bestCombo, tone: 'text-cyan-300' },
-              { icon: 'emoji_events', label: t('Bossar'), value: progress.stats.bossesDefeated, tone: 'text-orange-300' },
-              { icon: 'set_meal', label: t('Fiskar'), value: progress.stats.totalFishCollected, tone: 'text-sky-300' },
-              { icon: 'swords', label: t('Fiender'), value: progress.stats.totalEnemiesDefeated, tone: 'text-rose-300' },
-              { icon: 'stars', label: t('Perfekta'), value: progress.stats.perfectLevels, tone: 'text-primary' },
-            ].map((s) => (
-              <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2">
-                <div className="flex items-center gap-1">
-                  <span className={`material-symbols-outlined text-[13px] ${s.tone}`}>{s.icon}</span>
-                  <span className="tabular text-sm font-black text-white">{s.value}</span>
+          {/* Career stats: three numbers that mean something. A first visit gets
+              a way in instead, because six zeroes say nothing about the game. */}
+          {hasPlayed ? (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {[
+                { icon: 'monetization_on', label: t('Mynt'), value: progress.coins, tone: 'text-yellow-400' },
+                { icon: 'local_fire_department', label: t('Bästa combo'), value: progress.stats.bestCombo, tone: 'text-cyan-300' },
+                { icon: 'set_meal', label: t('Fiskar'), value: progress.stats.totalFishCollected, tone: 'text-sky-300' },
+              ].map((s) => (
+                <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2">
+                  <div className="flex items-center gap-1">
+                    <span className={`material-symbols-outlined text-[13px] ${s.tone}`}>{s.icon}</span>
+                    <span className="tabular text-sm font-black text-white">{s.value}</span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[10px] font-black uppercase tracking-wider text-white/30">{s.label}</p>
                 </div>
-                <p className="mt-0.5 truncate text-[8px] font-black uppercase tracking-wider text-white/30">{s.label}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <button
+              onClick={() => onNavigate(AppView.HOW_TO_PLAY)}
+              className="group mt-3 flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.06]"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+                <span className="material-symbols-outlined text-[19px]">sports_esports</span>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-primary/80">{t('Så spelar du')}</span>
+                <span className="mt-1 block text-xs leading-snug text-white/50">
+                  {t('Spring, hoppa och skjut – allt du behöver på 30 sekunder.')}
+                </span>
+              </span>
+              <span className="material-symbols-outlined shrink-0 text-white/25 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary">chevron_right</span>
+            </button>
+          )}
 
           {/* Daily quests */}
           <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3.5">
@@ -893,7 +907,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {[
               { k: 'A / D  ← →', v: 'Rör dig' },
               { k: 'Mellanslag', v: 'Hoppa · dubbelhopp' },
-              { k: 'Shift', v: 'Dash' },
+              { k: 'Shift · → → / D D', v: 'Dash' },
               { k: 'E / Q', v: 'Skuggskifte' },
               { k: 'Klick / F', v: 'Skjuta' },
               { k: 'Esc / P', v: 'Paus' },
@@ -2905,7 +2919,9 @@ export const PlayingView: React.FC<{
       theme: theme,
       layout: getLevelLayout(level),
       fishGoal: 0,
-      lastStatUpdate: 0
+      lastStatUpdate: 0,
+      // Timing for the double-tap → / D dash, read in handleKeyDown.
+      lastForwardTap: { code: 0, at: 0 }
     };
 
     // Passive perks from skill tree milestones.
@@ -4143,6 +4159,21 @@ export const PlayingView: React.FC<{
       // Holding Esc/P fires a stream of keydown events; without this guard the
       // pause menu flickered on and off for as long as the key was held.
       if (e.repeat && (e.keyCode === 27 || e.keyCode === 80)) return;
+      // A double tap on → or D fires the same dash as Shift, so sprinting ahead
+      // never needs a second hand on the keyboard. Both taps must use the same
+      // key, otherwise rolling from → to D would dash by accident. Facing is
+      // forced forward because the movement step has not run yet this frame.
+      if ((e.keyCode === 39 || e.keyCode === 68) && !e.repeat) {
+        const now = performance.now();
+        const lastTap = game.lastForwardTap || { code: 0, at: 0 };
+        if (lastTap.code === e.keyCode && now - lastTap.at < 280) {
+          if (game.player) game.player.facing = 1;
+          triggerDash();
+          game.lastForwardTap = { code: 0, at: 0 };
+        } else {
+          game.lastForwardTap = { code: e.keyCode, at: now };
+        }
+      }
       setKeyState(e.keyCode, true);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
