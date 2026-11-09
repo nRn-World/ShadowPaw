@@ -996,6 +996,8 @@ export interface GroundOpts {
   seed: number;
   /** Kept for the moving-platform and boss-call sites; the ground itself is still. */
   motion?: number;
+  /** Camera scroll, so grass blades keep their shape in world space. */
+  scrollX?: number;
   /** Neon edge accent for boss walkways and city routes. */
   neon?: string;
 }
@@ -1005,16 +1007,22 @@ const INK_W = 3;
 /**
  * Grass blades along a top edge. Deliberately still.
  *
- * These blades used to sway in a continuous sine wave whose phase advanced
- * with world X, which made the whole ground ripple in a travelling wave right
- * under the player's feet. Combined with the camera panning, that was the one
- * thing in the frame the eye could not lock onto - reported as the grass
- * "moving when the cat runs" and hurting to look at.
+ * Two separate bugs used to make this ground feel alive, and both came from
+ * the blades being laid out in *screen* space:
  *
- * A parallax layer already gives the world motion. The ground is what the
- * player reads to judge jumps, so it stays put: fixed blades, with only the
- * wildflowers keeping a shape that suggests wind. No clock, no phase.
+ *   1. the sway phase advanced with world X, so the whole fringe rippled in a
+ *      travelling wave right where the player looks;
+ *   2. after the sway was removed, the blade height / colour / flower were
+ *      still hashed on the screen position, so every camera pan re-rolled
+ *      every blade and the ground boiled and sparkled as the cat ran.
+ *
+ * Both are gone: the spacing grid is anchored to the world (blades are always
+ * SPACING apart from the slab's own origin), and every blade's shape is hashed
+ * from its world position. A blade therefore looks identical on every frame of
+ * the level and merely slides with the ground, which is what the eye expects.
  */
+const GRASS_SPACING = 7;
+
 const drawGrassCap = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1022,12 +1030,20 @@ const drawGrassCap = (
   width: number,
   pal: Pal,
   seed: number,
+  /** World x of the slab's left edge. Blade shapes are hashed from this. */
+  worldLeft: number,
+  /** World x currently shown at screen x = 0 (the camera scroll). */
+  scrollX: number,
 ) => {
-  const start = Math.max(0, x - 6);
-  const end = Math.min(x + width + 6, x + width + 10);
+  // Walk world positions, then convert to screen: the set of blades that exist
+  // is fixed relative to the platform, not relative to the viewport.
+  const firstWorld = worldLeft + Math.floor((scrollX - 6 - worldLeft) / GRASS_SPACING) * GRASS_SPACING;
+  const lastWorld = worldLeft + width + 8;
   ctx.lineCap = 'round';
-  for (let gx = start; gx < end; gx += 7) {
-    const hh = h1(gx * 0.37 + seed);
+  for (let wx = firstWorld; wx < lastWorld; wx += GRASS_SPACING) {
+    const gx = wx - scrollX;
+    if (gx < -8 || gx > 1280 + 8) continue;
+    const hh = h1(wx * 0.37 + seed);
     const blade = 7 + hh * 13;
     // A fixed lean derived from the position hash - the meadow looks wind-combed
     // without a single pixel of it changing between frames.
@@ -1097,19 +1113,25 @@ export const drawGroundSlab = (ctx: CanvasRenderingContext2D, g: GroundOpts) => 
   }
 
   if (cap === 'grass') {
-    drawGrassCap(ctx, x, y, width, pal, seed);
+    // `x` is screen space; the world origin and the camera scroll put every
+    // blade back on its fixed world position so nothing re-rolls while panning.
+    const scrollX = g.scrollX ?? 0;
+    drawGrassCap(ctx, x, y, width, pal, seed, x + scrollX, scrollX);
   } else if (cap === 'snow') {
-    // Soft snow mounds along the top.
+    // Soft snow mounds along the top. Seeded on the world position so the
+    // mounds do not re-roll (and visibly crawl) while the camera pans.
+    const worldLeft = x + (g.scrollX ?? 0);
     for (let sx = x + 10; sx < x + width - 10; sx += 34) {
-      const r = h1(sx * 0.21 + seed);
+      const r = h1((worldLeft + (sx - x)) * 0.21 + seed);
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.ellipse(sx + 8, y + 1, 12 + r * 8, 6 + r * 4, 0, Math.PI, Math.PI * 2);
       ctx.fill();
     }
   } else if (cap === 'sand') {
+    const worldLeft = x + (g.scrollX ?? 0);
     for (let sx = x + 12; sx < x + width - 12; sx += 40) {
-      const r = h1(sx * 0.33 + seed);
+      const r = h1((worldLeft + (sx - x)) * 0.33 + seed);
       ctx.strokeStyle = withAlpha(pal.ledgeDeep, 0.35);
       ctx.lineWidth = 2;
       ctx.beginPath();

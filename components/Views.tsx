@@ -5602,7 +5602,7 @@ export const PlayingView: React.FC<{
           drawGroundSlab(ctx, {
             x: platX, y: platY, width: plat.width, height: plat.height,
             pal: worldPal, grass: true, cap: capStyle, time: timeSec,
-            seed: platIndex * 17.3,
+            seed: platIndex * 17.3, scrollX: game.scrollX,
           });
         } else {
           // Floating ledges, bridges, moving lifts and boss walkways.
