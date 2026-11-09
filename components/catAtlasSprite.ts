@@ -33,20 +33,27 @@ const RUN_URLS = ['cat_run_0.png', 'cat_run_1.png', 'cat_run_2.png', 'cat_run_3.
 const RUN_ORDER = [1, 2, 3, 0];
 
 /**
- * How far the cat travels per full stride, in world pixels, at the reference
- * sprite width. Cadence is driven by DISTANCE, not by a fixed frame rate:
- * advancing one stride per travelled distance is what stops the paws from
- * skating on the ground when the cat speeds up or slows down, and it is the
- * single biggest reason a sprite run reads as real or as a slideshow.
+ * How far the cat travels per full 4-frame cycle, in world pixels at the
+ * reference sprite width. Cadence is driven by DISTANCE travelled, not by a
+ * clock: one cycle per stride of ground is what keeps the paws from skating
+ * when the cat speeds up or slows down, and it is the single biggest reason a
+ * sprite run reads as real or as a slideshow.
  *
- * Tuned so the paw contact points move at roughly the same rate as the world
- * scrolls past at normal run speed.
+ * The value is not arbitrary. At normal run speed the cat covers 4.6 px per
+ * 60 Hz step, i.e. 276 px/s, and the drawn cat is 66 px wide with a torso of
+ * about 37 px. One cycle should carry the body roughly one body length, so a
+ * stride in the high fifties gives a cadence of about 20 frame changes per
+ * second - the range a hand-drawn cartoon run actually cycles at.
+ *
+ * This used to be 26 px, which demanded 42 frame changes per second: the legs
+ * visibly churned faster than the ground went past, which is exactly the
+ * "the run does not keep up with the speed" the player reported.
  */
-const STRIDE_PX = 26;
+const STRIDE_PX = 56;
 /** Cadence clamp, in strides per second, so a crawl still animates and a dash
  *  does not strobe. */
-const MIN_CADENCE = 2.2;
-const MAX_CADENCE = 11;
+const MIN_CADENCE = 2.0;
+const MAX_CADENCE = 7.5;
 
 /**
  * Accumulated gait phase, integrated from distance travelled.
@@ -59,10 +66,25 @@ const MAX_CADENCE = 11;
 let gaitPhase = 0;
 let gaitLastT = 0;
 const advanceGait = (t: number, speed: number, runW: number): number => {
-  const dt = gaitLastT ? Math.min(0.1, Math.max(0, t - gaitLastT)) : 0;
+  // Clamped heavily, and not only for tidiness. The simulation runs on a fixed
+  // 60 Hz step fed by requestAnimationFrame, and it deliberately caps how much
+  // time it will catch up per rendered frame; on a machine that cannot hold
+  // 60 fps the simulation therefore runs in slow motion while wall-clock time
+  // keeps going. Measuring the gait against wall-clock would let the legs run
+  // at full speed while the cat barely moved - the same skating the stride
+  // constant exists to prevent, only worse. A bound of a few frames means the
+  // worst case is a slightly faster cycle during a hitch, never a runaway.
+  const dt = gaitLastT ? Math.min(0.05, Math.max(0, t - gaitLastT)) : 0;
   gaitLastT = t;
-  // World px travelled per second, relative to the sprite's drawn width.
-  const pxPerSec = Math.abs(speed) * (runW / 66);
+  // `speed` is the player's velocityX, which the simulation stores in PIXELS PER
+  // 60 Hz STEP - not per second. The step rate is fixed (FIXED_STEP_MS in
+  // Views), so converting is a constant, but getting it wrong is not subtle:
+  // treating 4.6 px/step as 4.6 px/s understated the travel 60 times over, the
+  // cadence fell through the floor into its clamp, and the legs cycled at about
+  // half the rate the ground went past. That is the "the movement does not keep
+  // up with the speed" the player saw.
+  const STEP_HZ = 60;
+  const pxPerSec = Math.abs(speed) * STEP_HZ * (runW / 66);
   const stridePx = STRIDE_PX * (runW / 66);
   let cadence = stridePx > 0 ? pxPerSec / stridePx : MIN_CADENCE;
   cadence = Math.min(MAX_CADENCE, Math.max(MIN_CADENCE, cadence));
