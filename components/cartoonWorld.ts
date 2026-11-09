@@ -1005,23 +1005,21 @@ export interface GroundOpts {
 const INK_W = 3;
 
 /**
- * Grass blades along a top edge. Deliberately still.
+ * Grass fringe along the top edge of a ground slab.
  *
- * Two separate bugs used to make this ground feel alive, and both came from
- * the blades being laid out in *screen* space:
+ * The style is lifted from the live-run card on the home screen, which the
+ * player pointed at as the look they wanted: a thin turf line, then a row of
+ * fine, pale, tapering blades that barely rise above it. The old fringe was
+ * the opposite - thick dark strokes with pink wildflowers on top - which read
+ * as a hedge sitting in front of the level instead of a lawn the cat stands in.
  *
- *   1. the sway phase advanced with world X, so the whole fringe rippled in a
- *      travelling wave right where the player looks;
- *   2. after the sway was removed, the blade height / colour / flower were
- *      still hashed on the screen position, so every camera pan re-rolled
- *      every blade and the ground boiled and sparkled as the cat ran.
- *
- * Both are gone: the spacing grid is anchored to the world (blades are always
- * SPACING apart from the slab's own origin), and every blade's shape is hashed
- * from its world position. A blade therefore looks identical on every frame of
- * the level and merely slides with the ground, which is what the eye expects.
+ * The blades are laid out in WORLD space on purpose. They used to be spaced
+ * from the screen x and hashed from it too, so every camera pan re-rolled the
+ * whole fringe: it boiled and sparkled while the cat ran, which was reported
+ * as the grass moving and hurting the eyes. A blade now keeps its shape for
+ * the whole level and only slides with the ground.
  */
-const GRASS_SPACING = 7;
+const GRASS_SPACING = 8;
 
 const drawGrassCap = (
   ctx: CanvasRenderingContext2D,
@@ -1035,33 +1033,38 @@ const drawGrassCap = (
   /** World x currently shown at screen x = 0 (the camera scroll). */
   scrollX: number,
 ) => {
-  // Walk world positions, then convert to screen: the set of blades that exist
-  // is fixed relative to the platform, not relative to the viewport.
-  const firstWorld = worldLeft + Math.floor((scrollX - 6 - worldLeft) / GRASS_SPACING) * GRASS_SPACING;
-  const lastWorld = worldLeft + width + 8;
+  // A thin lit turf line, the way the menu card edges its ground. It sits just
+  // above the slab so the grass reads as growing out of it.
+  ctx.save();
+  ctx.strokeStyle = withAlpha(pal.grass, 0.75);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 0.7);
+  ctx.lineTo(x + width, y + 0.7);
+  ctx.stroke();
+
+  // Fine blades, drawn from world positions so none of them ever re-roll.
   ctx.lineCap = 'round';
+  ctx.lineWidth = 1.3;
+  const base = withAlpha(pal.grass, 0.85);
+  const firstWorld = worldLeft + Math.floor((scrollX - 8 - worldLeft) / GRASS_SPACING) * GRASS_SPACING;
+  const lastWorld = worldLeft + width + 8;
   for (let wx = firstWorld; wx < lastWorld; wx += GRASS_SPACING) {
     const gx = wx - scrollX;
     if (gx < -8 || gx > 1280 + 8) continue;
+    // Two independent hashes: height and lean. The lean is fixed per blade, so
+    // the lawn looks wind-combed while not a single pixel of it changes.
     const hh = h1(wx * 0.37 + seed);
-    const blade = 7 + hh * 13;
-    // A fixed lean derived from the position hash - the meadow looks wind-combed
-    // without a single pixel of it changing between frames.
-    const lean = (hh - 0.5) * 2.4;
-    ctx.strokeStyle = hh > 0.62 ? pal.grass : pal.grassDark;
-    ctx.lineWidth = 3.4;
+    const lean = (h1(wx * 0.71 + seed) - 0.5) * 3.2;
+    const blade = 3.2 + hh * 4.6;
+    ctx.strokeStyle = hh > 0.5 ? base : withAlpha(pal.grassDark, 0.8);
     ctx.beginPath();
-    ctx.moveTo(gx, y + 3);
-    ctx.quadraticCurveTo(gx + lean * 0.5, y - blade * 0.55, gx + lean, y - blade);
+    ctx.moveTo(gx, y + 1);
+    // Tapering tip: a shallow curve that hooks toward the lean.
+    ctx.quadraticCurveTo(gx + lean * 0.3, y - blade * 0.7, gx + lean, y - blade);
     ctx.stroke();
-    if (hh > 0.9) {
-      // Occasional wildflower, leaning with its blade.
-      ctx.fillStyle = hh > 0.95 ? pal.accent : pal.accent2;
-      ctx.beginPath();
-      ctx.arc(gx + lean, y - blade - 2, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
+  ctx.restore();
 };
 
 /**
