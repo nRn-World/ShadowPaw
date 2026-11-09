@@ -10,7 +10,6 @@
  */
 import type { RunMode } from '../types';
 import type { QualityBudget } from './quality';
-import type { GhostFrame, GhostRun } from './daily';
 import type { PerkDef, PerkEffect } from './perks';
 
 export interface Rect { x: number; y: number; width: number; height: number }
@@ -102,7 +101,6 @@ export interface GameState {
   runMode: RunMode;
   dailySeed: string;
   seedOffset: number;
-  ghostKey: string;
   frame: number;
   /* Score & progression ------------------------------------------------- */
   score: number;
@@ -186,8 +184,6 @@ export interface GameState {
   shadowShiftId: number;
   shadowPasses: number;
   shadowShifts: number;
-  ghost: GhostRun | null;
-  ghostFrames: GhostFrame[];
   checkpoints: number[];
   checkpointIndex: number;
   checkpointX: number;

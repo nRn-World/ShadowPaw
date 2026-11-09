@@ -49,13 +49,12 @@ try {
   await waitFor(dailyPage, () => !!window.__SP, 'the daily game state');
   const daily = await dailyPage.evaluate(() => {
     const g = window.__SP;
-    return { mode: g.runMode, seed: g.dailySeed, offset: g.seedOffset, key: g.ghostKey, level: g.level };
+    return { mode: g.runMode, seed: g.dailySeed, offset: g.seedOffset, level: g.level };
   });
-  check('daily run uses a shared date seed and its own ghost channel', () => {
+  check('daily run uses a shared date seed', () => {
     assert.equal(daily.mode, 'daily');
     assert.match(daily.seed, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(daily.offset > 0, 'the date must change the layout seed');
-    assert.ok(daily.key.startsWith('daily:'));
     assert.ok(daily.level >= 3);
   });
   // Keep the tab open: the bundled Chromium runs single-process on some hosts,

@@ -18,7 +18,7 @@ import { useInstall } from '../context/InstallContext';
 import { AudioEngine } from '../services/AudioEngine';
 import { useT, tr, renderRich, LanguageButtons } from '../i18n';
 import {
-  loadGhost, saveGhost, loadDailyScores, recordDailyScore,
+  loadDailyScores, recordDailyScore,
   readDailyStreak, touchDailyStreak,
 } from '../game/daily';
 import { getTopDeathCause, getMostDangerousLevel, type DeathCause } from '../game/telemetry';
@@ -33,7 +33,7 @@ import { createQualityMonitor, FULL_QUALITY } from '../game/quality';
 import type { GameState, HudStats } from '../game/types';
 import { ShadowShiftMeter, ObjectivePill } from './GameHud';
 import { drawCartoonEnemy } from './enemyArt';
-import { drawCheckpointBeacons, drawGhost, drawBlackout, drawGoldRush } from './gameRender';
+import { drawCheckpointBeacons, drawBlackout, drawGoldRush } from './gameRender';
 import {
   getLevelDesign, getDifficultyProfile, getLevelLayout, LEVEL_LAYOUT_META,
   buildLevelLayout, makeRng, getWeatherForLevel, seededRandom,
@@ -320,7 +320,7 @@ export const StartMenuView: React.FC<{
   const { progress } = useProgress();
   const t = useT();
 
-  // Use the same padded local-date seed that setupLevel and the ghost/board
+  // Use the same padded local-date seed that setupLevel and the board
   // use, so the level on the button is exactly the course that gets loaded.
   const todaySeed = getDailySeed();
   const dailyLevel = dailyLevelFromSeed(todaySeed);
@@ -2905,14 +2905,11 @@ export const PlayingView: React.FC<{
       runMode,
       dailySeed,
       seedOffset,
-      ghostKey: `${runMode}:${level}:${seedOffset}`,
       frame: 0,
       quality: FULL_QUALITY,
       bgCache: null as HTMLCanvasElement | null,
       bgCacheKey: '',
       shadowShiftId: 0,
-      ghost: null as any,
-      ghostFrames: [] as any[],
       checkpoints: [] as number[],
       checkpointIndex: 0,
       checkpointX: 100,
@@ -3978,10 +3975,6 @@ export const PlayingView: React.FC<{
         dailySeed: game.dailySeed || '',
         level: game.level || 1,
       }));
-      // A new personal best on this exact seed becomes tomorrow's ghost.
-      if (game.ghostKey && game.ghostFrames?.length) {
-        saveGhost(game.ghostKey, game.score || 0, game.ghostFrames);
-      }
     } catch {
       // Private browsing can reject writes; losing the summary must not stop
       // the level-complete or game-over screen from appearing.
@@ -4281,7 +4274,6 @@ export const PlayingView: React.FC<{
 
     const game = setupLevel(currentLevel, totalScore, lives);
     if (!game) return;
-    game.ghost = loadGhost(game.ghostKey);
     gameRef.current = game;
     // Debug handles the automated play-test uses to inspect live state and jump
     // between stages. They expose nothing the player can abuse in a local game.
@@ -4445,13 +4437,6 @@ export const PlayingView: React.FC<{
           if (d < 640 && (nearest === null || d < Math.abs(nearest))) nearest = e.x + e.width / 2 - pCx;
         }
         AudioEngine.setSfxPan(nearest === null ? 0 : Math.max(-0.75, Math.min(0.75, nearest / 480)));
-      }
-      // Ghost replay: one sample every four frames keeps localStorage small
-      // (a 60-second level is ~900 samples) while looking smooth enough.
-      if (game.frame % 4 === 0) {
-        game.ghostFrames.push([
-          Math.round(game.player.x), Math.round(game.player.y), game.player.facing === -1 ? -1 : 1,
-        ]);
       }
       // Level clock (used for the results card, independent of the Speed Run
       // countdown).
@@ -6739,8 +6724,6 @@ export const PlayingView: React.FC<{
           jy - 15,
         );
       }
-
-      drawGhost(ctx, game);
 
       // Meteors: a burning rock with a long tail, drawn in world space so it
       // reads as a physical object falling through the level.
