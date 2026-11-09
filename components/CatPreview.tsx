@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { drawCatSprite } from './catSprite';
-import { drawCatAtlasSprite, loadCatAtlas, whenCatAtlasReady } from './catAtlasSprite';
 
 /** The real cat sprite on a small canvas, used by the shop. `animated` adds a gentle idle bob. */
 const CatPreview: React.FC<{
@@ -14,21 +13,6 @@ const CatPreview: React.FC<{
   className?: string;
 }> = ({ color, accent, original, width, height, scale, animated = false, className }) => {
   const ref = useRef<HTMLCanvasElement>(null);
-  // The shop previews a static skin, so the atlas is drawn in its idle pose
-  // with the skin tint applied. This state only exists to redraw once the
-  // PNG has decoded; until then the vector cat stands in.
-  const [atlasReady, setAtlasReady] = useState(false);
-
-  useEffect(() => {
-    loadCatAtlas();
-    let alive = true;
-    void whenCatAtlasReady().then(() => {
-      if (alive) setAtlasReady(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -49,29 +33,18 @@ const CatPreview: React.FC<{
       ctx.beginPath();
       ctx.ellipse(width / 2, feetY + 1.5, 18 * scale, 3.2 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
-      const atlasW = 44 * scale;
-      const drawn = drawCatAtlasSprite(ctx, width / 2, feetY + bob, {
+      // Always the same vector cat the run itself draws, so a skin preview
+      // cannot drift away from how the cat looks in play.
+      drawCatSprite(ctx, width / 2, feetY + bob, {
         color,
         accent,
-        original,
         t,
         running: false,
         jumping: false,
         grounded: true,
-        w: atlasW,
+        sx: scale,
+        sy: scale,
       });
-      if (!drawn) {
-        drawCatSprite(ctx, width / 2, feetY, {
-          color,
-          accent,
-          t,
-          running: false,
-          jumping: false,
-          grounded: true,
-          sx: scale,
-          sy: scale,
-        });
-      }
     };
 
     if (!animated || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -86,7 +59,7 @@ const CatPreview: React.FC<{
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [color, accent, original, width, height, scale, animated, atlasReady]);
+  }, [color, accent, width, height, scale, animated]);
 
   return <canvas ref={ref} className={className} style={{ width, height }} aria-hidden="true" />;
 };

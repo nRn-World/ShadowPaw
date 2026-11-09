@@ -1,0 +1,1134 @@
+/**
+ * Shadow Paw - the cartoon world renderer.
+ *
+ * The stage used to be drawn as a cold, hazy cyberpunk scene: a blue-grey sky,
+ * flat rectangular "buildings" and clip-art animals waving at the camera. It
+ * read as a placeholder, and the muted palette made the cat blend into the
+ * background instead of popping out of it.
+ *
+ * This module is the replacement. Everything here follows one art direction:
+ *
+ *   - thick, warm dark outlines on every solid shape (never pure black)
+ *   - big, rounded, hand-drawn silhouettes instead of right-angle boxes
+ *   - a saturated, sunny palette per chapter family (meadow, forest, snow,
+ *     desert, lava, city) instead of one global blue wash
+ *   - three depth planes with real atmospheric perspective, plus a soft
+ *     inked foreground so the frame has a bottom and a top
+ *   - everything animates: grass sways, clouds drift, windows flicker, smoke
+ *     curls, and the foreground parallax slides faster than the world
+ *
+ * All of it is procedural, deterministic and cheap (no per-frame allocation
+ * beyond a few gradients), so it runs every frame on a phone.
+ */
+
+export type Family =
+  | 'meadow'
+  | 'forest'
+  | 'snow'
+  | 'desert'
+  | 'lava'
+  | 'city'
+  | 'ice'
+  | 'space'
+  | 'night';
+
+export interface Pal {
+  skyTop: string;
+  skyMid: string;
+  skyLow: string;
+  haze: string;
+  sun: string;
+  sunCore: string;
+  cloud: string;
+  cloudShade: string;
+  far: string;
+  mid: string;
+  near: string;
+  ink: string;
+  groundTop: string;
+  groundBody: string;
+  groundDeep: string;
+  groundRim: string;
+  ledge: string;
+  ledgeBody: string;
+  ledgeDeep: string;
+  ledgeRim: string;
+  accent: string;
+  accent2: string;
+  grass: string;
+  grassDark: string;
+  starfield: boolean;
+  night: boolean;
+}
+
+const base = (over: Partial<Pal>): Pal => ({
+  skyTop: '#62c7f0',
+  skyMid: '#a8e4f7',
+  skyLow: '#e4f7fb',
+  haze: '#cfeeff',
+  sun: '#ffe9a8',
+  sunCore: '#fffdf0',
+  cloud: '#ffffff',
+  cloudShade: '#cfe9f5',
+  far: '#9fd0e0',
+  mid: '#6fb0c8',
+  near: '#3f7f98',
+  ink: '#20313f',
+  groundTop: '#6ed36a',
+  groundBody: '#3f9b4c',
+  groundDeep: '#1f5c33',
+  groundRim: '#b6f79a',
+  ledge: '#f3c980',
+  ledgeBody: '#c98f4e',
+  ledgeDeep: '#7d5227',
+  ledgeRim: '#ffe3aa',
+  accent: '#ffd166',
+  accent2: '#ff7ab8',
+  grass: '#6ed36a',
+  grassDark: '#2f8a48',
+  starfield: false,
+  night: false,
+  ...over,
+});
+
+export const FAMILY_PALETTES: Record<Family, Pal> = {
+  meadow: base({}),
+  forest: base({
+    skyTop: '#4fb7d6',
+    skyMid: '#9ae3d8',
+    skyLow: '#e8f8d9',
+    haze: '#d5f2ce',
+    far: '#9ccfa6',
+    mid: '#5fa877',
+    near: '#2f734f',
+    ink: '#1d3327',
+    groundTop: '#77d95f',
+    groundBody: '#3d9840',
+    groundDeep: '#1c5228',
+    groundRim: '#c8ff9f',
+    ledge: '#e9b46c',
+    ledgeBody: '#a9713c',
+    ledgeDeep: '#5f3c1c',
+    ledgeRim: '#ffdca0',
+  }),
+  snow: base({
+    skyTop: '#8fc9e8',
+    skyMid: '#cbe8f7',
+    skyLow: '#f4fbff',
+    haze: '#e9f6ff',
+    sun: '#ffeecb',
+    cloud: '#ffffff',
+    cloudShade: '#d5e9f7',
+    far: '#cfe4f2',
+    mid: '#a6c7dd',
+    near: '#7b9cb4',
+    ink: '#2a3c4c',
+    groundTop: '#ffffff',
+    groundBody: '#d9ecf7',
+    groundDeep: '#9db9cc',
+    groundRim: '#ffffff',
+    ledge: '#e8f4fb',
+    ledgeBody: '#b7d2e4',
+    ledgeDeep: '#7f9db2',
+    ledgeRim: '#ffffff',
+    grass: '#eaf6ff',
+    grassDark: '#b9d4e6',
+    accent: '#7ee7ff',
+    accent2: '#c3a6ff',
+  }),
+  desert: base({
+    skyTop: '#f2b06a',
+    skyMid: '#ffd79a',
+    skyLow: '#ffeccd',
+    haze: '#ffe2b8',
+    sun: '#ffd27a',
+    sunCore: '#fff6d8',
+    far: '#e3a879',
+    mid: '#c8804f',
+    near: '#9b5a33',
+    ink: '#3a2418',
+    groundTop: '#f0c46a',
+    groundBody: '#cf9445',
+    groundDeep: '#8d5c25',
+    groundRim: '#ffe8a8',
+    ledge: '#e7b268',
+    ledgeBody: '#b97b3f',
+    ledgeDeep: '#6f4220',
+    ledgeRim: '#ffdda0',
+    grass: '#f2cb74',
+    grassDark: '#c79a49',
+    accent: '#ff9f43',
+    accent2: '#ff5f8a',
+  }),
+  lava: base({
+    skyTop: '#3a1030',
+    skyMid: '#7a1f3a',
+    skyLow: '#d1493a',
+    haze: '#ff8a5c',
+    sun: '#ffb35c',
+    sunCore: '#fff0c0',
+    cloud: '#ffb08a',
+    cloudShade: '#b8555a',
+    far: '#6b2030',
+    mid: '#4a1524',
+    near: '#2b0c17',
+    ink: '#1a0710',
+    groundTop: '#5a2a24',
+    groundBody: '#3a1816',
+    groundDeep: '#200b0c',
+    groundRim: '#ff9a4a',
+    ledge: '#6b322a',
+    ledgeBody: '#421d18',
+    ledgeDeep: '#240e0c',
+    ledgeRim: '#ffa860',
+    grass: '#5a2a24',
+    grassDark: '#361413',
+    accent: '#ff7043',
+    accent2: '#ffd166',
+  }),
+  city: base({
+    skyTop: '#7fd0f0',
+    skyMid: '#bfeaf8',
+    skyLow: '#eef9ff',
+    haze: '#d8f0fb',
+    far: '#b6d4e2',
+    mid: '#8fb0c4',
+    near: '#6a8798',
+    ink: '#22303c',
+    groundTop: '#6fcf6a',
+    groundBody: '#3c9248',
+    groundDeep: '#1d5228',
+    groundRim: '#c2f9a2',
+    accent: '#ffd166',
+    accent2: '#ff7ab8',
+  }),
+  ice: base({
+    skyTop: '#6fb8e8',
+    skyMid: '#bde6fb',
+    skyLow: '#f0fbff',
+    haze: '#dff3ff',
+    far: '#b4dff2',
+    mid: '#88bcd8',
+    near: '#5f92b0',
+    ink: '#223a4c',
+    groundTop: '#eaf9ff',
+    groundBody: '#a9d8ee',
+    groundDeep: '#6d9fbb',
+    groundRim: '#ffffff',
+    ledge: '#d6f0fb',
+    ledgeBody: '#9ac6dd',
+    ledgeDeep: '#638fa8',
+    ledgeRim: '#ffffff',
+    grass: '#e6f7ff',
+    grassDark: '#a8cee2',
+    accent: '#7ee7ff',
+    accent2: '#9d8cff',
+  }),
+  space: base({
+    skyTop: '#120a30',
+    skyMid: '#2a1758',
+    skyLow: '#5b2a80',
+    haze: '#8a5ab8',
+    sun: '#c7a8ff',
+    sunCore: '#f4ecff',
+    cloud: '#7f5ab0',
+    cloudShade: '#4a2e78',
+    far: '#2e1a52',
+    mid: '#1e1140',
+    near: '#100a26',
+    ink: '#0a0618',
+    groundTop: '#4a3a78',
+    groundBody: '#2c2050',
+    groundDeep: '#150e2c',
+    groundRim: '#b79bff',
+    ledge: '#4a3a78',
+    ledgeBody: '#311f5c',
+    ledgeDeep: '#1a1036',
+    ledgeRim: '#c8b0ff',
+    grass: '#4a3a78',
+    grassDark: '#2a1c4a',
+    accent: '#b388ff',
+    accent2: '#7ee7ff',
+    starfield: true,
+    night: true,
+  }),
+  night: base({
+    skyTop: '#1b2450',
+    skyMid: '#33386e',
+    skyLow: '#6a4a7a',
+    haze: '#8a6a9a',
+    sun: '#e8ecff',
+    sunCore: '#ffffff',
+    cloud: '#5a5a86',
+    cloudShade: '#3a3a60',
+    far: '#2f3560',
+    mid: '#242a4c',
+    near: '#171b36',
+    ink: '#0e1024',
+    groundTop: '#2f5a44',
+    groundBody: '#1d3c30',
+    groundDeep: '#0e211c',
+    groundRim: '#68d8a0',
+    ledge: '#3a4a60',
+    ledgeBody: '#262f40',
+    ledgeDeep: '#141a26',
+    ledgeRim: '#7ee7ff',
+    grass: '#2f5a44',
+    grassDark: '#1a3a2e',
+    accent: '#7ee7ff',
+    accent2: '#ff7ab8',
+    starfield: true,
+    night: true,
+  }),
+};
+
+/** Chapter theme -> art family. Ordered: first match wins. */
+const FAMILY_RULES: Array<[RegExp, Family]> = [
+  [/space|station|quantum|void|omega|infinity|nexus|transcendence|datacenter|ascension|oblivion/, 'space'],
+  [/ice|glacier|arctic|snow|alpine|mountain/, 'snow'],
+  [/volcano|lava|inferno|hell|hades|tartarus|apocalypse|armageddon|pandemonium|chaos/, 'lava'],
+  [/desert|beach|dune|highway|warzone/, 'desert'],
+  [/forest|countryside|park|sewer|ruins/, 'forest'],
+  [/underground|abyss|nightmare/, 'night'],
+  [/city|downtown|rooftop|industrial|harbor|construction|power|nuclear|laboratory|factory|titan|legendary|enlighten/, 'city'],
+];
+
+export const familyForTheme = (theme: string): Family => {
+  const t = String(theme || '').toLowerCase();
+  for (const [pattern, family] of FAMILY_RULES) if (pattern.test(t)) return family;
+  return 'meadow';
+};
+
+/** Picks a palette, then brightens it when the stage is authored at night. */
+export const paletteFor = (theme: string, timeOfDay: string): Pal => {
+  const pal = { ...FAMILY_PALETTES[familyForTheme(theme)] };
+  const nightStage = timeOfDay === 'NIGHT';
+  if (!nightStage || pal.night) return pal;
+  // A night city is not a black building site: it keeps the family hue and
+  // drops to a deep, saturated evening version of the same palette.
+  const mix = (hex: string, to: string, k: number) => blend(hex, to, k);
+  return {
+    ...pal,
+    skyTop: mix(pal.skyTop, '#131a38', 0.72),
+    skyMid: mix(pal.skyMid, '#1d2450', 0.62),
+    skyLow: mix(pal.skyLow, '#3a3670', 0.5),
+    haze: mix(pal.haze, '#2a2a5a', 0.45),
+    far: mix(pal.far, '#1e2244', 0.55),
+    mid: mix(pal.mid, '#151a36', 0.6),
+    near: mix(pal.near, '#0d1128', 0.62),
+    ink: '#0b0e20',
+    groundTop: mix(pal.groundTop, '#1e3a2e', 0.45),
+    groundBody: mix(pal.groundBody, '#12241f', 0.55),
+    groundDeep: mix(pal.groundDeep, '#08120f', 0.6),
+    ledge: mix(pal.ledge, '#2a3248', 0.55),
+    ledgeBody: mix(pal.ledgeBody, '#1a2032', 0.6),
+    ledgeDeep: mix(pal.ledgeDeep, '#0b0f1c', 0.6),
+    night: true,
+    starfield: true,
+    sun: '#eef2ff',
+    sunCore: '#ffffff',
+    cloud: mix(pal.cloud, '#2a2f56', 0.6),
+    cloudShade: mix(pal.cloudShade, '#1a1f40', 0.6),
+  };
+};
+
+/* --------------------------------------------------------------- utils --- */
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+export const blend = (a: string, b: string, k: number): string => {
+  const [r1, g1, b1] = hexToRgb(a);
+  const [r2, g2, b2] = hexToRgb(b);
+  const mix = (x: number, y: number) => Math.round(x + (y - x) * Math.max(0, Math.min(1, k)));
+  return `rgb(${mix(r1, r2)},${mix(g1, g2)},${mix(b1, b2)})`;
+};
+
+export const withAlpha = (color: string, a: number): string => {
+  if (color.startsWith('rgb(')) return color.replace('rgb(', 'rgba(').replace(')', `,${a})`);
+  const [r, g, b] = hexToRgb(color);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+/** Stable 0..1 hash. Same input, same output - scenery never flickers. */
+const h1 = (n: number) => {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
+
+/* ---------------------------------------------------------- background --- */
+
+export interface BackdropOptions {
+  width: number;
+  height: number;
+  groundY: number;
+  scrollX: number;
+  time: number;
+  pal: Pal;
+  theme: string;
+  /** 0 = still, 1 = full animation (reduced-motion turns this off). */
+  motion: number;
+}
+
+/** Big, rounded, inked hills / towers for one depth plane. */
+const drawFarHills = (
+  ctx: CanvasRenderingContext2D,
+  o: BackdropOptions,
+  parallax: number,
+  color: string,
+  alpha: number,
+  height: number,
+  baseline: number,
+  seed: number,
+) => {
+  const span = 520;
+  const off = ((o.scrollX * parallax) % span + span) % span;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  const count = Math.ceil(o.width / span) + 3;
+  for (let i = -1; i < count; i++) {
+    const r = h1(seed + i * 3.77);
+    const r2 = h1(seed + i * 8.13);
+    const w = 300 + r * 260;
+    const h = height * (0.62 + r2 * 0.5);
+    const x = i * span - off + r * 90;
+    const y = baseline - h;
+    // A soft, rounded hill: a wide arc rather than a triangle, so the horizon
+    // reads as land and not as a graph.
+    ctx.beginPath();
+    ctx.moveTo(x - 40, baseline);
+    ctx.bezierCurveTo(x + w * 0.1, y + h * 0.1, x + w * 0.9, y + h * 0.1, x + w + 40, baseline);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
+/** Rounded cartoon towers for the city family. */
+const drawFarTowers = (
+  ctx: CanvasRenderingContext2D,
+  o: BackdropOptions,
+  parallax: number,
+  color: string,
+  alpha: number,
+  baseline: number,
+  seed: number,
+  detail: number,
+) => {
+  const span = 300;
+  const off = ((o.scrollX * parallax) % span + span) % span;
+  const count = Math.ceil(o.width / span) + 3;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (let i = -1; i < count; i++) {
+    const r1 = h1(seed + i * 3.11);
+    const r2 = h1(seed + i * 6.9 + 4);
+    const r3 = h1(seed + i * 11.3 + 9);
+    const w = 74 + r1 * 92;
+    const h = 110 + r2 * 220;
+    const x = i * span - off + r1 * 46;
+    const y = baseline - h;
+    if (x + w < -60 || x > o.width + 60) continue;
+    ctx.fillStyle = color;
+    // Rounded roofline: the top corners are radiused so a skyline never looks
+    // like a bar chart.
+    const r = Math.min(16, w * 0.22);
+    ctx.beginPath();
+    ctx.moveTo(x, baseline);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, baseline);
+    ctx.closePath();
+    ctx.fill();
+    // Setback crown.
+    if (r3 > 0.45) {
+      const cw = w * (0.42 + r2 * 0.26);
+      const ch = 18 + r1 * 30;
+      ctx.beginPath();
+      ctx.roundRect(x + (w - cw) / 2, y - ch, cw, ch + 4, [10, 10, 0, 0]);
+      ctx.fill();
+      if (r1 > 0.55) {
+        // Antenna with a blinking tip light - the one moving detail far away.
+        ctx.fillRect(x + w / 2 - 1.5, y - ch - 22, 3, 22);
+        const blink = 0.5 + 0.5 * Math.sin(o.time * 2.4 + i * 1.7);
+        ctx.globalAlpha = alpha * (0.35 + blink * 0.65);
+        ctx.fillStyle = '#ff7a7a';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y - ch - 24, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+      }
+    }
+    // Warm windows. Cheap 2-tone grid, lit at different rates so towers have
+    // a living, irregular rhythm instead of a uniform checker.
+    if (detail > 0) {
+      const cols = Math.max(2, Math.floor(w / 22));
+      const rows = Math.max(2, Math.floor(h / 26));
+      const cw = w / cols;
+      const chh = h / rows;
+      for (let rr = 0; rr < rows; rr++) {
+        for (let cc = 0; cc < cols; cc++) {
+          const lit = h1(seed + i * 2.3 + rr * 1.7 + cc * 0.93 + Math.floor(o.time * 0.15));
+          if (lit < 0.52) continue;
+          ctx.globalAlpha = alpha * (0.55 + lit * 0.45);
+          ctx.fillStyle = lit > 0.83 ? o.pal.accent : withAlpha(o.pal.sunCore, 0.8);
+          ctx.beginPath();
+          ctx.roundRect(x + cc * cw + cw * 0.28, y + rr * chh + chh * 0.3, cw * 0.44, chh * 0.4, 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+  ctx.restore();
+};
+
+/**
+ * A layered tree line. Two silhouettes share the strip: a round, friendly
+ * broadleaf and a stacked pine. Both are built from overlapping arcs with a
+ * visible trunk, because a single triangle reads as a traffic cone.
+ */
+const drawTreeLine = (
+  ctx: CanvasRenderingContext2D,
+  o: BackdropOptions,
+  parallax: number,
+  color: string,
+  alpha: number,
+  baseline: number,
+  seed: number,
+  scale: number,
+) => {
+  const span = 200;
+  const off = ((o.scrollX * parallax) % span + span) % span;
+  const count = Math.ceil(o.width / span) + 3;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  for (let i = -1; i < count; i++) {
+    const r1 = h1(seed + i * 2.71);
+    const r2 = h1(seed + i * 7.91 + 3);
+    const r3 = h1(seed + i * 11.7 + 8);
+    const pine = r3 > 0.45;
+    const hBase = (74 + r1 * 74) * scale;
+    const wBase = (36 + r2 * 26) * scale;
+    const x = i * span - off + r1 * 70 + wBase * 0.5;
+    if (x + wBase < -60 || x - wBase > o.width + 60) continue;
+    const sway = Math.sin(o.time * 0.9 + i * 1.3) * 2.2 * o.motion;
+
+    // Trunk.
+    ctx.lineWidth = 7 * scale;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, baseline);
+    ctx.quadraticCurveTo(x + sway * 0.4, baseline - hBase * 0.22, x + sway, baseline - hBase * 0.4);
+    ctx.stroke();
+
+    if (pine) {
+      // Three stacked, rounded boughs, each wider than the one above.
+      for (let tier = 0; tier < 3; tier++) {
+        const ty = baseline - hBase * (0.38 + tier * 0.22);
+        const tw = wBase * (1.15 - tier * 0.26);
+        const th = hBase * 0.32;
+        ctx.beginPath();
+        ctx.moveTo(x + sway - tw, ty + th);
+        ctx.quadraticCurveTo(x + sway - tw * 0.55, ty + th * 0.15, x + sway, ty - th * 0.45);
+        ctx.quadraticCurveTo(x + sway + tw * 0.55, ty + th * 0.15, x + sway + tw, ty + th);
+        // Rounded underside so the bough has weight.
+        ctx.quadraticCurveTo(x + sway, ty + th * 1.22, x + sway - tw, ty + th);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else {
+      // A round crown: one big blob plus two side lobes, slightly squashed.
+      const cy = baseline - hBase * (0.62 + r2 * 0.1);
+      const cr = wBase * 0.92;
+      ctx.beginPath();
+      ctx.ellipse(x + sway, cy, cr, cr * 0.86, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + sway - cr * 0.72, cy + cr * 0.3, cr * 0.6, cr * 0.52, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + sway + cr * 0.74, cy + cr * 0.26, cr * 0.58, cr * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+};
+
+/** Rolling sand / snow dunes. */
+const drawDunes = (
+  ctx: CanvasRenderingContext2D,
+  o: BackdropOptions,
+  parallax: number,
+  color: string,
+  alpha: number,
+  baseline: number,
+  seed: number,
+  amp: number,
+) => {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-20, o.height);
+  for (let x = -20; x <= o.width + 40; x += 12) {
+    const wx = x + o.scrollX * parallax;
+    const y = baseline - Math.sin(wx * 0.0042 + seed) * amp - Math.cos(wx * 0.0091 + seed * 2) * amp * 0.42;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(o.width + 20, o.height);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
+/**
+ * A flat, wide cartoon cloud. One silhouette, one body tone and one soft
+ * underside band - a few overlapping circles read as a cluster of bubbles,
+ * which is why this is a single merged shape.
+ */
+const drawToonCloud = (
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  scale: number,
+  pal: Pal,
+  seed: number,
+) => {
+  const wobble = (h1(seed * 3.9) - 0.5) * 10;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  // Shadow tone slightly below the body, then the body on top.
+  const blob = (dy: number, fill: string) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(-104, 18 + dy);
+    ctx.bezierCurveTo(-104, -2 + dy, -74, -8 + dy, -58, -6 + dy);
+    ctx.bezierCurveTo(-56, -30 + dy, -20, -36 + dy, -6, -20 + dy);
+    ctx.bezierCurveTo(10, -44 + dy, 54, -38 + dy, 58, -10 + dy);
+    ctx.bezierCurveTo(84, -12 + dy, 104, 0 + dy, 104, 18 + dy);
+    ctx.closePath();
+    ctx.fill();
+  };
+  blob(3 + wobble * 0.1, pal.cloudShade);
+  blob(0, pal.cloud);
+  ctx.restore();
+};
+
+/**
+ * The whole stage backdrop: sky, sun, clouds, three parallax planes and the
+ * inked foreground frame. Drawn under every gameplay layer.
+ */
+export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) => {
+  const { width, height, groundY, pal } = o;
+  const fam = familyForTheme(o.theme);
+  const motion = o.motion;
+
+  // --- sky ---------------------------------------------------------------
+  const sky = ctx.createLinearGradient(0, 0, 0, height);
+  sky.addColorStop(0, pal.skyTop);
+  sky.addColorStop(0.55, pal.skyMid);
+  sky.addColorStop(1, pal.skyLow);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
+
+  // Sun / moon: one soft halo plus a flat, bright disc. A single light source
+  // for the whole scene is what makes the art feel lit instead of painted.
+  const sunX = width * (pal.night ? 0.78 : 0.71);
+  const sunY = height * (pal.night ? 0.19 : 0.22);
+  const halo = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, height * 0.42);
+  halo.addColorStop(0, withAlpha(pal.sun, pal.night ? 0.22 : 0.3));
+  halo.addColorStop(0.45, withAlpha(pal.sun, 0.06));
+  halo.addColorStop(1, withAlpha(pal.sun, 0));
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, width, height);
+
+  if (pal.night) {
+    // A cartoon crescent: bright disc, then a sky-coloured bite taken out of
+    // the upper right. Drawing it with fills (instead of composite modes)
+    // keeps it portable and bug-free in every browser.
+    const mr = 40;
+    ctx.fillStyle = pal.sunCore;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, mr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = pal.skyTop;
+    ctx.beginPath();
+    ctx.arc(sunX + 17, sunY - 11, mr * 0.92, 0, Math.PI * 2);
+    ctx.fill();
+    // A couple of faint craters on the lit sliver.
+    ctx.fillStyle = withAlpha('#b9c6dd', 0.35);
+    ctx.beginPath();
+    ctx.arc(sunX - 18, sunY + 8, 5, 0, Math.PI * 2);
+    ctx.arc(sunX - 9, sunY + 22, 3.4, 0, Math.PI * 2);
+    ctx.arc(sunX - 24, sunY - 8, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = pal.sunCore;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 46, 0, Math.PI * 2);
+    ctx.fill();
+    // Outer ring of the disc: a slightly warmer edge, no outline.
+    ctx.strokeStyle = withAlpha(pal.sun, 0.9);
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 46, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // --- stars -------------------------------------------------------------
+  if (pal.starfield) {
+    ctx.save();
+    for (let layer = 0; layer < 2; layer++) {
+      const size = 0.9 + layer * 0.8;
+      const drift = o.time * (1.4 + layer * 2.4) * motion;
+      for (let i = 0; i < 34; i++) {
+        const seed = i + layer * 61;
+        const sx = (((h1(seed) * width + drift) % width) + width) % width;
+        const sy = h1(seed * 2.17 + 5) * height * 0.55;
+        const twinkle = 0.55 + 0.45 * Math.sin(o.time * (1.2 + h1(seed * 3.1)) + seed);
+        ctx.fillStyle = `rgba(255,255,255,${(0.35 + layer * 0.2) * twinkle})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // --- clouds ------------------------------------------------------------
+  ctx.save();
+  const cloudSpan = width + 520;
+  const clouds: Array<[number, number, number]> = [
+    [0.08, 0.2, 0.85],
+    [0.5, 0.31, 0.6],
+    [0.76, 0.15, 0.72],
+  ];
+  clouds.forEach(([start, yPct, scale], i) => {
+    const speed = 7 + i * 3.1;
+    const x = ((((start * cloudSpan + o.time * speed * motion) % cloudSpan) + cloudSpan) % cloudSpan) - 180;
+    drawToonCloud(ctx, x, height * yPct, scale * 0.92, pal, i);
+  });
+  ctx.restore();
+
+  // --- depth planes ------------------------------------------------------
+  const horizon = groundY - 120;
+  const isCity = fam === 'city' || fam === 'space' || fam === 'night';
+  const isOpen = fam === 'meadow' || fam === 'forest';
+
+  // Plane 1: the pale, far silhouette. Barely darker than the sky.
+  if (isCity) {
+    drawFarTowers(ctx, o, 0.03, pal.far, 0.85, horizon + 30, 13, 0);
+  } else if (isOpen) {
+    drawFarHills(ctx, o, 0.03, pal.far, 0.8, 240, horizon + 40, 17);
+  } else {
+    drawDunes(ctx, o, 0.03, pal.far, 0.8, horizon + 40, 1.7, 46);
+  }
+
+  // Plane 2: the readable middle distance.
+  if (isCity) {
+    drawFarTowers(ctx, o, 0.075, pal.mid, 0.95, horizon + 90, 41, 1);
+  } else if (isOpen) {
+    drawTreeLine(ctx, o, 0.06, pal.mid, 0.9, horizon + 80, 23, 1);
+    drawFarHills(ctx, o, 0.05, pal.mid, 0.9, 190, horizon + 96, 31);
+  } else {
+    drawDunes(ctx, o, 0.07, pal.mid, 0.9, horizon + 96, 4.3, 62);
+  }
+
+  // Atmospheric haze where the planes meet the ground.
+  const haze = ctx.createLinearGradient(0, horizon - 90, 0, groundY + 10);
+  haze.addColorStop(0, withAlpha(pal.haze, 0));
+  haze.addColorStop(0.55, withAlpha(pal.haze, (pal.night ? 0.12 : 0.16)));
+  haze.addColorStop(1, withAlpha(pal.haze, 0));
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, horizon - 90, width, groundY - horizon + 100);
+
+  // Plane 3: the near, saturated silhouette that frames the playfield.
+  if (isCity) {
+    drawFarTowers(ctx, o, 0.14, pal.near, 1, groundY + 6, 73, 0);
+  } else if (isOpen) {
+    // Two bands of trees: a darker, closer row and a lighter one behind it,
+    // both seated below the horizon so they frame the route instead of
+    // competing with the cat.
+    drawTreeLine(ctx, o, 0.1, blend(pal.near, pal.haze, 0.3), 0.95, groundY + 6, 47, 1.05);
+    drawTreeLine(ctx, o, 0.15, pal.near, 1, groundY + 26, 59, 1.3);
+  } else {
+    drawDunes(ctx, o, 0.15, pal.near, 1, groundY + 14, 7.1, 78);
+  }
+
+  // Ground line: a soft inked strip that seats the whole scene.
+  ctx.fillStyle = withAlpha(pal.ink, pal.night ? 0.5 : 0.28);
+  ctx.fillRect(0, groundY - 3, width, 4);
+};
+
+/**
+ * Foreground frame: two inked arcs of hillside that slide faster than the
+ * world and hide the bottom corners of the stage. Cheap, and it is what gives
+ * a scrolling level a sense of speed.
+ */
+export const drawForeground = (
+  ctx: CanvasRenderingContext2D,
+  o: BackdropOptions,
+) => {
+  const { width, height, pal } = o;
+  const span = 700;
+  const off = ((o.scrollX * 0.42) % span + span) % span;
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = blend(pal.near, pal.ink, 0.55);
+  const count = Math.ceil(width / span) + 3;
+  for (let i = -1; i < count; i++) {
+    const r = h1(i * 5.3 + 2);
+    const w = 380 + r * 220;
+    const h = 40 + r * 52;
+    const x = i * span - off;
+    ctx.beginPath();
+    ctx.moveTo(x - 60, height + 20);
+    ctx.bezierCurveTo(x + w * 0.16, height - h, x + w * 0.84, height - h, x + w + 60, height + 20);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
+/**
+ * The earth band under the playfield. Ground slabs are drawn on top of this,
+ * so a pit chasm cuts a clean hole and the bottom of the screen is never
+ * transparent (which used to show the page behind the canvas as a grey bar).
+ */
+export const drawEarth = (
+  ctx: CanvasRenderingContext2D,
+  groundY: number,
+  height: number,
+  width: number,
+  pal: Pal,
+) => {
+  const grad = ctx.createLinearGradient(0, groundY, 0, height);
+  grad.addColorStop(0, pal.groundBody);
+  grad.addColorStop(0.35, pal.groundDeep);
+  grad.addColorStop(1, blend(pal.groundDeep, pal.ink, 0.55));
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, groundY, width, height - groundY);
+};
+
+/* ----------------------------------------------------------- platforms --- */
+
+export interface GroundOpts {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pal: Pal;
+  /** Swaying grass on the top edge. */
+  grass: boolean;
+  /** Snow / sand cap instead of grass. */
+  cap: 'grass' | 'snow' | 'sand' | 'stone' | 'metal' | 'lava';
+  time: number;
+  /** Deterministic seed so decoration never moves between frames. */
+  seed: number;
+  motion: number;
+  /** Neon edge accent for boss walkways and city routes. */
+  neon?: string;
+}
+
+const INK_W = 3;
+
+/** Grass blades along a top edge. Deterministic per pixel position. */
+const drawGrassCap = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  pal: Pal,
+  time: number,
+  seed: number,
+  motion: number,
+) => {
+  const start = Math.max(0, x - 6);
+  const end = Math.min(x + width + 6, x + width + 10);
+  ctx.lineCap = 'round';
+  for (let gx = start; gx < end; gx += 7) {
+    const hh = h1(gx * 0.37 + seed);
+    const blade = 7 + hh * 13;
+    const sway = Math.sin(time * 1.6 + gx * 0.05) * 3 * motion;
+    ctx.strokeStyle = hh > 0.62 ? pal.grass : pal.grassDark;
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(gx, y + 3);
+    ctx.quadraticCurveTo(gx + sway * 0.5, y - blade * 0.55, gx + sway, y - blade);
+    ctx.stroke();
+    if (hh > 0.86) {
+      // Occasional wildflower bobbing on the same sway.
+      ctx.fillStyle = hh > 0.94 ? pal.accent : pal.accent2;
+      ctx.beginPath();
+      ctx.arc(gx + sway, y - blade - 2, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+};
+
+/**
+ * A ground slab: inked rounded body, a brighter two-tone cap and a swaying
+ * grass fringe. The outline is what makes it read as a hand-drawn platform
+ * instead of a rectangle.
+ */
+export const drawGroundSlab = (ctx: CanvasRenderingContext2D, g: GroundOpts) => {
+  const { x, y, width, height, pal, cap, time, seed, motion } = g;
+  if (width <= 2) return;
+  const bodyH = Math.max(height, 26);
+
+  ctx.save();
+  // Body: vertical gradient from the cap down into the deep earth.
+  const body = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  body.addColorStop(0, pal.groundBody);
+  body.addColorStop(1, pal.groundDeep);
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, bodyH, [10, 10, 0, 0]);
+  ctx.fill();
+
+  // Cap band: a solid, saturated stripe that always sits on top.
+  const capH = 13;
+  ctx.fillStyle = cap === 'snow' ? '#ffffff'
+    : cap === 'sand' ? pal.groundTop
+      : cap === 'stone' ? blend(pal.groundBody, pal.ledge, 0.4)
+        : cap === 'lava' ? blend(pal.groundBody, pal.accent, 0.35)
+          : pal.groundTop;
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, capH, [10, 10, 0, 0]);
+  ctx.fill();
+
+  // Ink outline, drawn on top of both bands so the slab silhouette is crisp.
+  ctx.strokeStyle = pal.ink;
+  ctx.lineWidth = INK_W;
+  ctx.beginPath();
+  ctx.roundRect(x + INK_W / 2, y + INK_W / 2, width - INK_W, bodyH - INK_W, [9, 9, 0, 0]);
+  ctx.stroke();
+
+  // Pebbles / soil speckles: a few darker ovals in the body.
+  for (let i = 0; i < Math.min(26, Math.floor(width / 46)); i++) {
+    const px = x + 20 + h1(seed + i * 3.7) * Math.max(1, width - 40);
+    const py = y + 34 + h1(seed + i * 8.1) * Math.max(4, bodyH - 48);
+    ctx.fillStyle = withAlpha(pal.ink, 0.14);
+    ctx.beginPath();
+    ctx.ellipse(px, py, 4 + h1(seed + i) * 5, 2.4 + h1(seed + i * 2) * 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (cap === 'grass') {
+    drawGrassCap(ctx, x, y, width, pal, time, seed, motion);
+  } else if (cap === 'snow') {
+    // Soft snow mounds along the top.
+    for (let sx = x + 10; sx < x + width - 10; sx += 34) {
+      const r = h1(sx * 0.21 + seed);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(sx + 8, y + 1, 12 + r * 8, 6 + r * 4, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (cap === 'sand') {
+    for (let sx = x + 12; sx < x + width - 12; sx += 40) {
+      const r = h1(sx * 0.33 + seed);
+      ctx.strokeStyle = withAlpha(pal.ledgeDeep, 0.35);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, y + 4, 6 + r * 5, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+    }
+  }
+
+  // Neon rim for authored routes (boss walkway, city ledges).
+  if (g.neon) {
+    ctx.strokeStyle = g.neon;
+    ctx.lineWidth = 2.5;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 1.5);
+    ctx.lineTo(x + width - 8, y + 1.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+};
+
+export interface LedgeOpts {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pal: Pal;
+  time: number;
+  seed: number;
+  theme: string;
+  moving: boolean;
+  /** Optional neon accent (moving lifts, boss platforms). */
+  accent?: string;
+}
+
+/**
+ * A floating cartoon ledge: a rounded plank with an inked outline, a light
+ * cap and a soft drop shadow. No gradient mesh, no glow soup - the silhouette
+ * does the work.
+ */
+export const drawLedge = (ctx: CanvasRenderingContext2D, l: LedgeOpts) => {
+  const { x, y, width, height, pal, seed } = l;
+  if (width <= 2) return;
+  const fam = familyForTheme(l.theme);
+  const h = Math.max(16, height);
+  const r = Math.min(12, h * 0.5);
+
+  ctx.save();
+  // Drop shadow: a flat, offset inked shape under the plank.
+  ctx.fillStyle = withAlpha(pal.ink, 0.16);
+  ctx.beginPath();
+  ctx.roundRect(x + 4, y + 8, width, h * 0.9, r);
+  ctx.fill();
+
+  // Body.
+  const body = ctx.createLinearGradient(0, y, 0, y + h);
+  body.addColorStop(0, pal.ledge);
+  body.addColorStop(0.55, pal.ledgeBody);
+  body.addColorStop(1, pal.ledgeDeep);
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, h, r);
+  ctx.fill();
+
+  // Cap highlight.
+  ctx.fillStyle = pal.ledgeRim;
+  ctx.beginPath();
+  ctx.roundRect(x + 3, y + 2.5, width - 6, Math.max(3, h * 0.24), r * 0.6);
+  ctx.fill();
+
+  // Ink outline.
+  ctx.strokeStyle = pal.ink;
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.roundRect(x + 1.3, y + 1.3, width - 2.6, h - 2.6, r);
+  ctx.stroke();
+
+  // Wood grain / rock seams, depending on the family.
+  if (h > 18 && (fam === 'meadow' || fam === 'forest' || fam === 'city')) {
+    ctx.strokeStyle = withAlpha(pal.ink, 0.2);
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < Math.floor(width / 54); i++) {
+      const sx = x + 18 + i * 54;
+      ctx.beginPath();
+      ctx.moveTo(sx, y + 6);
+      ctx.lineTo(sx + 10 + h1(seed + i) * 8, y + h - 4);
+      ctx.stroke();
+    }
+  }
+
+  // Moving lifts get a visible dash-light so the route is legible.
+  if (l.moving) {
+    ctx.fillStyle = l.accent || '#7ee7ff';
+    for (let i = 0; i < Math.max(1, Math.floor(width / 26)); i++) {
+      ctx.beginPath();
+      ctx.arc(x + 13 + i * 26, y + h - 4, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+};
+
+/* --------------------------------------------------------------- holes --- */
+
+/** A bottomless pit drawn as a dark, inked chasm with a lit lip. */
+export const drawChasm = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  pal: Pal,
+) => {
+  ctx.save();
+  const depth = Math.max(60, height - y);
+  const grad = ctx.createLinearGradient(0, y, 0, y + depth);
+  grad.addColorStop(0, blend(pal.groundDeep, pal.ink, 0.5));
+  grad.addColorStop(0.5, withAlpha(pal.ink, 0.95));
+  grad.addColorStop(1, pal.ink);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  // Softened corners: the pit is a place, not a rectangle.
+  ctx.roundRect(x, y - 2, width, depth + 4, [0, 0, 18, 18]);
+  ctx.fill();
+
+  // Inked lip on both sides.
+  ctx.strokeStyle = pal.ink;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y + depth);
+  ctx.moveTo(x + width, y);
+  ctx.lineTo(x + width, y + depth);
+  ctx.stroke();
+
+  // A couple of hanging vines / rock spikes so the drop has character.
+  for (let i = 0; i < Math.max(1, Math.floor(width / 70)); i++) {
+    const sx = x + 20 + h1(i * 4.1 + x * 0.01) * Math.max(1, width - 40);
+    ctx.fillStyle = withAlpha(pal.groundDeep, 0.9);
+    ctx.beginPath();
+    ctx.moveTo(sx - 7, y);
+    ctx.lineTo(sx + 7, y);
+    ctx.lineTo(sx, y + 16 + h1(i * 2.3) * 26);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
+/* -------------------------------------------------------------- pickups --- */
+
+/** A chunky cartoon fish, drawn at (x, y) as its centre. */
+export const drawToonFish = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  t: number,
+  pal: Pal,
+  scale = 1,
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.rotate(Math.sin(t * 2.2) * 0.08);
+  // Tail.
+  ctx.fillStyle = pal.accent2;
+  ctx.strokeStyle = pal.ink;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-9, 0);
+  ctx.lineTo(-19, -8);
+  ctx.lineTo(-16, 0);
+  ctx.lineTo(-19, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Body.
+  ctx.fillStyle = pal.accent;
+  ctx.beginPath();
+  ctx.ellipse(1, 0, 13, 9.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Belly highlight.
+  ctx.fillStyle = withAlpha('#ffffff', 0.45);
+  ctx.beginPath();
+  ctx.ellipse(0, 3, 8, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Eye.
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(7, -2.5, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = pal.ink;
+  ctx.beginPath();
+  ctx.arc(8, -2.5, 1.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+};

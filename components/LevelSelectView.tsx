@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProgress } from '../context/ProgressContext';
 import { useT } from '../i18n';
+import { getLevelDesign } from '../game/level';
 
 /**
  * Chapter map for the campaign.
@@ -16,18 +17,78 @@ import { useT } from '../i18n';
 
 const LEVELS_PER_CHAPTER = 5;
 
-const CHAPTERS: { name: string; tint: string }[] = [
-  { name: 'PARKEN', tint: 'from-emerald-400/20' },
-  { name: 'REGZONEN', tint: 'from-sky-400/20' },
-  { name: 'NEONKVARTEREN', tint: 'from-fuchsia-400/20' },
-  { name: 'HAMNEN', tint: 'from-cyan-400/20' },
-  { name: 'SKYLINE', tint: 'from-indigo-400/20' },
-  { name: 'UNDERJORDEN', tint: 'from-amber-400/20' },
-  { name: 'FABRIKEN', tint: 'from-orange-400/20' },
-  { name: 'SKUGGTORNET', tint: 'from-rose-400/20' },
+/** Chapter titles follow the places their five stages actually visit, so the
+    map never promises "Neon Blocks" and then shows a forest. The names are the
+    same strings the level card and HUD use. */
+const CHAPTERS: { name: string; tagline: string; tint: string }[] = [
+  { name: 'PARKEN', tagline: 'Gröna ängar och första steget', tint: 'from-emerald-400/25' },
+  { name: 'REGZONEN', tagline: 'Vått, kallt och brant', tint: 'from-sky-400/25' },
+  { name: 'NEONKVARTEREN', tagline: 'Stad, tak och byggen', tint: 'from-fuchsia-400/25' },
+  { name: 'HAMNEN', tagline: 'Is, kraft och glömda kvarter', tint: 'from-cyan-400/25' },
+  { name: 'SKYLINE', tagline: 'Rymd, vulkan och himmelsbroar', tint: 'from-indigo-400/25' },
+  { name: 'UNDERJORDEN', tagline: 'Laboratorier och krigszoner', tint: 'from-amber-400/25' },
+  { name: 'FABRIKEN', tagline: 'Heta, mörka och kaotiska trakter', tint: 'from-orange-400/25' },
+  { name: 'SKUGGTORNET', tagline: 'Återstoden av allt', tint: 'from-rose-400/25' },
 ];
 
 const TOTAL_LEVELS = CHAPTERS.length * LEVELS_PER_CHAPTER;
+
+/** A picture per stage theme, so the map reads as a journey through places
+    instead of forty identical numbers. Matches the world the stage actually
+    draws (see getLevelDesign). */
+const THEME_ICONS: Record<string, string> = {
+  park: 'park',
+  suburban: 'holiday_village',
+  city: 'apartment',
+  downtown: 'location_city',
+  industrial: 'factory',
+  construction: 'engineering',
+  beach: 'beach_access',
+  mountain: 'landscape',
+  forest: 'forest',
+  harbor: 'directions_boat',
+  sewers: 'water',
+  alpine: 'downhill_skiing',
+  rooftops: 'roofing',
+  countryside: 'agriculture',
+  ice_cave: 'ac_unit',
+  glacier: 'ac_unit',
+  arctic_base: 'severe_cold',
+  power_plant: 'bolt',
+  nuclear: 'radioactive',
+  datacenter: 'dns',
+  laboratory: 'science',
+  quantum: 'blur_on',
+  abandoned: 'domain_disabled',
+  highway: 'add_road',
+  warzone: 'local_fire_department',
+  underground: 'landslide',
+  sky_bridge: 'air',
+  space_station: 'rocket_launch',
+  volcano: 'volcano',
+  hell: 'local_fire_department',
+  inferno: 'whatshot',
+  hades: 'skull',
+  tartarus: 'skull',
+  void: 'brightness_empty',
+  abyss: 'waves',
+  oblivion: 'visibility_off',
+  nightmare: 'nightlight',
+  chaos: 'cyclone',
+  pandemonium: 'grain',
+  apocalypse: 'thunderstorm',
+  armageddon: 'thunderstorm',
+  titan: 'landscape',
+  nexus: 'hub',
+  omega: 'hexagon',
+  infinity: 'all_inclusive',
+  transcendence: 'flare',
+  enlightenment: 'light_mode',
+  ascension: 'north',
+  legendary: 'military_tech',
+};
+
+const iconForLevel = (level: number) => THEME_ICONS[getLevelDesign(level).theme] ?? 'flag';
 
 const LevelSelectView: React.FC<{
   onBack: () => void;
@@ -49,15 +110,15 @@ const LevelSelectView: React.FC<{
         <div>
           <button
             onClick={onBack}
-            className="mb-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/40 transition-colors hover:text-white/80"
+            className="mb-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/45 transition-colors hover:text-white/85"
           >
             <span className="material-symbols-outlined text-sm">arrow_back</span>
             {t('Tillbaka till menyn')}
           </button>
-          <h1 className="font-display text-3xl font-black uppercase tracking-tight text-white md:text-4xl">
+          <h1 className="toon-title font-display text-3xl font-black uppercase tracking-tight md:text-5xl">
             {t('Kapitel')}
           </h1>
-          <p className="mt-1 text-sm text-white/45">
+          <p className="mt-1.5 text-sm font-bold text-white/60">
             {t('{a} av {b} nivåer klara', { a: clearedThrough, b: TOTAL_LEVELS })}
           </p>
         </div>
@@ -65,7 +126,7 @@ const LevelSelectView: React.FC<{
         <div className="flex flex-col items-stretch gap-2 sm:items-end">
           <button
             onClick={() => onStart(nextLevel)}
-            className="btn-primary px-6 py-3 text-sm"
+            className="toon-btn toon-btn-green px-6 py-3 text-sm uppercase tracking-wider"
           >
             <span className="material-symbols-outlined text-lg">
               {allCleared ? 'replay' : 'play_arrow'}
@@ -75,11 +136,8 @@ const LevelSelectView: React.FC<{
               : t('Fortsätt · nivå {n}', { n: nextLevel })}
           </button>
           <div className="flex items-center gap-2">
-            <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary transition-[width] duration-500"
-                style={{ width: `${Math.max(2, percent)}%` }}
-              />
+            <div className="toon-bar w-40">
+              <span style={{ width: `${Math.max(2, percent)}%` }} />
             </div>
             <span className="tabular text-[10px] font-black text-primary">{percent}%</span>
           </div>
@@ -98,45 +156,48 @@ const LevelSelectView: React.FC<{
             <section
               key={chapter.name}
               aria-label={`${t('Kapitel')} ${chapterIndex + 1}: ${t(chapter.name)}`}
-              className={`card-premium relative overflow-hidden p-4 transition-opacity ${
-                chapterLocked ? 'opacity-55' : ''
+              className={`toon-card relative overflow-hidden p-4 transition-opacity ${
+                chapterLocked ? 'opacity-70' : ''
               }`}
             >
               <div
-                className={`pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${chapter.tint} to-transparent`}
+                className={`pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b ${chapter.tint} to-transparent`}
                 aria-hidden="true"
               />
 
               <div className="relative flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span
-                    className={`tabular flex size-9 shrink-0 items-center justify-center rounded-xl border text-xs font-black ${
+                    className={`tabular flex size-9 shrink-0 items-center justify-center rounded-xl border-2 text-xs font-black ${
                       chapterDone
-                        ? 'border-primary/40 bg-primary/15 text-primary'
-                        : 'border-white/10 bg-white/[0.04] text-white/45'
+                        ? 'border-[#0c3a20] bg-[#22cf66] text-[#06210f] shadow-[0_3px_0_0_#0c3a20]'
+                        : 'border-[#12182b] bg-white text-[#12182b] shadow-[0_2px_0_0_#12182b]'
                     }`}
                   >
                     {String(chapterIndex + 1).padStart(2, '0')}
                   </span>
                   <div className="min-w-0">
-                    <h2 className="truncate text-sm font-black uppercase tracking-[0.1em] text-white">
+                    <h2 className="truncate text-sm font-black uppercase tracking-[0.1em] text-[#12182b]">
                       {t(chapter.name)}
                     </h2>
-                    <p className="truncate text-[10px] font-bold uppercase tracking-wider text-white/30">
+                    <p className="truncate text-[10px] font-bold text-[#12182b]/55">
+                      {t(chapter.tagline)}
+                    </p>
+                    <p className="truncate text-[9px] font-black uppercase tracking-wider text-[#12182b]/35">
                       {t('{a}/{b} klart', { a: chapterCleared, b: LEVELS_PER_CHAPTER })}
                     </p>
                   </div>
                 </div>
                 {chapterDone ? (
-                  <span className="material-symbols-outlined text-lg text-primary" aria-label={t('Klart')}>
+                  <span className="material-symbols-outlined text-lg text-[#16a34a]" aria-label={t('Klart')}>
                     verified
                   </span>
                 ) : chapterLocked ? (
-                  <span className="material-symbols-outlined text-lg text-white/25" aria-hidden="true">
+                  <span className="material-symbols-outlined text-lg text-[#12182b]/30" aria-hidden="true">
                     lock
                   </span>
                 ) : (
-                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/80">
+                  <span className="rounded-full border-2 border-[#0c3a20] bg-[#8ff5b6] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-[#0c3a20]">
                     {t('Pågår')}
                   </span>
                 )}
@@ -164,12 +225,12 @@ const LevelSelectView: React.FC<{
                           ? t('Klara nivå {n} först', { n: level - 1 })
                           : t('Spela nivå {n}', { n: level })
                       }
-                      className={`group relative flex h-14 flex-col items-center justify-center gap-0.5 rounded-xl border text-sm font-black transition-all duration-150 ${
+                      className={`group relative flex h-14 flex-col items-center justify-center gap-0.5 rounded-xl border-2 text-sm font-black transition-all duration-150 ${
                         next
-                          ? 'border-primary bg-primary text-[#06210f] shadow-[0_0_22px_-6px_rgba(43,238,121,0.9)] hover:brightness-110'
+                          ? 'border-[#0c3a20] bg-gradient-to-b from-[#5cfa9e] to-[#22cf66] text-[#06210f] shadow-[0_4px_0_0_#0c3a20] hover:-translate-y-0.5'
                           : cleared
-                            ? 'border-primary/30 bg-primary/[0.08] text-primary hover:border-primary/60 hover:bg-primary/15'
-                            : 'cursor-not-allowed border-white/[0.07] bg-white/[0.025] text-white/25'
+                            ? 'border-[#0c3a20] bg-[#c9fbd9] text-[#0c3a20] shadow-[0_3px_0_0_#0c3a20] hover:bg-[#b4f8ca]'
+                            : 'cursor-not-allowed border-[#12182b]/25 bg-[#12182b]/[0.06] text-[#12182b]/30'
                       }`}
                     >
                       {next && (
@@ -179,22 +240,18 @@ const LevelSelectView: React.FC<{
                         />
                       )}
                       <span className="tabular leading-none">{level}</span>
-                      <span className="flex h-3 items-center gap-0.5">
+                      <span className="flex h-3.5 items-center gap-0.5 opacity-80">
                         {locked ? (
                           <span className="material-symbols-outlined text-[11px]" aria-hidden="true">
                             lock
                           </span>
                         ) : isBoss ? (
-                          <span className="material-symbols-outlined text-[11px]" aria-hidden="true">
+                          <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
                             swords
                           </span>
-                        ) : cleared ? (
-                          <span className="material-symbols-outlined text-[11px]" aria-hidden="true">
-                            check
-                          </span>
                         ) : (
-                          <span className="text-[8px] font-black uppercase tracking-wider">
-                            {t('Nästa')}
+                          <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                            {iconForLevel(level)}
                           </span>
                         )}
                       </span>
@@ -207,7 +264,7 @@ const LevelSelectView: React.FC<{
         })}
       </div>
 
-      <p className="mt-4 text-center text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">
+      <p className="mt-5 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
         {t('Var femte nivå är en boss. Klara en nivå för att låsa upp nästa.')}
       </p>
     </div>
