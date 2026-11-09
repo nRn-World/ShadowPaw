@@ -1,16 +1,24 @@
 /**
- * Local-only daily challenge data: ghost replays, a per-day leaderboard and a
+ * Local-only daily challenge data: a per-day leaderboard and a
  * play streak. Nothing here talks to a server; everything lives in
  * localStorage and degrades to empty data in private browsing.
  */
-export type GhostFrame = [number, number, number]; // x, y, facing
-export type GhostRun = { key: string; score: number; frames: GhostFrame[] };
 export type DailyEntry = { score: number; level: number; date: string };
 
-const GHOST_KEY = 'shadow_paw_ghost_v1';
 const DAILY_KEY = 'shadow_paw_daily_scores_v1';
+/**
+ * Ghost replays were removed from the game (the translucent pace-setter cat in
+ * each level, plus the localStorage recordings behind it). Players who ran an
+ * earlier build still carry that data in their browser, so it is dropped here
+ * once on first read rather than left to sit in storage forever.
+ */
+const LEGACY_GHOST_KEY = 'shadow_paw_ghost_v1';
+try {
+  localStorage.removeItem(LEGACY_GHOST_KEY);
+} catch {
+  // Private browsing can refuse storage access; nothing to clean up there.
+}
 const STREAK_KEY = 'shadow_paw_daily_streak_v1';
-const MAX_GHOST_FRAMES = 3600; // 4 minutes of samples at one per four frames
 
 const read = <T,>(key: string, fallback: T): T => {
   try {
@@ -28,33 +36,6 @@ const write = (key: string, value: unknown) => {
   } catch {
     return false;
   }
-};
-
-/** Ghosts are keyed by run mode + level + seed, so a daily layout never shows
-    a ghost from the campaign version of the same level. */
-export const loadGhost = (key: string): GhostRun | null => {
-  const all = read<Record<string, GhostRun>>(GHOST_KEY, {});
-  const ghost = all[key];
-  return ghost && Array.isArray(ghost.frames) ? ghost : null;
-};
-
-/** Only replaces the ghost when the run actually beat it. Frames are capped
-    and downsampled so a very long run cannot blow the storage quota. */
-export const saveGhost = (key: string, score: number, frames: GhostFrame[]): boolean => {
-  const all = read<Record<string, GhostRun>>(GHOST_KEY, {});
-  if (all[key] && all[key].score >= score) return false;
-  let kept = frames;
-  if (kept.length > MAX_GHOST_FRAMES) {
-    const stride = Math.ceil(kept.length / MAX_GHOST_FRAMES);
-    kept = kept.filter((_, i) => i % stride === 0);
-  }
-  all[key] = { key, score, frames: kept };
-  // Keep the store bounded: one ghost per of the last 40 distinct stages.
-  const keys = Object.keys(all);
-  if (keys.length > 40) {
-    keys.slice(0, keys.length - 40).forEach((k) => delete all[k]);
-  }
-  return write(GHOST_KEY, all);
 };
 
 export const loadDailyScores = (date: string): DailyEntry[] => {

@@ -189,8 +189,10 @@ export const LanguageButtons: React.FC = () => {
             type="button"
             onClick={() => updateSettings({ language: l.code })}
             aria-pressed={on}
-            className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
-              on ? 'border-primary/60 bg-primary/15 text-primary' : 'border-white/10 bg-white/[0.04] text-white/70 hover:border-white/25 hover:text-white'
+            className={`flex items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-sm font-black transition-all ${
+              on
+                ? 'border-[#0c3a20] bg-[#c9fbd9] text-[#0c3a20] shadow-[0_3px_0_0_#0c3a20]'
+                : 'border-[#12182b]/20 bg-white text-[#12182b]/70 hover:bg-[#12182b]/[0.05]'
             }`}
           >
             <Flag code={l.code} />

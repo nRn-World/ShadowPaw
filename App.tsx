@@ -172,7 +172,14 @@ const App: React.FC = () => {
           menus never wait on a remote host, and the CSS backdrop grades it to the
           game's neon palette on top. */}
       <div className="app-backdrop" aria-hidden="true">
-        <img src="/city-bg.jpg" alt="" className="app-city-photo" />
+        {/* Cartoon evening sky: warm sun, drifting clouds, twinkling stars and
+            two rounded hill layers. Pure CSS, so it stays cheap on a phone. */}
+        <div className="app-sun" />
+        <div className="app-clouds">
+          <div className="app-cloud" style={{ top: '12vh', width: 220, height: 54, animationDuration: '78s' }} />
+          <div className="app-cloud" style={{ top: '22vh', width: 150, height: 38, animationDuration: '112s', animationDelay: '-30s', opacity: 0.8 }} />
+          <div className="app-cloud" style={{ top: '6vh', width: 180, height: 44, animationDuration: '96s', animationDelay: '-60s', opacity: 0.7 }} />
+        </div>
         <div className="app-backdrop-stars" />
         <div className="app-vignette" />
       </div>

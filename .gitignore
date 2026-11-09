@@ -28,3 +28,9 @@ dist-ssr
 
 .vercel
 .freebuff
+
+# Local QA artefacts (screenshots and throwaway Playwright drivers used while
+# checking the game by hand; never part of the build).
+screenshots/
+scratch-*.html
+scripts/_tmp/

@@ -79,7 +79,6 @@ try {
     return {
       runMode: g.runMode,
       seedOffset: g.seedOffset,
-      ghostKey: g.ghostKey,
       checkpoints: g.checkpoints,
       perkOffer: g.perkOffer.map((p) => p.id),
       qualityTier: g.quality?.tier,
@@ -89,7 +88,6 @@ try {
   check('new run systems are initialised on a fresh campaign', () => {
     assert.equal(runSystems.runMode, 'campaign');
     assert.equal(runSystems.seedOffset, 0);
-    assert.ok(/^campaign:1:0$/.test(runSystems.ghostKey));
     assert.equal(runSystems.checkpoints.length, 2, 'long levels get two checkpoints');
     assert.ok(runSystems.checkpoints[0] < runSystems.checkpoints[1]);
     assert.equal(runSystems.perkOffer.length, 3, 'three seeded risk/reward cards');

@@ -2,28 +2,38 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry, RunMode } from '../types';
-import GameplayVideo from './GameplayVideo';
+import LiveRunDemo from './LiveRunDemo';
 import { drawCatSprite } from './catSprite';
-import { drawCatAtlasSprite, getCatMuzzle } from './catAtlasSprite';
+import { drawCatAtlasSprite } from './catAtlasSprite';
+
 import CatPreview from './CatPreview';
-import { drawNeonSkyline, drawAtmosphere, drawGroundRim, drawBloom } from './worldArt';
+import { drawAtmosphere, drawBloom } from './worldArt';
+import {
+  drawBackdrop, drawGroundSlab, drawLedge, drawChasm, drawEarth,
+  paletteFor, familyForTheme, blend, withAlpha,
+} from './cartoonWorld';
 import { getJerryTaunt } from '../services/taunts';
 import { useProgress, isReducedMotion } from '../context/ProgressContext';
 import { useInstall } from '../context/InstallContext';
 import { AudioEngine } from '../services/AudioEngine';
 import { useT, tr, renderRich, LanguageButtons } from '../i18n';
 import {
-  loadGhost, saveGhost, loadDailyScores, recordDailyScore,
+  loadDailyScores, recordDailyScore,
   readDailyStreak, touchDailyStreak,
 } from '../game/daily';
 import { getTopDeathCause, getMostDangerousLevel, type DeathCause } from '../game/telemetry';
 import { PERK_BY_ID, combinePerkEffects, offerPerks, type PerkDef } from '../game/perks';
 import { SHADOW_ENEMY_TYPE, updateEnemyMotion, drawShadowWraith } from '../game/enemies';
 import { haptic } from '../game/haptics';
+import {
+  getLevelTwist, twistPhysics, pickEvent, EVENTS, TWISTS,
+  type ActiveEvent, type EventId,
+} from '../game/twists';
 import { createQualityMonitor, FULL_QUALITY } from '../game/quality';
 import type { GameState, HudStats } from '../game/types';
 import { ShadowShiftMeter, ObjectivePill } from './GameHud';
-import { drawCheckpointBeacons, drawGhost } from './gameRender';
+import { drawCartoonEnemy } from './enemyArt';
+import { drawCheckpointBeacons, drawBlackout, drawGoldRush } from './gameRender';
 import {
   getLevelDesign, getDifficultyProfile, getLevelLayout, LEVEL_LAYOUT_META,
   buildLevelLayout, makeRng, getWeatherForLevel, seededRandom,
@@ -63,6 +73,68 @@ const CHAPTER_NAMES = [
   'Titanen', 'Hades', 'Tartaros', 'Nexus', 'Omega',
   'Oändligheten', 'Transcendens', 'Upplysningen', 'Uppstigningen', 'Legenden',
 ];
+
+/** Display name for the place a level actually takes place in. The chapter list
+    above is a narrative grouping, but the level card used to print "Neon City"
+    over a sunny meadow; this maps the stage's own theme to the right name. */
+const THEME_PLACE_NAMES: Record<string, string> = {
+  park: 'Parken',
+  suburban: 'Förstaden',
+  city: 'Storstaden',
+  downtown: 'Citykärnan',
+  industrial: 'Industrin',
+  construction: 'Bygget',
+  beach: 'Stranden',
+  mountain: 'Fjället',
+  forest: 'Skogen',
+  harbor: 'Hamnen',
+  sewers: 'Kloakerna',
+  alpine: 'Högfjället',
+  rooftops: 'Taken',
+  countryside: 'Landsbygden',
+  ice_cave: 'Isgrottan',
+  glacier: 'Glaciären',
+  arctic_base: 'Arktis',
+  power_plant: 'Kraftverket',
+  nuclear: 'Kärnkraften',
+  datacenter: 'Datacentret',
+  laboratory: 'Laboratoriet',
+  quantum: 'Kvantskiftet',
+  abandoned: 'Övergivna kvarter',
+  highway: 'Motorvägen',
+  warzone: 'Krigszonen',
+  underground: 'Underjorden',
+  sky_bridge: 'Himmelsbron',
+  space_station: 'Rymdstationen',
+  volcano: 'Vulkanen',
+  hell: 'Inferno',
+  inferno: 'Askfallet',
+  hades: 'Hades',
+  tartarus: 'Tartaros',
+  void: 'Tomrummet',
+  abyss: 'Avgrunden',
+  oblivion: 'Glömskan',
+  nightmare: 'Mardrömmen',
+  chaos: 'Kaoset',
+  pandemonium: 'Pandemonium',
+  apocalypse: 'Apokalypsen',
+  armageddon: 'Harmagedon',
+  titan: 'Titanen',
+  nexus: 'Nexus',
+  omega: 'Omega',
+  infinity: 'Oändligheten',
+  transcendence: 'Transcendens',
+  enlightenment: 'Upplysningen',
+  ascension: 'Uppstigningen',
+  legendary: 'Legenden',
+};
+
+/** Place name for a stage, falling back to the chapter grouping. */
+const placeForLevel = (level: number, theme?: string): string => {
+  const direct = theme ? THEME_PLACE_NAMES[String(theme).toLowerCase()] : undefined;
+  if (direct) return direct;
+  return CHAPTER_NAMES[(Math.max(1, level) - 1) % CHAPTER_NAMES.length] || 'Neon City';
+};
 
 const SKINS: Record<string, { name: string; color: string; accent: string; unlockHint: string; original?: boolean }> = {
   // The default skin shows the baked art in its own colours (no tint), so the
@@ -213,9 +285,12 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number }> = ({ storyLev
           cat sprints through a level, hops crates, shoots drones and grabs fish,
           so the first screen shows how Shadow Paw actually plays before the
           visitor presses anything. */}
-      <div className="group/canvas relative h-52 overflow-hidden bg-[#06101f] md:h-60">
+      <div className="group/canvas relative h-52 overflow-hidden bg-[#0d1b2c] md:h-60">
         <div className="absolute inset-0">
-          <GameplayVideo label={t('Spelvideo: katten springer, hoppar och skjuter genom banan')} />
+          {/* The attract loop is drawn live in the same cartoon style as the
+              game, so the first thing a visitor sees is the real art
+              direction instead of a recording of an older build. */}
+          <LiveRunDemo />
         </div>
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
           <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
@@ -245,7 +320,7 @@ export const StartMenuView: React.FC<{
   const { progress } = useProgress();
   const t = useT();
 
-  // Use the same padded local-date seed that setupLevel and the ghost/board
+  // Use the same padded local-date seed that setupLevel and the board
   // use, so the level on the button is exactly the course that gets loaded.
   const todaySeed = getDailySeed();
   const dailyLevel = dailyLevelFromSeed(todaySeed);
@@ -287,7 +362,7 @@ export const StartMenuView: React.FC<{
           </p>
 
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
-            <button onClick={() => onStart(1)} className="btn-primary cta-breathe group flex-1 px-7 py-4 text-base">
+            <button onClick={() => onStart(1)} className="toon-btn toon-btn-green cta-breathe group flex-1 px-7 py-4 text-base">
               <span className="material-symbols-outlined text-2xl transition-transform duration-200 group-hover:translate-x-0.5">
                 play_arrow
               </span>
@@ -295,7 +370,7 @@ export const StartMenuView: React.FC<{
             </button>
             <button
               onClick={() => onStart(dailyLevel, 'daily')}
-              className="btn-ghost px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
+              className="toon-btn toon-btn-dark-accent px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
               title={t('Starta direkt på nivå {n}', { n: dailyLevel })}
             >
               <span className="material-symbols-outlined text-lg text-primary">bolt</span>
@@ -307,7 +382,7 @@ export const StartMenuView: React.FC<{
             {storyLevel > 1 && (
               <button
                 onClick={() => onStart(storyLevel)}
-                className="group flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.06] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.16em] text-primary/90 transition-colors hover:border-primary/40 hover:bg-primary/[0.12] hover:text-primary sm:flex-1 sm:justify-start"
+                className="toon-btn toon-btn-quiet group flex items-center justify-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[0.16em] sm:flex-1 sm:justify-start"
               >
                 <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">resume</span>
                 {t('Fortsätt · nivå {n}', { n: storyLevel })}
@@ -315,7 +390,7 @@ export const StartMenuView: React.FC<{
             )}
             <button
               onClick={() => onNavigate(AppView.LEVELS)}
-              className="group flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.16em] text-white/60 transition-colors hover:border-white/25 hover:bg-white/[0.08] hover:text-white sm:flex-1 sm:justify-start"
+              className="toon-btn toon-btn-quiet group flex items-center justify-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[0.16em] sm:flex-1 sm:justify-start"
             >
               <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">map</span>
               {t('Kapitelkarta · {a}/{b}', {
@@ -327,7 +402,7 @@ export const StartMenuView: React.FC<{
 
           {/* Shared daily seed: everyone gets the same course on the same date.
               The board and streak are local-only, so no account is needed. */}
-          <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/[0.045] px-3 py-2.5">
+          <div className="toon-card-dark mt-3 px-3.5 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-base text-primary">calendar_today</span>
@@ -367,21 +442,21 @@ export const StartMenuView: React.FC<{
                 { icon: 'local_fire_department', label: t('Bästa combo'), value: progress.stats.bestCombo, tone: 'text-cyan-300' },
                 { icon: 'set_meal', label: t('Fiskar'), value: progress.stats.totalFishCollected, tone: 'text-sky-300' },
               ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-2 py-2">
+                <div key={s.label} className="rounded-xl border-2 border-[#0a0f20] bg-[#1b2447] px-2 py-2 shadow-[0_3px_0_0_#0a0f20]">
                   <div className="flex items-center gap-1">
                     <span className={`material-symbols-outlined text-[13px] ${s.tone}`}>{s.icon}</span>
                     <span className="tabular text-sm font-black text-white">{s.value}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-[10px] font-black uppercase tracking-wider text-white/30">{s.label}</p>
+                  <p className="mt-0.5 truncate text-[10px] font-black uppercase tracking-wider text-white/40">{s.label}</p>
                 </div>
               ))}
             </div>
           ) : (
             <button
               onClick={() => onNavigate(AppView.HOW_TO_PLAY)}
-              className="group mt-3 flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.06]"
+              className="toon-card-dark group mt-3 flex w-full items-center gap-3 p-3.5 text-left transition-transform hover:-translate-y-0.5"
             >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border-2 border-[#0c3a20] bg-[#8ff5b6] text-[#0c3a20] shadow-[0_3px_0_0_#0c3a20]">
                 <span className="material-symbols-outlined text-[19px]">sports_esports</span>
               </span>
               <span className="min-w-0 flex-1">
@@ -395,11 +470,11 @@ export const StartMenuView: React.FC<{
           )}
 
           {/* Daily quests */}
-          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3.5">
+          <div className="toon-card-dark mt-3 p-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-primary">task_alt</span>
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/55">{t('Dagliga uppdrag')}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/70">{t('Dagliga uppdrag')}</p>
               </div>
               <button
                 onClick={() => onNavigate(AppView.QUESTS)}
@@ -421,11 +496,8 @@ export const StartMenuView: React.FC<{
                         {Math.min(q.current, q.target)}/{q.target}
                       </span>
                     </div>
-                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className={`h-full rounded-full ${q.completed ? 'bg-primary' : 'bg-gradient-to-r from-primary/50 to-primary'}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                    <div className="toon-bar mt-1.5">
+                      <span style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -448,7 +520,7 @@ export const StartMenuView: React.FC<{
           {t('Inställningar')}
         </button>
         <span aria-hidden="true">·</span>
-        <span>{t('Neon City · 40 kapitel')}</span>
+        <span>{t('8 trakter · 40 banor')}</span>
         <span aria-hidden="true">·</span>
         <span className="text-white/20">v2.0</span>
       </div>
@@ -457,6 +529,23 @@ export const StartMenuView: React.FC<{
 };
 
 /** SETTINGS **/
+/** The chunky comic toggle used across Settings: a two-tone track plus an
+    outlined knob, so an on/off state reads at a glance. */
+const ToonSwitch: React.FC<{ on: boolean }> = ({ on }) => (
+  <span
+    className={`relative h-6 w-11 shrink-0 rounded-full border-2 transition-colors ${
+      on ? 'border-[#0c3a20] bg-[#8ff5b6]' : 'border-[#12182b]/35 bg-[#12182b]/15'
+    }`}
+    aria-hidden="true"
+  >
+    <span
+      className={`absolute top-[1px] size-[18px] rounded-full border-2 transition-all duration-200 ${
+        on ? 'left-[22px] border-[#0c3a20] bg-white' : 'left-[1px] border-[#12182b]/40 bg-white'
+      }`}
+    />
+  </span>
+);
+
 export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { progress, updateSettings, toggleMuted, exportProgressCode, importProgressCode } = useProgress();
   const { canInstall, installed, offlineReady, install } = useInstall();
@@ -493,7 +582,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div>
           <p className="eyebrow text-primary">{t('System')}</p>
           <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-4xl">{t('Inställningar')}</h1>
-          <p className="mt-1 text-xs text-white/40">{t('Ljud, bild och säkerhetskopiering. Allt sparas lokalt.')}</p>
+          <p className="mt-1 text-xs font-semibold text-white/55">{t('Ljud, bild och säkerhetskopiering. Allt sparas lokalt.')}</p>
         </div>
         <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
           <span className="material-symbols-outlined text-base">arrow_back</span>
@@ -501,12 +590,12 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </button>
       </div>
 
-      <div className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/78 backdrop-blur-xl">
+      <div className="toon-card divide-y-2 divide-[#12182b]/12 overflow-hidden p-0">
         {/* Language */}
         <div className="p-5">
           <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-primary">language</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Språk')}</span>
+            <span className="material-symbols-outlined text-[#0f8a3c]">language</span>
+            <span className="text-[#12182b] font-black text-sm uppercase tracking-wider">{t('Språk')}</span>
           </div>
           <LanguageButtons />
         </div>
@@ -514,15 +603,15 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {/* Audio Section */}
         <div className="p-5">
           <div className="flex items-center gap-2 mb-5">
-            <span className="material-symbols-outlined text-primary">equalizer</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Audio')}</span>
+            <span className="material-symbols-outlined text-[#0f8a3c]">equalizer</span>
+            <span className="text-[#12182b] font-black text-sm uppercase tracking-wider">{t('Audio')}</span>
           </div>
 
           <div className="space-y-5">
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-mute" className="text-white/80 text-sm font-medium">{t('Ljud av/på')}</label>
-                <span className={`text-sm font-bold ${muted ? 'text-primary-red' : 'text-primary'}`}>{muted ? t('Av') : t('På')}</span>
+                <label htmlFor="settings-mute" className="text-[#12182b]/75 text-sm font-bold">{t('Ljud av/på')}</label>
+                <span className={`text-sm font-black ${muted ? 'text-[#c81e3a]' : 'text-[#0f8a3c]'}`}>{muted ? t('Av') : t('På')}</span>
               </div>
               <button
                 id="settings-mute" type="button"
@@ -534,20 +623,20 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     : 'border-primary/25 bg-primary/10 hover:bg-primary/20'
                 }`}
               >
-                <span className={`material-symbols-outlined text-xl ${muted ? 'text-primary-red' : 'text-primary'}`}>
+                <span className={`material-symbols-outlined text-xl ${muted ? 'text-[#c81e3a]' : 'text-[#0f8a3c]'}`}>
                   {muted ? 'volume_off' : 'volume_up'}
                 </span>
-                <span className="flex-1 text-left text-sm font-semibold text-white/85">
+                <span className="flex-1 text-left text-sm font-black text-[#12182b]">
                   {muted ? t('Allt ljud är avstängt') : t('Allt ljud spelas')}
                 </span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">{t('Mute')}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#12182b]/45">{t('Mute')}</span>
               </button>
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-music" className="text-white/80 text-sm font-medium">{t('Musikvolym')}</label>
-                <span className={`font-mono text-sm ${muted ? 'text-white/30' : 'text-primary'}`}>{muted ? '—' : `${music}%`}</span>
+                <label htmlFor="settings-music" className="text-[#12182b]/75 text-sm font-bold">{t('Musikvolym')}</label>
+                <span className={`font-mono text-sm font-black ${muted ? 'text-[#12182b]/35' : 'text-[#0f8a3c]'}`}>{muted ? '—' : `${music}%`}</span>
               </div>
               <input
                 id="settings-music" aria-label={t('Musikvolym')}
@@ -565,8 +654,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-sfx" className="text-white/80 text-sm font-medium">{t('Audioeffekter')}</label>
-                <span className={`font-mono text-sm ${muted ? 'text-white/30' : 'text-primary'}`}>{muted ? '—' : `${sfx}%`}</span>
+                <label htmlFor="settings-sfx" className="text-[#12182b]/75 text-sm font-bold">{t('Audioeffekter')}</label>
+                <span className={`font-mono text-sm font-black ${muted ? 'text-[#12182b]/35' : 'text-[#0f8a3c]'}`}>{muted ? '—' : `${sfx}%`}</span>
               </div>
               <input
                 id="settings-sfx" aria-label={t('Audioeffekter')}
@@ -584,8 +673,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-ui" className="text-white/80 text-sm font-medium">{t('UI-skala')}</label>
-                <span className="text-primary font-mono text-sm">{Math.round(progress.settings.uiScale * 100)}%</span>
+                <label htmlFor="settings-ui" className="text-[#12182b]/75 text-sm font-bold">{t('UI-skala')}</label>
+                <span className="text-[#0f8a3c] font-mono text-sm font-black">{Math.round(progress.settings.uiScale * 100)}%</span>
               </div>
               <input
                 id="settings-ui" aria-label={t('UI-skala')}
@@ -603,8 +692,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="settings-text" className="text-white/80 text-sm font-medium">{t('Textstorlek')}</label>
-                <span className="text-primary font-mono text-sm">{Math.round(progress.settings.textScale * 100)}%</span>
+                <label htmlFor="settings-text" className="text-[#12182b]/75 text-sm font-bold">{t('Textstorlek')}</label>
+                <span className="text-[#0f8a3c] font-mono text-sm font-black">{Math.round(progress.settings.textScale * 100)}%</span>
               </div>
               <input
                 id="settings-text" aria-label={t('Textstorlek')}
@@ -625,31 +714,29 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {/* Display Section */}
         <div className="p-5">
           <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-primary">fullscreen</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Skärm')}</span>
+            <span className="material-symbols-outlined text-[#0f8a3c]">fullscreen</span>
+            <span className="text-[#12182b] font-black text-sm uppercase tracking-wider">{t('Skärm')}</span>
           </div>
 
           <button
             onClick={toggleFullscreen}
-            className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-colors"
+            className="w-full flex items-center justify-between rounded-xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] p-4 transition-colors hover:bg-[#12182b]/[0.07]"
           >
             <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-white/60">open_in_full</span>
+              <span className="material-symbols-outlined text-[#12182b]/55">open_in_full</span>
               <div className="text-left">
-                <p className="text-white font-medium text-sm">{t('Helskärmsläge')}</p>
-                <p className="text-white/40 text-xs">{t('Maximal inlevelse')}</p>
+                <p className="text-[#12182b] font-black text-sm">{t('Helskärmsläge')}</p>
+                <p className="text-[#12182b]/50 text-xs font-semibold">{t('Maximal inlevelse')}</p>
               </div>
             </div>
-            <div className={`w-10 h-5 rounded-full transition-colors relative ${isFullscreen ? 'bg-primary' : 'bg-white/20'}`}>
-              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${isFullscreen ? 'left-5' : 'left-0.5'}`} />
-            </div>
+            <ToonSwitch on={isFullscreen} />
           </button>
 
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <button onClick={() => updateSettings({ colorBlindMode: !progress.settings.colorBlindMode })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
+            <button onClick={() => updateSettings({ colorBlindMode: !progress.settings.colorBlindMode })} className="toon-btn px-3 py-2 text-xs">
               {t('Färgblind: {v}', { v: progress.settings.colorBlindMode ? t('På') : t('Av') })}
             </button>
-            <button onClick={() => updateSettings({ debugOverlay: !progress.settings.debugOverlay })} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold text-white">
+            <button onClick={() => updateSettings({ debugOverlay: !progress.settings.debugOverlay })} className="toon-btn px-3 py-2 text-xs">
               {t('Debug HUD: {v}', { v: progress.settings.debugOverlay ? t('På') : t('Av') })}
             </button>
           </div>
@@ -659,10 +746,10 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               respected without anyone digging into this menu. */}
           <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-base text-primary">motion_photos_off</span>
-              <span className="text-sm font-semibold text-white/85">{t('Reducera motion: {v}', { v: progress.settings.reduceMotion === 'system' ? t('Automatiskt') : progress.settings.reduceMotion ? t('På') : t('Av') })}</span>
+              <span className="material-symbols-outlined text-base text-[#0f8a3c]">motion_photos_off</span>
+              <span className="text-sm font-black text-[#12182b]">{t('Reducera motion: {v}', { v: progress.settings.reduceMotion === 'system' ? t('Automatiskt') : progress.settings.reduceMotion ? t('På') : t('Av') })}</span>
             </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-white/40">{t('Följer din systeminställning på enheten')}</p>
+            <p className="mt-1 text-[11px] font-semibold leading-relaxed text-[#12182b]/50">{t('Följer din systeminställning på enheten')}</p>
             <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label={t('Reducera motion: {v}', { v: '' }).replace(/:\s*$/, '')}>
               {([
                 { value: 'system' as const, label: t('Automatiskt') },
@@ -676,8 +763,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     type="button"
                     aria-pressed={active}
                     onClick={() => updateSettings({ reduceMotion: opt.value })}
-                    className={`rounded-lg border px-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${
-                      active ? 'border-primary/60 bg-primary/15 text-primary' : 'border-white/10 bg-white/[0.04] text-white/60 hover:border-white/25 hover:text-white'
+                    className={`rounded-lg border-2 px-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${
+                      active ? 'border-[#0c3a20] bg-[#8ff5b6] text-[#0c3a20] shadow-[0_2px_0_0_#0c3a20]' : 'border-[#12182b]/20 bg-white text-[#12182b]/60 hover:bg-white/70'
                     }`}
                   >
                     {opt.label}
@@ -692,25 +779,23 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <button
             onClick={() => updateSettings({ haptics: !progress.settings.haptics })}
             aria-pressed={progress.settings.haptics}
-            className="mt-2 flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 transition-colors hover:border-white/20"
+            className="mt-2 flex w-full items-center justify-between rounded-xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] px-3 py-2.5 transition-colors hover:bg-[#12182b]/[0.07]"
           >
             <span className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-base text-white/60">vibration</span>
-              <span className="text-xs font-bold text-white">{t('Vibration: {v}', { v: progress.settings.haptics ? t('På') : t('Av') })}</span>
+              <span className="material-symbols-outlined text-base text-[#12182b]/55">vibration</span>
+              <span className="text-xs font-black text-[#12182b]">{t('Vibration: {v}', { v: progress.settings.haptics ? t('På') : t('Av') })}</span>
             </span>
-            <span className={`h-5 w-10 relative rounded-full transition-colors ${progress.settings.haptics ? 'bg-primary' : 'bg-white/20'}`} aria-hidden="true">
-              <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-all ${progress.settings.haptics ? 'left-5' : 'left-0.5'}`} />
-            </span>
+            <ToonSwitch on={progress.settings.haptics} />
           </button>
 
           {/* Difficulty scales hazards, enemy pressure and the fish quota, but
               never rewards or shop prices: an accessibility dial, not a boost. */}
-          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="mt-4 rounded-xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] p-3">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-base text-primary">tune</span>
-              <span className="text-sm font-semibold text-white/85">{t('Svårighetsgrad')}</span>
+              <span className="material-symbols-outlined text-base text-[#0f8a3c]">tune</span>
+              <span className="text-sm font-black text-[#12182b]">{t('Svårighetsgrad')}</span>
             </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-white/40">{t('Påverkar gropar, fiender och tidsgränser – inte belöningar.')}</p>
+            <p className="mt-1 text-[11px] font-semibold leading-relaxed text-[#12182b]/50">{t('Påverkar gropar, fiender och tidsgränser – inte belöningar.')}</p>
             <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label={t('Svårighetsgrad')}>
               {([
                 { value: 'easy' as const, label: t('Avslappnat'), hint: t('Färre gropar, lugnare fiender') },
@@ -725,8 +810,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     title={opt.hint}
                     aria-pressed={active}
                     onClick={() => updateSettings({ difficulty: opt.value })}
-                    className={`rounded-lg border px-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${
-                      active ? 'border-primary/60 bg-primary/15 text-primary' : 'border-white/10 bg-white/[0.04] text-white/60 hover:border-white/25 hover:text-white'
+                    className={`rounded-lg border-2 px-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${
+                      active ? 'border-[#0c3a20] bg-[#8ff5b6] text-[#0c3a20] shadow-[0_2px_0_0_#0c3a20]' : 'border-[#12182b]/20 bg-white text-[#12182b]/60 hover:bg-white/70'
                     }`}
                   >
                     {opt.label}
@@ -747,18 +832,16 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               key={opt.key}
               onClick={() => updateSettings({ [opt.key]: !progress.settings[opt.key] })}
               aria-pressed={progress.settings[opt.key]}
-              className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:border-white/20"
+              className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-[#12182b]/[0.07]"
             >
               <span className="flex min-w-0 items-start gap-2">
-                <span className="material-symbols-outlined text-base text-white/60">{opt.icon}</span>
+                <span className="material-symbols-outlined text-base text-[#12182b]/55">{opt.icon}</span>
                 <span>
-                  <span className="block text-xs font-bold text-white">{opt.label}</span>
-                  <span className="block text-[10px] leading-relaxed text-white/35">{opt.desc}</span>
+                  <span className="block text-xs font-black text-[#12182b]">{opt.label}</span>
+                  <span className="block text-[10px] font-semibold leading-relaxed text-[#12182b]/45">{opt.desc}</span>
                 </span>
               </span>
-              <span className={`h-5 w-10 shrink-0 relative rounded-full transition-colors ${progress.settings[opt.key] ? 'bg-primary' : 'bg-white/20'}`} aria-hidden="true">
-                <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-all ${progress.settings[opt.key] ? 'left-5' : 'left-0.5'}`} />
-              </span>
+              <ToonSwitch on={!!progress.settings[opt.key]} />
             </button>
           ))}
         </div>
@@ -766,8 +849,8 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {/* Save Sync Section */}
         <div className="p-5">
           <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-primary">sync</span>
-            <span className="text-white font-bold text-sm uppercase tracking-wider">{t('Säkerhetskopiering')}</span>
+            <span className="material-symbols-outlined text-[#0f8a3c]">sync</span>
+            <span className="text-[#12182b] font-black text-sm uppercase tracking-wider">{t('Säkerhetskopiering')}</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 mb-3">
             <button
@@ -785,7 +868,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 }
                 setTimeout(() => setSyncMessage(''), 2600);
               }}
-              className="px-4 py-2 rounded-lg bg-primary text-[#112218] font-black text-xs uppercase"
+              className="toon-btn toon-btn-green px-4 py-2 text-xs uppercase"
             >
               {t('Exportera kod')}
             </button>
@@ -795,7 +878,7 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 setSyncMessage(ok ? t('Progress importerad!') : t('Ogiltig kod'));
                 setTimeout(() => setSyncMessage(''), 2000);
               }}
-              className="px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white font-black text-xs uppercase"
+              className="toon-btn px-4 py-2 text-xs uppercase"
             >
               {t('Importera kod')}
             </button>
@@ -804,9 +887,9 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             value={importCode}
             onChange={(e) => setImportCode(e.target.value)}
             placeholder={t('Klistra in exportkod här')}
-            className="w-full h-20 bg-black/30 rounded-xl border border-white/10 p-3 text-xs text-white/80"
+            className="w-full h-20 rounded-xl border-2 border-[#12182b]/25 bg-white p-3 text-xs font-semibold text-[#12182b]"
           />
-          {syncMessage && <p className="text-primary text-xs mt-2 font-bold">{syncMessage}</p>}
+          {syncMessage && <p className="mt-2 text-xs font-black text-[#0f8a3c]">{syncMessage}</p>}
         </div>
 
         {/* Install / offline. Shown on every device so the state is honest:
@@ -814,29 +897,29 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             page, and the install button only when the browser offers one. */}
         <div className="p-5">
           <div className="mb-4 flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">install_mobile</span>
-            <span className="text-sm font-bold uppercase tracking-wider text-white">{t('Installera appen')}</span>
+            <span className="material-symbols-outlined text-[#0f8a3c]">install_mobile</span>
+            <span className="text-sm font-black uppercase tracking-wider text-[#12182b]">{t('Installera appen')}</span>
           </div>
-          <p className="mb-3 text-xs leading-relaxed text-white/45">
+          <p className="mb-3 text-xs font-semibold leading-relaxed text-[#12182b]/50">
             {t('Spela i helskärm utan adressfält och fungera offline')}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {installed ? (
-              <span className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-black uppercase tracking-wider text-primary">
+              <span className="inline-flex items-center gap-2 rounded-lg border-2 border-[#0c3a20] bg-[#c9fbd9] px-3 py-2 text-xs font-black uppercase tracking-wider text-[#0c3a20]">
                 <span className="material-symbols-outlined text-base">check_circle</span>
                 {t('Redan installerad')}
               </span>
             ) : canInstall ? (
               <button
                 onClick={async () => { await install(); }}
-                className="rounded-lg border border-primary bg-primary px-4 py-2 text-xs font-black uppercase tracking-wider text-[#112218]"
+                className="toon-btn toon-btn-green px-4 py-2 text-xs uppercase tracking-wider"
               >
                 {t('Installera')}
               </button>
             ) : null}
             <span
               className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold ${
-                offlineReady ? 'border-cyan-300/35 bg-cyan-300/10 text-cyan-200' : 'border-white/10 bg-white/[0.03] text-white/45'
+                offlineReady ? 'border-[#12182b]/25 bg-[#c8ecff] text-[#12182b]' : 'border-[#12182b]/20 bg-white text-[#12182b]/45'
               }`}
             >
               <span className="material-symbols-outlined text-base">{offlineReady ? 'cloud_done' : 'cloud_off'}</span>
@@ -881,8 +964,8 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow text-primary">{t('Så spelar du')}</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Handboken')}</h1>
-          <p className="mt-2 max-w-lg text-sm text-white/50">
+          <h1 className="toon-title mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Handboken')}</h1>
+          <p className="mt-2 max-w-lg text-sm font-semibold text-white/60">
             {t('Allt du behöver för att ta dig genom neonstaden, från första hoppet till sista bossen.')}
           </p>
         </div>
@@ -893,16 +976,20 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-3">
-        <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
-          <span className="material-symbols-outlined text-2xl text-primary">flag</span>
-          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Målet')}</h2>
-          <p className="mt-1 text-[11px] leading-relaxed text-white/50">
-            {renderRich(t('Samla <b>fiskkvoten</b> (60–72 % av banans fiskar) och nå Jerry längst fram. Tar du alla fiskar väntar en bonus. Bossnivåer kräver att bossen besegras först. Varje nivå ger XP, mynt och poäng.'), 'text-white/80')}
+        <div className="toon-card p-4">
+          <span className="flex size-10 items-center justify-center rounded-xl border-2 border-[#0c3a20] bg-[#8ff5b6] text-[#0c3a20] shadow-[0_3px_0_0_#0c3a20]">
+            <span className="material-symbols-outlined text-xl">flag</span>
+          </span>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-[#12182b]">{t('Målet')}</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-[#12182b]/60">
+            {renderRich(t('Samla <b>fiskkvoten</b> (60–72 % av banans fiskar) och nå Jerry längst fram. Tar du alla fiskar väntar en bonus. Bossnivåer kräver att bossen besegras först. Varje nivå ger XP, mynt och poäng.'), 'font-black text-[#12182b]')}
           </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-[#0a1220]/75 p-4 backdrop-blur-md">
-          <span className="material-symbols-outlined text-2xl text-cyan-300">gamepad</span>
-          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Kontroller')}</h2>
+        <div className="toon-card p-4">
+          <span className="flex size-10 items-center justify-center rounded-xl border-2 border-[#0a3550] bg-[#bdeaff] text-[#0a3550] shadow-[0_3px_0_0_#0a3550]">
+            <span className="material-symbols-outlined text-xl">gamepad</span>
+          </span>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-[#12182b]">{t('Kontroller')}</h2>
           <div className="mt-2 space-y-1.5">
             {[
               { k: 'A / D  ← →', v: 'Rör dig' },
@@ -913,38 +1000,42 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               { k: 'Esc / P', v: 'Paus' },
             ].map((c) => (
               <div key={c.k} className="flex items-center justify-between gap-2">
-                <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold text-white/75">{t(c.k)}</span>
-                <span className="text-[10px] text-white/45">{t(c.v)}</span>
+                <span className="rounded-md border-2 border-[#12182b]/35 bg-white px-1.5 py-0.5 text-[9px] font-black text-[#12182b]/80">{t(c.k)}</span>
+                <span className="text-[10px] font-semibold text-[#12182b]/55">{t(c.v)}</span>
               </div>
             ))}
           </div>
         </div>
-        <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] p-4 backdrop-blur-md">
-          <span className="material-symbols-outlined text-2xl text-yellow-300">local_fire_department</span>
-          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-white">{t('Streak')}</h2>
-          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
-            {renderRich(t('Fiskar, fiender och bonusar bygger streaken. Var fjärde aktion höjer multiplikatorn (upp till <b>x8</b>). Skada nollställer den.'), 'text-yellow-200')}
+        <div className="toon-card p-4">
+          <span className="flex size-10 items-center justify-center rounded-xl border-2 border-[#6b4708] bg-[#ffe58a] text-[#6b4708] shadow-[0_3px_0_0_#6b4708]">
+            <span className="material-symbols-outlined text-xl">local_fire_department</span>
+          </span>
+          <h2 className="mt-2 font-display text-lg font-black uppercase tracking-tight text-[#12182b]">{t('Streak')}</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-[#12182b]/60">
+            {renderRich(t('Fiskar, fiender och bonusar bygger streaken. Var fjärde aktion höjer multiplikatorn (upp till <b>x8</b>). Skada nollställer den.'), 'font-black text-[#0f8a3c]')}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary">{t('UTAN SKADA +750')}</span>
-            <span className="rounded-md border border-yellow-300/25 bg-yellow-300/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-200">{t('NÄSTAN +75')}</span>
+            <span className="rounded-md border-2 border-[#0c3a20] bg-[#c9fbd9] px-1.5 py-0.5 text-[9px] font-black text-[#0c3a20]">{t('UTAN SKADA +750')}</span>
+            <span className="rounded-md border-2 border-[#6b4708] bg-[#ffe58a] px-1.5 py-0.5 text-[9px] font-black text-[#6b4708]">{t('NÄSTAN +75')}</span>
           </div>
         </div>
       </div>
 
       {/* The one mechanic that is uniquely Shadow Paw, given its own card. */}
-      <div className="mt-3 rounded-2xl border border-[#c084fc]/35 bg-gradient-to-br from-[#2a1145]/80 to-[#0a1220]/80 p-4 md:p-5">
+      <div className="toon-card mt-3 bg-[linear-gradient(180deg,#efe4ff_0%,#e3ecff_100%)] p-4 md:p-5">
         <div className="flex items-start gap-3">
-          <span className="material-symbols-outlined text-3xl text-[#d8b4fe]">dark_mode</span>
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border-2 border-[#3c1a63] bg-[#c9a4ff] text-[#2a1145] shadow-[0_3px_0_0_#3c1a63]">
+            <span className="material-symbols-outlined text-2xl">dark_mode</span>
+          </span>
           <div className="min-w-0">
-            <p className="eyebrow text-[#c084fc]">{t('Signaturförmåga')}</p>
-            <h2 className="mt-0.5 font-display text-xl font-black uppercase tracking-tight text-white">{t('Skuggskifte')}</h2>
-            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-white/55">
-              {renderRich(t('Fiskar, besegrade fiender och <b>nästan-träffar</b> laddar mätaren. Vid 100 % trycker du <b>E</b> eller på mätaren: i fyra sekunder är katten osårbar, snabbare, drar till sig fiskar, ger 75 % extra poäng och <b>löser upp fiender</b> bara genom att springa igenom dem.'), 'text-[#e9d5ff]')}
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#6b2fb0]">{t('Signaturförmåga')}</p>
+            <h2 className="mt-0.5 font-display text-xl font-black uppercase tracking-tight text-[#12182b]">{t('Skuggskifte')}</h2>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-[#12182b]/60">
+              {renderRich(t('Fiskar, besegrade fiender och <b>nästan-träffar</b> laddar mätaren. Vid 100 % trycker du <b>E</b> eller på mätaren: i fyra sekunder är katten osårbar, snabbare, drar till sig fiskar, ger 75 % extra poäng och <b>löser upp fiender</b> bara genom att springa igenom dem.'), 'font-black text-[#3c1a63]')}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {[t('Osårbar'), t('+30 % fart'), t('Fiskmagnet'), t('+75 % poäng'), t('Skuggpass +300')].map((chip) => (
-                <span key={chip} className="rounded-md border border-[#c084fc]/30 bg-[#a855f7]/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#d8b4fe]">
+                <span key={chip} className="rounded-md border-2 border-[#3c1a63]/30 bg-white px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#3c1a63]">
                   {chip}
                 </span>
               ))}
@@ -953,42 +1044,76 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
       </div>
 
-      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Power-ups')}</h2>
-      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
-        {powerups.map((p) => (
-          <div key={p.name} className="rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
-            <span className={`material-symbols-outlined text-xl ${p.color}`}>{p.icon}</span>
-            <p className="mt-1 text-[11px] font-black text-white">{t(p.name)}</p>
-            <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{t(p.desc)}</p>
+      {/* The campaign's two variety systems, side by side: a stage-long rule
+          and a short telegraphed surprise. Both are read from the same data the
+          game loop uses, so the handbook can never drift from the code. */}
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/55">{t('Banor med egen regel')}</h2>
+      <p className="mt-1 max-w-2xl text-[11px] font-semibold leading-relaxed text-white/45">
+        {t('Nivåns twist visas i HUD:en och på kortet innan start – lär dig den och vänd den till din fördel.')}
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {Object.values(TWISTS).filter((tw) => tw.id !== 'none').map((tw) => (
+          <div key={tw.id} className="rounded-xl border-2 border-[#0a0f20] bg-[#1b2447] p-3 shadow-[0_3px_0_0_#0a0f20]">
+            <span className="material-symbols-outlined text-xl" style={{ color: tw.accent }}>{tw.icon}</span>
+            <p className="mt-1 text-[11px] font-black text-white">{t(tw.name)}</p>
+            <p className="mt-0.5 text-[9px] leading-relaxed text-white/45">{t(tw.detail)}</p>
           </div>
         ))}
       </div>
 
-      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Fiender')}</h2>
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/55">{t('Plötsliga händelser')}</h2>
+      <p className="mt-1 max-w-2xl text-[11px] font-semibold leading-relaxed text-white/45">
+        {t('Då och då avbryts en bana av en telegraferad överraskning. Varningen syns innan – reagera, överlev, få bonus.')}
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        {Object.values(EVENTS).map((ev) => (
+          <div key={ev.id} className="rounded-xl border-2 border-[#0a0f20] bg-[#1b2447] p-3 shadow-[0_3px_0_0_#0a0f20]">
+            <span className="material-symbols-outlined text-xl" style={{ color: ev.accent }}>{ev.icon}</span>
+            <p className="mt-1 text-[11px] font-black text-white">{t(ev.name)}</p>
+            <p className="mt-0.5 text-[9px] leading-relaxed text-white/45">{t(ev.detail)}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/30">
+        {t('Ingen twist på bossbanor – bossen är utmaningen.')}
+      </p>
+
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/55">{t('Power-ups')}</h2>
+      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        {powerups.map((p) => (
+          <div key={p.name} className="rounded-xl border-2 border-[#0a0f20] bg-[#1b2447] p-3 shadow-[0_3px_0_0_#0a0f20]">
+            <span className={`material-symbols-outlined text-xl ${p.color}`}>{p.icon}</span>
+            <p className="mt-1 text-[11px] font-black text-white">{t(p.name)}</p>
+            <p className="mt-0.5 text-[9px] leading-relaxed text-white/45">{t(p.desc)}</p>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/55">{t('Fiender')}</h2>
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {enemies.map((e) => (
-          <div key={e.name} className="flex items-start gap-2.5 rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
+          <div key={e.name} className="flex items-start gap-2.5 rounded-xl border-2 border-[#0a0f20] bg-[#1b2447] p-3 shadow-[0_3px_0_0_#0a0f20]">
             <span className={`material-symbols-outlined text-xl ${e.color}`}>{e.icon}</span>
             <div>
               <p className="text-[11px] font-black text-white">{t(e.name)}</p>
-              <p className="mt-0.5 text-[9px] leading-relaxed text-white/35">{t(e.desc)}</p>
+              <p className="mt-0.5 text-[9px] leading-relaxed text-white/45">{t(e.desc)}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Nivåtyper')}</h2>
+      <h2 className="mt-6 text-[10px] font-black uppercase tracking-[0.22em] text-white/55">{t('Nivåtyper')}</h2>
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {Object.entries(LEVEL_MODE_META).map(([key, meta]) => (
-          <div key={key} className="rounded-xl border border-white/[0.08] bg-[#0a1220]/70 p-3">
+          <div key={key} className="rounded-xl border-2 border-[#0a0f20] bg-[#1b2447] p-3 shadow-[0_3px_0_0_#0a0f20]">
             <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: meta.accent }}>{t(meta.short)}</span>
-            <p className="mt-1 text-[9px] leading-relaxed text-white/35">{t(meta.goal)}</p>
+            <p className="mt-1 text-[9px] leading-relaxed text-white/45">{t(meta.goal)}</p>
           </div>
         ))}
       </div>
 
-      <div className="mt-6 rounded-2xl border border-white/10 bg-[#0a1220]/70 p-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">{t('Proffstips')}</h2>
+      <div className="toon-card-dark mt-6 p-4">
+        <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-white/60">{t('Proffstips')}</h2>
         <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
           {[
             'Dubbelhoppet räddar liv – tryck en gång till i luften.',
@@ -999,7 +1124,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             'Byt skinn i butiken när du låst upp dem.',
             'Skuggskiftet laddas snabbast av nära-träffar: våga springa tätt förbi farorna.',
           ].map((tip) => (
-            <div key={tip} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-white/45">
+            <div key={tip} className="flex items-start gap-1.5 text-[10px] font-semibold leading-relaxed text-white/55">
               <span className="text-primary">•</span>
               <span>{t(tip)}</span>
             </div>
@@ -1007,7 +1132,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
       </div>
 
-      <button onClick={onBack} className="btn-primary mt-6 w-full max-w-xs py-3.5 text-sm">
+      <button onClick={onBack} className="toon-btn toon-btn-green mt-6 w-full max-w-xs py-3.5 text-sm">
         <span className="material-symbols-outlined text-lg">check</span>
         {t('Jag förstår')}
       </button>
@@ -1079,25 +1204,25 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="eyebrow text-primary">{t('Rangordning')}</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Topplista')}</h1>
-          <p className="mt-1 text-xs text-white/40">{t('Lokala rekord och legendariska neonlöpare.')}</p>
+          <h1 className="toon-title mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Topplista')}</h1>
+          <p className="mt-1 text-xs font-semibold text-white/50">{t('Lokala rekord och legendariska neonlöpare.')}</p>
         </div>
-        <button onClick={onBack} className="btn-ghost px-4 py-2.5 text-[10px] uppercase tracking-wider">
+        <button onClick={onBack} className="toon-btn px-4 py-2.5 text-[10px] uppercase tracking-wider">
           <span className="material-symbols-outlined text-base">arrow_back</span>
           {t('Tillbaka')}
         </button>
       </div>
 
       {userBest && (
-        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-primary/25 bg-primary/[0.08] p-3">
+        <div className="toon-card mt-6 flex items-center gap-3 p-3">
           <div className="flex size-10 items-center justify-center rounded-xl text-sm font-black text-white" style={avatarStyle(userBest.name)}>
             {initial(userBest.name)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">{t('Ditt bästa resultat')}</p>
-            <p className="truncate text-sm font-black text-white">{t('{name} · rank #{n}', { name: userBest.name, n: userBest.rank })}</p>
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-[#0f8a3c]">{t('Ditt bästa resultat')}</p>
+            <p className="truncate text-sm font-black text-[#12182b]">{t('{name} · rank #{n}', { name: userBest.name, n: userBest.rank })}</p>
           </div>
-          <p className="tabular text-lg font-black text-primary">{userBest.score.toLocaleString()}</p>
+          <p className="tabular text-lg font-black text-[#0f8a3c]">{userBest.score.toLocaleString()}</p>
         </div>
       )}
 
@@ -1117,13 +1242,13 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
             const plinth = first ? 'h-32' : place === 2 ? 'h-24' : 'h-20';
             const tone = first ? 'text-yellow-300' : place === 2 ? 'text-slate-200' : 'text-orange-300';
             const tint = first
-              ? 'from-yellow-300/[0.14] to-yellow-300/[0.03] border-yellow-300/25'
+              ? 'from-[#ffe58a] to-[#ffbe3d] border-[#6b4708] text-[#2a1c00] shadow-[0_4px_0_0_#6b4708]'
               : place === 2
-                ? 'from-slate-200/[0.10] to-white/[0.02] border-white/15'
-                : 'from-orange-300/[0.10] to-white/[0.02] border-orange-300/20';
+                ? 'from-[#f2f6ff] to-[#c9d6ef] border-[#12182b] text-[#12182b] shadow-[0_4px_0_0_#12182b]'
+                : 'from-[#ffcfa8] to-[#f79e63] border-[#7a3c14] text-[#3d1c04] shadow-[0_4px_0_0_#7a3c14]';
             return (
               <div key={`${s.name}-${s.rank}`} className={`flex flex-col items-center ${first ? 'w-[104px] sm:w-36' : 'w-[92px] sm:w-32'}`}>
-                <p className={`mb-2 max-w-full truncate text-[11px] font-bold ${s.isUser ? 'text-primary' : 'text-white/80'}`}>
+                <p className={`mb-2 max-w-full truncate text-[11px] font-black ${s.isUser ? 'text-primary' : 'text-white/85'}`}>
                   {s.name}
                 </p>
                 <div className="relative">
@@ -1143,12 +1268,12 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
                   </span>
                 </div>
                 <div
-                  className={`mt-3 flex w-full ${plinth} flex-col items-center justify-end gap-1 rounded-t-2xl border border-b-0 bg-gradient-to-b ${tint} pb-2.5 backdrop-blur-md`}
+                  className={`mt-3 flex w-full ${plinth} flex-col items-center justify-end gap-1 rounded-t-2xl border-2 border-b-0 bg-gradient-to-b ${tint} pb-2.5`}
                 >
-                  <span className={`tabular text-sm font-black ${s.isUser ? 'text-primary' : 'text-white/90'}`}>
+                  <span className={`tabular text-sm font-black ${s.isUser ? 'text-[#0f8a3c]' : ''}`}>
                     {s.score.toLocaleString()}
                   </span>
-                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-white/35">
+                  <span className="text-[8px] font-black uppercase tracking-[0.18em] opacity-60">
                     {s.isUser ? t('Du') : lvl(s.level)}
                   </span>
                 </div>
@@ -1159,36 +1284,36 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
       )}
 
       {/* Full board */}
-      <div className="mt-9 overflow-hidden rounded-2xl border border-white/10 bg-[#0a1220]/92 backdrop-blur-xl shadow-[0_30px_80px_-40px_rgba(0,0,0,0.9)]">
-        <div className="divide-y divide-white/[0.05]">
+      <div className="toon-card mt-9 overflow-hidden p-0">
+        <div className="divide-y-2 divide-[#12182b]/10">
           {scores.map((s) => (
             <div
               key={`${s.name}-${s.score}-${s.date}`}
-              className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${s.isUser ? 'bg-primary/[0.07]' : 'hover:bg-white/[0.04]'}`}
+              className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${s.isUser ? 'bg-[#c9fbd9]' : 'hover:bg-[#12182b]/[0.04]'}`}
             >
-              <span className={`tabular w-6 text-center text-xs font-black ${s.rank === 1 ? 'text-yellow-300' : s.rank === 2 ? 'text-slate-300' : s.rank === 3 ? 'text-orange-300' : 'text-white/30'}`}>
+              <span className={`tabular w-6 text-center text-xs font-black ${s.rank === 1 ? 'text-[#b57b00]' : s.rank === 2 ? 'text-[#5b6b85]' : s.rank === 3 ? 'text-[#b3551d]' : 'text-[#12182b]/35'}`}>
                 {s.rank}
               </span>
               <div className={`flex size-8 items-center justify-center rounded-lg text-xs font-black text-white ${s.isUser ? 'ring-2 ring-primary/50' : ''}`} style={avatarStyle(s.name)}>
                 {initial(s.name)}
               </div>
               <div className="min-w-0 flex-1">
-                <p className={`truncate text-xs font-bold ${s.isUser ? 'text-primary' : 'text-white/80'}`}>
-                  {s.name} {s.isUser && <span className="text-[8px] font-black uppercase tracking-wider text-primary/60">{t('du')}</span>}
+                <p className={`truncate text-xs font-black ${s.isUser ? 'text-[#0c3a20]' : 'text-[#12182b]'}`}>
+                  {s.name} {s.isUser && <span className="text-[8px] font-black uppercase tracking-wider text-[#0f8a3c]">{t('du')}</span>}
                 </p>
-                <p className="text-[9px] text-white/30">{lvl(s.level)} · {dt(s.date)}</p>
+                <p className="text-[9px] font-semibold text-[#12182b]/45">{lvl(s.level)} · {dt(s.date)}</p>
               </div>
-              <p className={`tabular text-sm font-black ${s.isUser ? 'text-primary' : 'text-white/85'}`}>{s.score.toLocaleString()}</p>
+              <p className={`tabular text-sm font-black ${s.isUser ? 'text-[#0c3a20]' : 'text-[#12182b]'}`}>{s.score.toLocaleString()}</p>
             </div>
           ))}
         </div>
       </div>
 
       <div className="mt-4 flex gap-2">
-        <button onClick={onBack} className="btn-ghost flex-1 py-3 text-xs uppercase tracking-wider">
+        <button onClick={onBack} className="toon-btn flex-1 py-3 text-xs uppercase tracking-wider">
           {t('Tillbaka')}
         </button>
-        <button onClick={onPlay} className="btn-primary flex-1 py-3 text-sm">
+        <button onClick={onPlay} className="toon-btn toon-btn-green flex-1 py-3 text-sm">
           <span className="material-symbols-outlined text-lg">play_arrow</span>
           {t('Spela nu')}
         </button>
@@ -2741,6 +2866,12 @@ export const PlayingView: React.FC<{
     const seedOffset = runMode === 'daily' ? hashSeed(dailySeed) : 0;
     const rng = makeRng(level * 104729 + 991 + seedOffset);
 
+    // The stage's named rule. Boss stages and the two tutorial stages get
+    // `none`; the daily run mixes its date seed in so every player faces the
+    // same twist on the same day.
+    const twist = getLevelTwist(level, seedOffset);
+    const twistPhys = twistPhysics(twist);
+
     const difficulty = progress.settings.difficulty || 'normal';
     const difficultyProfile = getDifficultyProfile(level, progress.level, difficulty);
     const perkEffects = combinePerkEffects(runPerksRef.current);
@@ -2774,14 +2905,11 @@ export const PlayingView: React.FC<{
       runMode,
       dailySeed,
       seedOffset,
-      ghostKey: `${runMode}:${level}:${seedOffset}`,
       frame: 0,
       quality: FULL_QUALITY,
       bgCache: null as HTMLCanvasElement | null,
       bgCacheKey: '',
       shadowShiftId: 0,
-      ghost: null as any,
-      ghostFrames: [] as any[],
       checkpoints: [] as number[],
       checkpointIndex: 0,
       checkpointX: 100,
@@ -2861,7 +2989,7 @@ export const PlayingView: React.FC<{
       pickups: [] as any[],
       enemyBullets: [] as any[],
       shield: false,
-      buffs: { magnet: 0, rapid: 0 },
+      buffs: { magnet: 0, rapid: 0, goldRush: 0 },
       shootCooldown: 0,
       // Spawn protection while the level card is up. The card covers the
       // stage, so a patrolling enemy must not be able to hit a player who is
@@ -2917,6 +3045,18 @@ export const PlayingView: React.FC<{
       totalCollectedInLevel: 0,
       backgroundElements: [],
       theme: theme,
+      twist,
+      twistPhysics: twistPhys,
+      // Surprise events: one slot filled by pickEvent() during the run, plus
+      // the id of the last one so the same event never fires twice in a row.
+      surprise: null as ActiveEvent | null,
+      lastSurprise: null as EventId | null,
+      surpriseSeed: level * 7.7 + 3.1,
+      meteors: [] as any[],
+      landRing: null as { x: number; y: number; life: number; r: number } | null,
+      // Biome palette used by both the backdrop and the platform pass. Stored
+      // once per level so a golden-hour tint can never drift between passes.
+      worldPal: paletteFor(theme, timeOfDay),
       layout: getLevelLayout(level),
       fishGoal: 0,
       lastStatUpdate: 0,
@@ -2938,7 +3078,10 @@ export const PlayingView: React.FC<{
     game.player.invincibleTimer = game.introTimer;
 
     // Generate background elements
-    game.backgroundElements = generateBackgroundElements(theme, rng);
+    // The old clip-art animals and flat billboard buildings are gone: the
+    // cartoon backdrop draws its own rounded, parallax skyline and tree lines,
+    // and the distant wildlife is rendered as ink silhouettes in one pass.
+    game.backgroundElements = [];
 
     // Initialize Weather Particles
     if (weather !== 'SOLIGT') {
@@ -3668,7 +3811,24 @@ export const PlayingView: React.FC<{
       AudioEngine.playCombo(game.multiplier);
       pushToast(game, tr('MULTIPLIKATOR x{n}', { n: game.multiplier }), '#ffd166');
     }
-    const gained = Math.round((baseScore + comboBonus + multiplierBonus) * (game.perkEffects?.scoreMult || 1));
+    // Every fifth step of the combo fires a visible ring at the pickup point,
+    // so the rhythm of a clean run is something the player can feel.
+    if (game.combo % 5 === 0) {
+      game.screenShake = Math.max(game.screenShake, 2.5);
+      game.zoomPunch = Math.max(game.zoomPunch, 3);
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        game.particles.push({
+          x, y,
+          vx: Math.cos(a) * 3.4,
+          vy: Math.sin(a) * 3.4,
+          life: 18, color: i % 2 ? '#ffd166' : '#7ef7c2', size: 2.2 + Math.random() * 2,
+        });
+      }
+    }
+    // Gold Rush doubles every point source for its duration.
+    const rush = game.buffs?.goldRush > 0 || game.surprise?.id === 'goldRush' ? 2 : 1;
+    const gained = Math.round((baseScore + comboBonus + multiplierBonus) * (game.perkEffects?.scoreMult || 1) * rush);
     game.score += gained;
     // Shadow Shift is the payoff for a clean, fast streak: every action is
     // worth 75 % more while the cat is dissolved.
@@ -3815,10 +3975,6 @@ export const PlayingView: React.FC<{
         dailySeed: game.dailySeed || '',
         level: game.level || 1,
       }));
-      // A new personal best on this exact seed becomes tomorrow's ghost.
-      if (game.ghostKey && game.ghostFrames?.length) {
-        saveGhost(game.ghostKey, game.score || 0, game.ghostFrames);
-      }
     } catch {
       // Private browsing can reject writes; losing the summary must not stop
       // the level-complete or game-over screen from appearing.
@@ -4051,22 +4207,14 @@ export const PlayingView: React.FC<{
     const playerCenterX = game.player.x + game.player.width / 2;
     const playerCenterY = game.player.y + game.player.height / 2;
     const facing: 1 | -1 = game.player.facing === -1 ? -1 : 1;
-    // Fire from the blaster the cat holds in its mouth, not the middle of its
-    // body, so the bullet leaves exactly where the muzzle flash is drawn. The
-    // sprite is centred on the hitbox and stands on its bottom edge, so the
-    // muzzle world point is (centre + dx, feet - dyUp).
+    // Fire from the blaster the cat holds at its chest, not from the middle of
+    // its body, so the bullet leaves where the muzzle flash is drawn. The
+    // vector cat is drawn with its paws on the floor line, so the muzzle sits
+    // a fixed offset from the paws at the current hero scale.
     const feetY = game.player.y + game.player.height;
-    const moving = Math.abs(game.player.velocityX || 0) > 0.35 && !!game.player.onGround && !(game.player.dashing > 0);
-    const muzzle = getCatMuzzle({
-      facing,
-      moving,
-      air: !game.player.onGround,
-      dashing: (game.player.dashing || 0) > 0,
-      t: Date.now() / 1000,
-      w: 66,
-    });
-    const originX = muzzle ? playerCenterX + muzzle.dx : playerCenterX;
-    const originY = muzzle ? feetY - muzzle.dyUp : playerCenterY;
+    const facingSign: 1 | -1 = facing;
+    const originX = playerCenterX + facingSign * 30;
+    const originY = feetY - 34;
 
     let dx, dy;
     if (targetX !== null && targetY !== null) {
@@ -4126,7 +4274,6 @@ export const PlayingView: React.FC<{
 
     const game = setupLevel(currentLevel, totalScore, lives);
     if (!game) return;
-    game.ghost = loadGhost(game.ghostKey);
     gameRef.current = game;
     // Debug handles the automated play-test uses to inspect live state and jump
     // between stages. They expose nothing the player can abuse in a local game.
@@ -4291,13 +4438,6 @@ export const PlayingView: React.FC<{
         }
         AudioEngine.setSfxPan(nearest === null ? 0 : Math.max(-0.75, Math.min(0.75, nearest / 480)));
       }
-      // Ghost replay: one sample every four frames keeps localStorage small
-      // (a 60-second level is ~900 samples) while looking smooth enough.
-      if (game.frame % 4 === 0) {
-        game.ghostFrames.push([
-          Math.round(game.player.x), Math.round(game.player.y), game.player.facing === -1 ? -1 : 1,
-        ]);
-      }
       // Level clock (used for the results card, independent of the Speed Run
       // countdown).
       game.levelSeconds = (game.levelSeconds || 0) + 1 / 60;
@@ -4327,7 +4467,12 @@ export const PlayingView: React.FC<{
         p.x += p.ridingRef.moverDx || 0;
         p.y += p.ridingRef.moverDy || 0;
       }
-      const gravityMod = game.miniEvent.active && game.miniEvent.type === 'LOW_GRAVITY' ? 0.65 : 1;
+      // Level twist + active surprise both feed the physics. The twist is a
+      // constant multiplier for the whole stage; the surprise only spikes for
+      // its duration.
+      const tp = game.twistPhysics || { gravityMult: 1, frictionMult: 1, windAccel: 0, grip: 1 };
+      const surpriseGravity = game.surprise && game.surprise.id === 'gust' ? 0.82 : 1;
+      const gravityMod = tp.gravityMult * surpriseGravity;
       p.velocityY += game.gravity * gravityMod;
       if (p.velocityY > 18) p.velocityY = 18;
 
@@ -4345,8 +4490,12 @@ export const PlayingView: React.FC<{
         const left = game.keys[37] || game.keys[65];
         const right = game.keys[39] || game.keys[68];
         // Acceleration + friction instead of instant velocity for weightier control.
-        const accel = p.onGround ? 1.15 : 0.7;
-        const friction = p.onGround ? game.friction : 0.965;
+        const accel = p.onGround ? 1.15 * (tp.grip ?? 1) : 0.7;
+        // Slippery ice multiplies friction *up* (closer to 1 = less braking),
+        // sticky boots pushes it *down* so the cat plants and turns.
+        const friction = p.onGround
+          ? (tp.frictionMult < 1 ? 1 - (1 - game.friction) * tp.frictionMult : game.friction)
+          : 0.965;
         p.velocityX *= friction;
         if (left) {
           p.velocityX -= accel;
@@ -4365,8 +4514,12 @@ export const PlayingView: React.FC<{
       if (p.dashCooldown > 0) p.dashCooldown--;
       p.trail = p.trail.filter((t: any) => --t.life > 0);
 
-      if (game.miniEvent.active && game.miniEvent.type === 'WIND') {
-        p.velocityX += Math.sin(Date.now() / 250) * 0.2;
+      // Constant wind from the twist, plus a gusting surge during the event.
+      if (tp.windAccel) {
+        p.velocityX += tp.windAccel * (1 + 0.35 * Math.sin(Date.now() / 340));
+      }
+      if (game.surprise?.id === 'gust') {
+        p.velocityX += 0.075 + Math.sin(Date.now() / 180) * 0.16;
       }
 
       // Clamp to level bounds so the cat can't run out of the world.
@@ -4616,6 +4769,93 @@ export const PlayingView: React.FC<{
         }
       }
 
+      // Surprise events: a telegraphed, short interruption (meteor rain, gust
+      // front, drone swarm, gold rush, blackout). Warned on screen long before
+      // it lands, never on the tutorial stages, never during a boss fight and
+      // never the same event twice in a row.
+      if (game.surprise) {
+        const ev = game.surprise;
+        ev.timer--;
+        const def = EVENTS[ev.id];
+        const total = def.warning + def.duration;
+        ev.progress = 1 - Math.max(0, ev.timer) / total;
+        if (ev.timer <= 0) {
+          game.lastSurprise = ev.id;
+          game.surprise = null;
+          if (ev.id === 'goldRush') game.buffs.goldRush = 0;
+        }
+      } else {
+        const bossActive = !!game.boss && game.boss.hp > 0 && game.boss.encountered;
+        const next = pickEvent(
+          game.level ?? 1,
+          game.frame ?? 0,
+          game.surpriseSeed ?? 1,
+          game.lastSurprise ?? null,
+          bossActive,
+        );
+        if (next) {
+          game.surprise = { id: next, timer: EVENTS[next].warning + EVENTS[next].duration, progress: 0 };
+          const def = EVENTS[next];
+          pushToast(game, tr('{name}!', { name: tr(def.name) }), def.accent);
+          AudioEngine.playCheckpoint();
+          haptic('checkpoint', progress.settings.haptics);
+        }
+      }
+
+      // Meteor rain: burning rocks fall from the sky and burst on the ground.
+      // They are a dodge puzzle, not a damage wall - the gaps are generous.
+      if (game.surprise?.id === 'meteor') {
+        const def = EVENTS.meteor;
+        const elapsed = def.warning + def.duration - game.surprise.timer;
+        if (elapsed > def.warning && game.frame % 26 === 0) {
+          const mx = game.player.x + 220 + Math.random() * 420;
+          game.meteors = game.meteors || [];
+          game.meteors.push({ x: mx, y: -40, vy: 5 + Math.random() * 2.5, r: 12 + Math.random() * 8, life: 120 });
+        }
+      }
+      (game.meteors || []).forEach((m: any) => {
+        m.vy += 0.16;
+        m.y += m.vy;
+        m.life--;
+        const hitGround = m.y > game.groundY - 6;
+        const dx = Math.abs((m.x) - (game.player.x + game.player.width / 2));
+        if (hitGround || m.life <= 0) {
+          m.dead = true;
+          game.screenShake = Math.max(game.screenShake, 5);
+          for (let i = 0; i < 16; i++) {
+            game.particles.push({
+              x: m.x, y: Math.min(m.y, game.groundY),
+              vx: (Math.random() - 0.5) * 8,
+              vy: -Math.random() * 6,
+              life: 26, color: i % 3 ? '#ff9f43' : '#ffd166',
+              size: 2 + Math.random() * 3,
+            });
+          }
+          AudioEngine.playExplosion();
+        } else if (!game.player.invincible && dx < m.r + 26 && Math.abs(m.y - (game.player.y + game.player.height / 2)) < m.r + 28) {
+          m.dead = true;
+          hurtPlayer(game, 'hazard', { lift: 5 });
+        }
+      });
+      if (game.meteors) game.meteors = game.meteors.filter((m: any) => !m.dead);
+
+      // Drone swarm: three hovering drones drift in from the right edge.
+      if (game.surprise?.id === 'swarm') {
+        const def = EVENTS.swarm;
+        const elapsed = def.warning + def.duration - game.surprise.timer;
+        if (elapsed > def.warning && game.frame % 60 === 0) {
+          game.enemies.push({
+            x: game.player.x + 620 + Math.random() * 180,
+            y: game.groundY - 170 - Math.random() * 90,
+            width: 40, height: 30, velocityX: 0, type: 5,
+            platform: 0, baseY: game.groundY - 170,
+            hover: Math.random() * Math.PI * 2, aggroTo: true,
+            shootTimer: 0, chargeTimer: 0,
+          });
+        }
+      }
+
+
       // Weather Logic
       game.weatherParticles.forEach((p: any) => {
         if (game.weather === 'DIMMIGT') {
@@ -4693,15 +4933,25 @@ export const PlayingView: React.FC<{
               // A soft thump scaled by the fall. Silence on landing was the one
               // gap in the movement feedback after jump, dash and shoot.
               if (impactSpeed > 3) AudioEngine.playLand(Math.min(1.5, impactSpeed / 12));
-              for (let i = 0; i < 8; i++) {
+              // Dust puff: two arcs of soft puffs kicked out to both sides,
+              // lighter when the landing is soft. This is the single cheapest
+              // trick that makes a jump feel like it has weight.
+              const dustPal = game.worldPal || { grass: '#e8f5e0' };
+              const puffs = Math.min(16, 5 + Math.round(impactSpeed * 1.4));
+              for (let i = 0; i < puffs; i++) {
+                const side = i % 2 === 0 ? -1 : 1;
                 game.particles.push({
-                  x: game.player.x + game.player.width / 2 + (Math.random() - 0.5) * 30,
-                  y: game.player.y + game.player.height,
-                  vx: (Math.random() - 0.5) * 4,
-                  vy: -Math.random() * 1.5,
-                  life: 18, color: 'rgba(220,230,220,0.8)', size: Math.random() * 3 + 1
+                  x: game.player.x + game.player.width / 2 + side * (6 + Math.random() * 16),
+                  y: game.player.y + game.player.height - 2,
+                  vx: side * (1.2 + Math.random() * 2.6),
+                  vy: -0.6 - Math.random() * 1.6,
+                  life: 14 + Math.round(Math.random() * 10),
+                  color: i % 3 === 0 ? dustPal.grass : 'rgba(245,250,238,0.85)',
+                  size: 1.8 + Math.random() * 3.4,
                 });
               }
+              // A quick expanding ring sells the impact without a shake.
+              game.landRing = { x: game.player.x + game.player.width / 2, y: game.player.y + game.player.height, life: 14, r: 8 + impactSpeed * 2 };
             }
             break; // Found a platform, stop checking
           }
@@ -5253,13 +5503,15 @@ export const PlayingView: React.FC<{
         ctx.translate(-focusX, -focusY);
       }
 
-      // Background - neon sky driven by time of day and season
+      // ------------------------------------------------------------------
+      // Cartoon backdrop. One palette per chapter family (meadow, forest,
+      // snow, desert, lava, city, space), three parallax planes with real
+      // atmospheric perspective, thick warm outlines and a single sun that
+      // also lights the ground. This replaced a hazy cyberpunk sky that
+      // flattened every chapter into the same blue-grey wash.
+      // ------------------------------------------------------------------
       const now = Date.now();
       const timeSec = now / 1000;
-      // Four sky moods. Levels are authored as DAY / SUNSET / DAWN / NIGHT, but
-      // the renderer used to collapse every phase except NIGHT into one bright
-      // midday blue, so a sunset stage looked exactly like noon. Each phase now
-      // gets its own light, sun position and haze tint.
       const timePhase: 'night' | 'sunset' | 'dawn' | 'day' =
         game.timeOfDay === 'NIGHT' ? 'night'
           : game.timeOfDay === 'SUNSET' ? 'sunset'
@@ -5267,1646 +5519,119 @@ export const PlayingView: React.FC<{
               : 'day';
       const isNight = timePhase === 'night';
       const isGolden = timePhase === 'sunset' || timePhase === 'dawn';
-      // Night keeps its moody seasonal mood; every daylight sky is a bright,
-      // cheerful blue so sunny levels never read as a drab orange wash.
-      // Daylight keeps a saturated blue at the top and only softens near the
-      // horizon; a uniformly pale sky was what made the sunny stages look foggy.
-      // Daylight is a saturated "neon noon", not a pale screensaver blue. A
-      // deeper top and a coloured horizon keep the skyline readable instead of
-      // dissolving into white haze.
-      const seasonPalette: Record<string, { night: [string, string, string]; day: [string, string, string] }> = {
-        winter: { night: ['#0b1a3a', '#1b2f5c', '#3a6ea5'], day: ['#0d2a4a', '#3a7fa8', '#a8d8ea'] },
-        spring: { night: ['#0d2b2a', '#134a3f', '#2b8a6f'], day: ['#0a2a3a', '#1f7a70', '#7fd8c8'] },
-        summer: { night: ['#0a1f3d', '#123a6b', '#2f7fb8'], day: ['#061a33', '#0f4f70', '#5fb8d0'] },
-        autumn: { night: ['#2b1430', '#4a1f3d', '#8a3b4a'], day: ['#1a2a3a', '#3a6a88', '#a8c8d8'] },
-      };
-      // Golden hour is warmer than a season tint, so it is shared by every
-      // chapter: deep indigo overhead falling into magenta and hot orange.
-      const goldenPalette: [string, string, string] = timePhase === 'dawn'
-        ? ['#1b2a55', '#5b6aa4', '#f6b6a0']
-        : ['#241a44', '#783c68', '#f79a5f'];
-      const palette = seasonPalette[seasonTheme] || seasonPalette.summer;
-      const base = isNight ? palette.night : isGolden ? goldenPalette : palette.day;
-
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, base[0]);
-      gradient.addColorStop(0.5, base[1]);
-      gradient.addColorStop(1, base[2]);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Sun glow, placed opposite the light direction for a lit-from-the-side look.
-      // At golden hour the sun drops towards the horizon and grows, which is what
-      // makes a sunset stage read instantly different from noon.
-      // Kept clear of the top-right HUD controls so the light source reads as
-      // part of the sky instead of a glow behind a button.
-      const sunX = canvas.width * (isGolden ? 0.71 : 0.67);
-      const sunY = canvas.height * (isGolden ? 0.58 : 0.22);
-      const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, canvas.height * (isGolden ? 0.75 : 0.55));
-      // Daylight glow stays near-white; a warm amber wash desaturated the blue sky.
-      sunGlow.addColorStop(0, isNight
-        ? 'rgba(180,200,255,0.16)'
-        : isGolden ? 'rgba(255,193,122,0.42)' : 'rgba(255,252,232,0.18)');
-      sunGlow.addColorStop(0.45, isNight
-        ? 'rgba(120,150,220,0.05)'
-        : isGolden ? 'rgba(255,140,80,0.12)' : 'rgba(255,246,214,0.06)');
-      sunGlow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = sunGlow;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Visible sun / moon disc, softened by the halo above. Having a real
-      // light source gives the whole scene direction and depth.
-      ctx.save();
-      ctx.globalAlpha = isNight ? 0.9 : 0.85;
-      // A real sun/moon has a readable core and only a short, hazy falloff at
-      // the rim. A fully blurred blob (or a hard outline) reads as a rendered
-      // lens flare instead of a distant celestial body.
-      const sunRadius = isGolden ? 62 : isNight ? 46 : 50;
-      const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
-      const core = isNight ? '#eef4ff' : isGolden ? '#fff3d2' : '#fffbe8';
-      const rim = isNight ? 'rgba(214,228,255,0.72)' : isGolden ? 'rgba(255,196,120,0.72)' : 'rgba(255,246,206,0.72)';
-      disc.addColorStop(0, core);
-      disc.addColorStop(0.72, core);
-      disc.addColorStop(0.88, rim);
-      disc.addColorStop(1, isGolden ? 'rgba(255,150,90,0)' : 'rgba(255,255,255,0)');
-      ctx.fillStyle = disc;
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
-      ctx.fill();
-      // No outline rings and no downward shafts: a distant light source only
-      // has a soft, edge-free halo (the radial glow above) and a soft-edged
-      // disc. Hard circles or cones read as a generated lens flare instead of
-      // light in the atmosphere.
-      if (isNight) {
-        // A couple of craters keep the moon from reading as a white hole.
-        ctx.globalAlpha = 0.12;
-        ctx.fillStyle = '#8796b8';
-        ctx.beginPath();
-        ctx.arc(sunX - 10, sunY - 6, 8, 0, Math.PI * 2);
-        ctx.arc(sunX + 9, sunY + 8, 5.5, 0, Math.PI * 2);
-        ctx.arc(sunX + 4, sunY - 14, 3.5, 0, Math.PI * 2);
-        ctx.fill();
+      const reduceNow = isReducedMotion(progress.settings.reduceMotion);
+      const worldPal = game.worldPal;
+      // Golden hour warms the family palette instead of swapping the sky out,
+      // so a sunset meadow still reads as a meadow.
+      if (isGolden && !isNight) {
+        worldPal.skyTop = blend(worldPal.skyTop, '#6a4a8a', 0.38);
+        worldPal.skyMid = blend(worldPal.skyMid, '#ffb27a', 0.42);
+        worldPal.skyLow = blend(worldPal.skyLow, '#ffd9a0', 0.55);
+        worldPal.haze = blend(worldPal.haze, '#ffc48a', 0.5);
+        worldPal.sun = '#ffc46b';
       }
-      ctx.restore();
-
-      // Neon horizon glow behind the skyline
-      const horizonGlow = ctx.createRadialGradient(
-        canvas.width / 2, canvas.height - 60, 0,
-        canvas.width / 2, canvas.height - 60, canvas.width * 0.7
-      );
-      const glowAlpha = isNight ? 0.26 : isGolden ? 0.3 : 0.1;
-      const glowRgb = isGolden ? '255, 154, 90' : '43, 238, 121';
-      horizonGlow.addColorStop(0, `rgba(${glowRgb}, ${glowAlpha})`);
-      horizonGlow.addColorStop(0.5, `rgba(${glowRgb}, 0.05)`);
-      horizonGlow.addColorStop(1, `rgba(${glowRgb}, 0)`);
-      ctx.fillStyle = horizonGlow;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Deterministic hash, so the sky looks randomly scattered instead of a
-      // regular lattice of evenly spaced dots.
-      const skyHash = (n: number) => {
-        const s = Math.sin(n * 127.1) * 43758.5453;
-        return s - Math.floor(s);
-      };
-
-      if (isNight) {
-        // Starfield, three depths. It drifts on its own slow clock - the cat
-        // running across the level must not drag the stars along.
-        const span = canvas.width + 60;
-        for (let layer = 0; layer < 3; layer++) {
-          const size = 0.5 + layer * 0.45;
-          const drift = timeSec * (1.2 + layer * 2.2);
-          for (let i = 0; i < 42; i++) {
-            const seed = i + layer * 97;
-            const sx = ((((skyHash(seed) * span + drift) % span) + span) % span) - 30;
-            const sy = skyHash(seed * 2.31 + 7) * canvas.height * 0.62;
-            if (sx < -10 || sx > canvas.width + 10) continue;
-            // Gentle twinkle keeps the field alive without pulsing.
-            const twinkle = 0.72 + 0.28 * Math.sin(timeSec * (1.1 + skyHash(seed * 5.7)) * 2 + seed);
-            ctx.fillStyle = `rgba(255,255,255,${(0.2 + layer * 0.16) * twinkle})`;
-            ctx.beginPath();
-            ctx.arc(sx, sy, size, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-      }
-
-      // Clouds live in every sky - bright white by day, moonlit silver-blue at
-      // night. Fewer, larger formations with varied profiles and clear depth;
-      // their gentle wind drift is time-based, never tied to the player's camera.
-      const cloudSpan = canvas.width + 440;
-      // Smaller, softer clouds: at full scale three of them filled the whole
-      // sky and made the level look like a screensaver.
-      const clouds = [
-        { scale: 0.36, y: 176, alpha: isNight ? 0.5 : 0.72, speed: 8 },
-        { scale: 0.24, y: 104, alpha: isNight ? 0.36 : 0.55, speed: 5 },
-        { scale: 0.42, y: 148, alpha: isNight ? 0.54 : 0.76, speed: 10 },
-        { scale: 0.3, y: 112, alpha: isNight ? 0.4 : 0.6, speed: 6 },
-        { scale: 0.19, y: 66, alpha: isNight ? 0.26 : 0.42, speed: 3.5 },
-        { scale: 0.27, y: 238, alpha: isNight ? 0.32 : 0.5, speed: 7.5 },
-      ];
-      clouds.forEach((cloud, i) => {
-        const drift = timeSec * cloud.speed;
-        const x = ((((i * canvas.width / 2.6 + drift) % cloudSpan) + cloudSpan) % cloudSpan) - 110;
-        drawCloud(ctx, x, cloud.y, cloud.scale, cloud.alpha, i, isNight, isGolden);
-      });
-
-      // A loose flock in the daylight sky. Tiny silhouettes give the eye a
-      // sense of scale and make the sky feel inhabited rather than empty.
-      if (!isNight && !isReducedMotion(progress.settings.reduceMotion)) {
-        ctx.save();
-        ctx.strokeStyle = isGolden ? 'rgba(90,50,70,0.55)' : 'rgba(20,60,80,0.5)';
-        ctx.lineWidth = 1.6;
-        ctx.lineCap = 'round';
-        const flockX = ((timeSec * 12) % (canvas.width + 240)) - 120;
-        for (let i = 0; i < 6; i++) {
-          const bx = flockX + i * 18 + Math.sin(i * 1.7) * 8;
-          const by = 118 + Math.sin(i * 0.9) * 10 + (i % 2) * 8;
-          const wing = 4 + (i % 3);
-          ctx.beginPath();
-          ctx.moveTo(bx - wing, by);
-          ctx.quadraticCurveTo(bx, by - wing * 0.8, bx + wing, by);
-          ctx.stroke();
-        }
-        ctx.restore();
-      }
-
-      // Distant land: two soft ridgelines with a very slow parallax drift. They
-      // give the horizon depth and stop the sky from meeting the ground in one
-      // hard line when the city silhouettes are sparse.
-      ctx.save();
-      const ridgeBase = game.groundY ?? canvas.height - 96;
-      const ridges: Array<[number, string, number, number, number]> = [
-        [0.045, isNight ? '#0a1a2b' : isGolden ? '#6f3f63' : '#7fb4c9', 150, 0.0035, 30],
-        [0.09, isNight ? '#0d2438' : isGolden ? '#4f2d4f' : '#659cb5', 92, 0.0062, 18],
-      ];
-      ridges.forEach(([parallax, color, height, freq, amp], layer) => {
-        ctx.globalAlpha = isNight ? 0.55 : isGolden ? 0.5 : 0.46;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(-20, canvas.height);
-        for (let x = -20; x <= canvas.width + 40; x += 16) {
-          const wx = x + game.scrollX * parallax;
-          const y = ridgeBase - height - Math.sin(wx * freq) * amp - Math.cos(wx * freq * 2.1 + layer) * amp * 0.45;
-          ctx.lineTo(x, y);
-        }
-        ctx.lineTo(canvas.width + 20, canvas.height);
-        ctx.closePath();
-        ctx.fill();
-      });
-      // Atmospheric haze so the ridgelines fade into the sky rather than
-      // reading as solid cut-outs.
-      const haze = ctx.createLinearGradient(0, ridgeBase - 230, 0, ridgeBase - 20);
-      haze.addColorStop(0, 'rgba(255,255,255,0)');
-      // The day haze used to be a thick white veil that flattened every
-      // silhouette into the same pastel grey. A thin, tinted band keeps the
-      // depth readable while still softening the horizon.
-      haze.addColorStop(1, isNight
-        ? 'rgba(30,60,95,0.34)'
-        : isGolden ? 'rgba(255,168,120,0.16)' : 'rgba(200,238,255,0.08)');
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = haze;
-      ctx.fillRect(0, ridgeBase - 230, canvas.width, 210);
-      ctx.restore();
-
-      // Deep skyline: three procedural planes with setbacks, antennas, lit
-      // windows and neon roof edges. This is the layer that turns a flat blue
-      // gradient into a city with real depth.
-      const skylineOpts = {
+      if (isNight && !worldPal.night) worldPal.starfield = true;
+      const backdropOpts = {
         width: canvas.width,
         height: canvas.height,
-        ridgeBase,
+        groundY: game.groundY ?? canvas.height - 96,
         scrollX: game.scrollX,
-        isNight,
-        isGolden,
-        theme: String(game.theme || ''),
         time: timeSec,
+        pal: worldPal,
+        theme: String(game.theme || ''),
+        motion: reduceNow ? 0.25 : 1,
       };
-      // On the lean tier the skyline is rasterised once into an offscreen
-      // canvas and reused. It scrolls by a single parallax offset instead of
-      // rebuilding every building every frame; animated windows are dropped.
-      if (q.cacheBackground) {
-        const cacheKey = `${canvas.width}x${canvas.height}:${ridgeBase}:${isNight}:${isGolden}:${skylineOpts.theme}`;
-        if (!game.bgCache || game.bgCacheKey !== cacheKey) {
-          const off = document.createElement('canvas');
-          off.width = canvas.width + 320;
-          off.height = canvas.height;
-          const octx = off.getContext('2d');
-          if (octx) {
-            drawNeonSkyline(octx, { ...skylineOpts, width: off.width, scrollX: 0, time: 0 });
-            game.bgCache = off;
-            game.bgCacheKey = cacheKey;
-          }
-        }
-        if (game.bgCache) {
-          const span = 320;
-          const offset = ((game.scrollX * 0.25) % span + span) % span;
-          ctx.drawImage(game.bgCache, -offset, 0);
-        } else {
-          drawNeonSkyline(ctx, skylineOpts);
-        }
-      } else {
-        drawNeonSkyline(ctx, skylineOpts);
-      }
+      drawBackdrop(ctx, backdropOpts);
+      // Solid earth under the playfield. Without this the area below the last
+      // ground slab was transparent and the page background showed through as
+      // a grey band; with it, a chasm reads as a hole cut into the world.
+      drawEarth(ctx, backdropOpts.groundY, canvas.height, canvas.width, worldPal);
 
-      // Scenery has two layers. Buildings are the fixed skyline and stay in
-      // screen space; animals - on the ground and in the sky - are anchored in
-      // the level and scroll against game.scrollX like the platforms, so the
-      // cat's movement can never drag one along with it.
-      ctx.save();
-      // Two depth layers. The skyline rests in the distance while the animals
-      // stand in front of it - they are nearer the cat, so they are painted
-      // last and drawn solid instead of as faint as the far-off buildings.
-      // The skyline sits one plane behind the animals; at 0.55 alpha over a
-      // bright sky it disappeared into the haze, so it gets more body during
-      // daylight while staying soft at night.
-      const sceneryLayers: Array<[number, any[]]> = [
-        // Buildings are a midground, not the subject: a little darker and
-        // quieter than before so the procedural skyline behind them stays
-        // readable and the cat remains the brightest thing on screen.
-        [isNight ? 0.46 : isGolden ? 0.42 : 0.38, game.backgroundElements.filter((el: any) => el.kind === 'building')],
-        // Animals sit between the skyline and the level, so they are muted
-        // compared to the cat: vivid scenery stole attention from the player.
-        [isNight ? 0.5 : isGolden ? 0.48 : 0.5, game.backgroundElements.filter((el: any) => el.kind !== 'building')],
-      ];
-      sceneryLayers.forEach(([layerAlpha, elements]) => {
-        ctx.globalAlpha = layerAlpha;
-        elements.forEach((el: any) => {
-        const span = canvas.width + 500;
-        const baseGround = game.groundY ?? canvas.height - 96;
-        const groundY = baseGround;
-        const s = el.scale;
-
-        if (el.isSkyAnimal) {
-          // Flying animals are anchored in the LEVEL, not in the viewport. The
-          // camera shifts them exactly as much as it shifts the ground, so the
-          // cat's movement can never drag a bird along with it. The strip they
-          // roam is wider than the screen, so birds are regularly off screen
-          // instead of hovering in view forever.
-          const dir = el.dir ?? 1;
-          const speed = el.speed ?? 32;
-          const worldX = (el.worldX ?? el.lane) + dir * timeSec * speed - game.scrollX;
-          const sx = ((((worldX % SKY_WORLD_W) + SKY_WORLD_W) % SKY_WORLD_W)) - 300;
-          if (sx < -360 || sx > canvas.width + 360) return;
-
-          // Undulation plus a slow climb/dive, so each bird traces a real,
-          // slightly different flight path instead of a straight line.
-          const bob = Math.sin(timeSec * el.bobFreq + el.phase) * el.bobAmp;
-          const drift = Math.sin(timeSec * 0.21 + el.phase * 0.5) * 34;
-          const flyY = groundY + el.skyY + bob + drift;
-          // Nose follows the path: banks with the undulation and the climb.
-          const pitch = el.pitch + Math.cos(timeSec * el.bobFreq + el.phase) * 0.12;
-
-          ctx.save();
-          ctx.translate(sx, flyY);
-          // Facing travels with the heading, so a bird flying left is mirrored.
-          ctx.scale(dir, 1);
-          // Rotate around the body centre rather than the feet, so the pitch
-          // reads as banking instead of the whole bird swinging sideways.
-          ctx.translate(0, -24 * s);
-          // Mirroring flips the sign of a rotation, so negate the pitch when the
-          // bird is heading left to keep climbing and diving consistent.
-          ctx.rotate(dir === -1 ? -pitch : pitch);
-          ctx.translate(0, 24 * s);
-        } else if (el.kind === 'animal') {
-          // Ground animals are anchored in the LEVEL, not in the viewport. Their
-          // screen x is a real world position minus the camera, exactly like the
-          // platforms, so the cat's movement can never drag one along. Pinning
-          // them to el.lane was what made them look like they followed the cat.
-          const worldX = (el.worldX ?? el.lane) - game.scrollX;
-          const sx = ((((worldX % GROUND_WORLD_W) + GROUND_WORLD_W) % GROUND_WORLD_W)) - 300;
-          if (sx < -360 || sx > canvas.width + 360) return;
-          ctx.save();
-          ctx.translate(sx, groundY);
-        } else {
-          // Buildings are the fixed backdrop skyline: they deliberately stay put
-          // in screen space so the horizon never slides when the cat runs.
-          const sx = ((((el.lane % span) + span) % span)) - 250;
-          if (sx < -300 || sx > canvas.width + 300) return;
-          ctx.save();
-          ctx.translate(sx, groundY);
-        }
-
-        if (el.kind === 'building') {
-          const c = el.color;
-          switch (el.subtype) {
-            case 'skyscraper': {
-              const w = 60 * s, h = 220 * s;
-              ctx.fillStyle = c;
-              ctx.fillRect(-w / 2, -h, w, h);
-              ctx.fillStyle = 'rgba(255,255,180,0.5)';
-              for (let wy = -h + 10 * s; wy < -10 * s; wy += 22 * s) {
-                for (let wx = -w / 2 + 6 * s; wx < w / 2 - 6 * s; wx += 16 * s) {
-                  ctx.fillRect(wx, wy, 8 * s, 12 * s);
-                }
-              }
-              break;
-            }
-            case 'apartment': {
-              const w = 80 * s, h = 120 * s;
-              ctx.fillStyle = c;
-              ctx.fillRect(-w / 2, -h, w, h);
-              ctx.fillStyle = 'rgba(255,255,150,0.45)';
-              for (let row = 0; row < 4; row++) {
-                for (let col = 0; col < 3; col++) {
-                  ctx.fillRect(-w / 2 + 10 * s + col * 22 * s, -h + 15 * s + row * 26 * s, 12 * s, 16 * s);
-                }
-              }
-              break;
-            }
-            case 'house': {
-              const w = 70 * s, h = 60 * s;
-              ctx.fillStyle = c;
-              ctx.fillRect(-w / 2, -h, w, h);
-              ctx.fillStyle = '#8B3A3A';
-              ctx.beginPath();
-              ctx.moveTo(-w / 2 - 5 * s, -h);
-              ctx.lineTo(0, -h - 35 * s);
-              ctx.lineTo(w / 2 + 5 * s, -h);
-              ctx.closePath(); ctx.fill();
-              ctx.fillStyle = 'rgba(255,255,150,0.6)';
-              ctx.fillRect(-w / 2 + 10 * s, -h + 12 * s, 18 * s, 20 * s);
-              ctx.fillRect(w / 2 - 28 * s, -h + 12 * s, 18 * s, 20 * s);
-              ctx.fillStyle = '#5a3a1a';
-              ctx.fillRect(-8 * s, -h + h - 26 * s, 16 * s, 26 * s);
-              break;
-            }
-            case 'barn': {
-              const w = 90 * s, h = 80 * s;
-              ctx.fillStyle = '#a03020';
-              ctx.fillRect(-w / 2, -h, w, h);
-              ctx.fillStyle = '#802010';
-              ctx.beginPath();
-              ctx.moveTo(-w / 2, -h);
-              ctx.lineTo(0, -h - 40 * s);
-              ctx.lineTo(w / 2, -h);
-              ctx.closePath(); ctx.fill();
-              ctx.fillStyle = 'rgba(0,0,0,0.3)';
-              ctx.fillRect(-15 * s, -55 * s, 30 * s, 55 * s);
-              break;
-            }
-            case 'windmill': {
-              const h = 100 * s;
-              ctx.fillStyle = c;
-              ctx.beginPath();
-              ctx.moveTo(-12 * s, 0); ctx.lineTo(-18 * s, -h); ctx.lineTo(18 * s, -h); ctx.lineTo(12 * s, 0);
-              ctx.closePath(); ctx.fill();
-              ctx.fillStyle = '#c8b060';
-              for (let a = 0; a < 4; a++) {
-                ctx.save();
-                ctx.translate(0, -h);
-                ctx.rotate(a * Math.PI / 2 + now / 2000);
-                ctx.fillRect(-4 * s, -35 * s, 8 * s, 35 * s);
-                ctx.restore();
-              }
-              break;
-            }
-            case 'lighthouse': {
-              const w = 28 * s, h = 130 * s;
-              ctx.fillStyle = '#f0f0f0';
-              ctx.fillRect(-w / 2, -h, w, h);
-              for (let i = 0; i < 5; i++) {
-                ctx.fillStyle = i % 2 === 0 ? '#cc3333' : '#f0f0f0';
-                ctx.fillRect(-w / 2, -h + i * 26 * s, w, 13 * s);
-              }
-              ctx.fillStyle = '#ffff88';
-              ctx.beginPath();
-              ctx.arc(0, -h - 10 * s, 14 * s, 0, Math.PI * 2);
-              ctx.fill();
-              break;
-            }
-            case 'factory': {
-              const w = 100 * s, h = 70 * s;
-              ctx.fillStyle = c;
-              ctx.fillRect(-w / 2, -h, w, h);
-              ctx.fillStyle = '#888';
-              ctx.fillRect(-w / 2 + 10 * s, -h - 60 * s, 18 * s, 60 * s);
-              ctx.fillRect(w / 2 - 28 * s, -h - 45 * s, 18 * s, 45 * s);
-              ctx.fillStyle = 'rgba(200,200,200,0.4)';
-              ctx.beginPath();
-              ctx.ellipse(-w / 2 + 19 * s, -h - 60 * s, 14 * s, 20 * s, 0, 0, Math.PI * 2);
-              ctx.fill();
-              break;
-            }
-            case 'crane': {
-              ctx.fillStyle = '#e8b830';
-              ctx.fillRect(-6 * s, -200 * s, 12 * s, 200 * s);
-              ctx.fillRect(-6 * s, -200 * s, 90 * s, 10 * s);
-              ctx.fillRect(60 * s, -200 * s, 8 * s, 60 * s);
-              ctx.strokeStyle = '#c8a020';
-              ctx.lineWidth = 2 * s;
-              ctx.beginPath();
-              ctx.moveTo(0, -195 * s); ctx.lineTo(65 * s, -143 * s);
-              ctx.stroke();
-              break;
-            }
-            case 'water_tower': {
-              ctx.fillStyle = c;
-              ctx.beginPath();
-              ctx.ellipse(0, -90 * s, 30 * s, 35 * s, 0, 0, Math.PI * 2);
-              ctx.fill();
-              ctx.fillStyle = '#5a4a3a';
-              for (let i = -2; i <= 2; i++) {
-                ctx.fillRect(i * 12 * s - 3 * s, -55 * s, 6 * s, 55 * s);
-              }
-              break;
-            }
-            case 'cabin': {
-              const w = 65 * s, h = 55 * s;
-              ctx.fillStyle = '#8B6340';
-              ctx.fillRect(-w / 2, -h, w, h);
-              ctx.fillStyle = '#5a3010';
-              for (let i = 0; i < 5; i++) {
-                ctx.fillRect(-w / 2, -h + i * 11 * s, w, 5 * s);
-              }
-              ctx.fillStyle = '#5a3a1a';
-              ctx.beginPath();
-              ctx.moveTo(-w / 2 - 5 * s, -h); ctx.lineTo(0, -h - 28 * s); ctx.lineTo(w / 2 + 5 * s, -h);
-              ctx.closePath(); ctx.fill();
-              break;
-            }
-            case 'billboard': {
-              ctx.fillStyle = '#444';
-              ctx.fillRect(-4 * s, -120 * s, 8 * s, 120 * s);
-              ctx.fillStyle = '#fff';
-              ctx.fillRect(-45 * s, -120 * s, 90 * s, 55 * s);
-              ctx.fillStyle = ['#ff4444', '#4444ff', '#44aa44', '#ffaa00'][Math.floor(el.x / 100) % 4];
-              ctx.fillRect(-40 * s, -115 * s, 80 * s, 45 * s);
-              break;
-            }
-            default: {
-              // Generic box building
-              const w = 50 * s, h = 80 * s;
-              ctx.fillStyle = c;
-              ctx.fillRect(-w / 2, -h, w, h);
-              break;
-            }
-          }
-        } else {
-          // Animals — larger scale, clear outlines, waving arm for friendly ones
-          const bounce = Math.sin(now / 500 + el.phase) * 4 * s;
-          const waveArm = el.waves ? Math.sin(now / 300 + el.phase) * 0.9 - 0.3 : 0;
-          ctx.translate(0, bounce);
-
-          // Helper: outline stroke for clarity
-          const outline = (color: string) => { ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2.5 * s; ctx.stroke(); ctx.fillStyle = color; ctx.fill(); };
-          const outlineFill = (color: string) => { ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2 * s; ctx.stroke(); };
-
-          // Friendly animals wave with a real limb: a rounded arm that ends in a
-          // palm with three fingers. Drawn inside the arm's translated and
-          // rotated space, so the hand stays on the end of the arm as it swings.
-          // Before this the arm was a thin wedge that tapered to a point, which
-          // read as a bare stick with no hand at all.
-          const wavingArm = (len: number, color: string) => {
-            const tipX = len, tipY = -len * 0.7;
-            const dir = Math.atan2(tipY, tipX);
-            const thick = 5.5 * s;
-            ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(tipX, tipY);
-            ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = thick + 2.5 * s; ctx.stroke();
-            ctx.strokeStyle = color; ctx.lineWidth = thick; ctx.stroke();
-
-            const r = 5.5 * s;
-            const hx = tipX + Math.cos(dir) * r * 0.7;
-            const hy = tipY + Math.sin(dir) * r * 0.7;
-            for (let f = -1; f <= 1; f++) {
-              const a = dir + f * 0.45;
-              ctx.beginPath();
-              ctx.moveTo(hx + Math.cos(a) * r * 0.25, hy + Math.sin(a) * r * 0.25);
-              ctx.lineTo(hx + Math.cos(a) * r * 1.85, hy + Math.sin(a) * r * 1.85);
-              ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = r * 1.05; ctx.stroke();
-              ctx.strokeStyle = color; ctx.lineWidth = r * 0.55; ctx.stroke();
-            }
-            ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2);
-            ctx.fillStyle = color; ctx.fill();
-            ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = Math.max(1.6, r * 0.2); ctx.stroke();
-          };
-
-          // A real bird wing seen from the side: it sweeps back from the shoulder
-          // to a rounded tip. The trailing edge is scalloped into three feather
-          // steps instead of being one straight cut, so it reads as plumage and
-          // not as a paper triangle. The wing is drawn in local space with the
-          // shoulder at the origin, extending towards -x (the bird faces +x), so
-          // each caller can translate and rotate it as the bird flaps.
-          const drawBirdWing = (L: number, col: string) => {
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            // Leading edge: a shallow rise, then a long run out to the tip. The
-            // wing is kept slim - a real wing seen from the side is far longer
-            // than it is deep, and a tall rounded shape reads as a shell.
-            ctx.quadraticCurveTo(-L * 0.5, -L * 0.24, -L, -L * 0.02);
-            // Rounded tip.
-            ctx.quadraticCurveTo(-L * 0.9, L * 0.13, -L * 0.74, L * 0.1);
-            // Trailing edge: three shallow feather scallops back to the shoulder.
-            ctx.quadraticCurveTo(-L * 0.6, L * 0.2, -L * 0.46, L * 0.1);
-            ctx.quadraticCurveTo(-L * 0.3, L * 0.19, -L * 0.16, L * 0.08);
-            ctx.quadraticCurveTo(-L * 0.07, L * 0.13, 0, L * 0.03);
-            ctx.closePath();
-            outlineFill(col);
-          };
-
-          switch (el.subtype) {
-
-            case 'cat': case 'stray_cat': case 'space_cat': {
-              const bc = el.subtype === 'space_cat' ? '#b0b8cc' : el.subtype === 'stray_cat' ? '#aa8866' : '#778899';
-              // Body
-              ctx.beginPath(); ctx.ellipse(0, -28 * s, 16 * s, 20 * s, 0, 0, Math.PI * 2); outlineFill(bc);
-              // Head
-              ctx.beginPath(); ctx.ellipse(0, -54 * s, 14 * s, 13 * s, 0, 0, Math.PI * 2); outlineFill(bc);
-              // Ears
-              ctx.beginPath(); ctx.moveTo(-12 * s, -64 * s); ctx.lineTo(-16 * s, -78 * s); ctx.lineTo(-4 * s, -64 * s); outlineFill('#cc9966');
-              ctx.beginPath(); ctx.moveTo(12 * s, -64 * s); ctx.lineTo(16 * s, -78 * s); ctx.lineTo(4 * s, -64 * s); outlineFill('#cc9966');
-              // Eyes
-              ctx.beginPath(); ctx.arc(-5 * s, -55 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(5 * s, -55 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#33cc33'; ctx.beginPath(); ctx.arc(-5 * s, -55 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#33cc33'; ctx.beginPath(); ctx.arc(5 * s, -55 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-5 * s, -55 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(5 * s, -55 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Nose + smile
-              ctx.fillStyle = '#ff88aa'; ctx.beginPath(); ctx.arc(0, -51 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5 * s; ctx.beginPath(); ctx.arc(-3 * s, -49 * s, 3 * s, 0, Math.PI); ctx.stroke();
-              ctx.beginPath(); ctx.arc(3 * s, -49 * s, 3 * s, 0, Math.PI); ctx.stroke();
-              // Whiskers
-              ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.2 * s;
-              ctx.beginPath(); ctx.moveTo(-3 * s, -51 * s); ctx.lineTo(-18 * s, -50 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(-3 * s, -51 * s); ctx.lineTo(-18 * s, -53 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(3 * s, -51 * s); ctx.lineTo(18 * s, -50 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(3 * s, -51 * s); ctx.lineTo(18 * s, -53 * s); ctx.stroke();
-              // Left arm (static)
-              ctx.beginPath(); ctx.moveTo(-14 * s, -36 * s); ctx.lineTo(-22 * s, -22 * s); ctx.lineTo(-14 * s, -18 * s); outlineFill(bc);
-              // Right arm WAVING
-              ctx.save(); ctx.translate(14 * s, -36 * s); ctx.rotate(waveArm);
-              wavingArm(20 * s, bc);
-              ctx.restore();
-              // Tail
-              ctx.strokeStyle = bc; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-14 * s, -14 * s); ctx.quadraticCurveTo(-32 * s, 0 * s, -26 * s, 16 * s); ctx.stroke();
-              ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.moveTo(-14 * s, -14 * s); ctx.quadraticCurveTo(-32 * s, 0 * s, -26 * s, 16 * s); ctx.stroke();
-              break;
-            }
-
-            case 'dog': {
-              // Body
-              ctx.beginPath(); ctx.ellipse(0, -26 * s, 18 * s, 18 * s, 0, 0, Math.PI * 2); outlineFill('#c8943a');
-              // Head
-              ctx.beginPath(); ctx.ellipse(0, -52 * s, 15 * s, 14 * s, 0, 0, Math.PI * 2); outlineFill('#c8943a');
-              // Floppy ears
-              ctx.beginPath(); ctx.ellipse(-17 * s, -52 * s, 6 * s, 12 * s, -.4, 0, Math.PI * 2); outlineFill('#a07028');
-              ctx.beginPath(); ctx.ellipse(17 * s, -52 * s, 6 * s, 12 * s, .4, 0, Math.PI * 2); outlineFill('#a07028');
-              // Snout
-              ctx.beginPath(); ctx.ellipse(0, -47 * s, 8 * s, 6 * s, 0, 0, Math.PI * 2); outlineFill('#e8b060');
-              // Nose
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(0, -50 * s, 4 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Eyes
-              ctx.beginPath(); ctx.arc(-6 * s, -56 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(6 * s, -56 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#5533aa'; ctx.beginPath(); ctx.arc(-6 * s, -56 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#5533aa'; ctx.beginPath(); ctx.arc(6 * s, -56 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-6 * s, -56 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(6 * s, -56 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Tongue
-              ctx.fillStyle = '#ff6688'; ctx.beginPath(); ctx.ellipse(0, -43 * s, 4 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Arms
-              ctx.beginPath(); ctx.moveTo(-16 * s, -34 * s); ctx.lineTo(-26 * s, -18 * s); ctx.lineTo(-18 * s, -14 * s); outlineFill('#c8943a');
-              // Waving arm
-              ctx.save(); ctx.translate(16 * s, -34 * s); ctx.rotate(waveArm);
-              wavingArm(26 * s, '#c8943a');
-              ctx.restore();
-              // Tail wagging
-              const dogTailWag = Math.sin(now / 150 + el.phase) * 0.7;
-              ctx.strokeStyle = '#a07028'; ctx.lineWidth = 6 * s; ctx.lineCap = 'round';
-              ctx.save(); ctx.translate(-16 * s, -20 * s); ctx.rotate(dogTailWag);
-              ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-18 * s, -10 * s, -14 * s, 8 * s); ctx.stroke();
-              ctx.restore();
-              break;
-            }
-
-            case 'rabbit': {
-              // Body
-              ctx.beginPath(); ctx.ellipse(0, -26 * s, 16 * s, 20 * s, 0, 0, Math.PI * 2); outlineFill('#e8ddd0');
-              // Head
-              ctx.beginPath(); ctx.ellipse(0, -52 * s, 13 * s, 13 * s, 0, 0, Math.PI * 2); outlineFill('#e8ddd0');
-              // Long ears
-              ctx.beginPath(); ctx.ellipse(-7 * s, -72 * s, 5 * s, 20 * s, -.15, 0, Math.PI * 2); outlineFill('#e8ddd0');
-              ctx.beginPath(); ctx.ellipse(7 * s, -72 * s, 5 * s, 20 * s, .15, 0, Math.PI * 2); outlineFill('#e8ddd0');
-              ctx.fillStyle = '#ffb0c0'; ctx.beginPath(); ctx.ellipse(-7 * s, -72 * s, 2.5 * s, 16 * s, -.15, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ffb0c0'; ctx.beginPath(); ctx.ellipse(7 * s, -72 * s, 2.5 * s, 16 * s, .15, 0, Math.PI * 2); ctx.fill();
-              // Eyes
-              ctx.beginPath(); ctx.arc(-5 * s, -53 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(5 * s, -53 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#ff3366'; ctx.beginPath(); ctx.arc(-5 * s, -53 * s, 2.3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ff3366'; ctx.beginPath(); ctx.arc(5 * s, -53 * s, 2.3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-5 * s, -53 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(5 * s, -53 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Nose
-              ctx.fillStyle = '#ff7799'; ctx.beginPath(); ctx.arc(0, -49 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Smile
-              ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.arc(-2.5 * s, -47 * s, 2.5 * s, 0, Math.PI); ctx.stroke();
-              ctx.beginPath(); ctx.arc(2.5 * s, -47 * s, 2.5 * s, 0, Math.PI); ctx.stroke();
-              // Left arm
-              ctx.beginPath(); ctx.moveTo(-14 * s, -34 * s); ctx.lineTo(-22 * s, -20 * s); ctx.lineTo(-14 * s, -16 * s); outlineFill('#e8ddd0');
-              // Waving arm
-              ctx.save(); ctx.translate(14 * s, -34 * s); ctx.rotate(waveArm);
-              wavingArm(23 * s, '#e8ddd0');
-              ctx.restore();
-              // Fluffy tail
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-2 * s, -8 * s, 8 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1.5 * s; ctx.stroke();
-              break;
-            }
-
-            case 'bear': {
-              // Body
-              ctx.beginPath(); ctx.ellipse(0, -28 * s, 22 * s, 24 * s, 0, 0, Math.PI * 2); outlineFill('#6a4020');
-              // Head
-              ctx.beginPath(); ctx.ellipse(0, -58 * s, 18 * s, 17 * s, 0, 0, Math.PI * 2); outlineFill('#6a4020');
-              // Round ears
-              ctx.beginPath(); ctx.arc(-14 * s, -73 * s, 8 * s, 0, Math.PI * 2); outlineFill('#6a4020');
-              ctx.beginPath(); ctx.arc(14 * s, -73 * s, 8 * s, 0, Math.PI * 2); outlineFill('#6a4020');
-              ctx.fillStyle = '#c8a080'; ctx.beginPath(); ctx.arc(-14 * s, -73 * s, 4.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#c8a080'; ctx.beginPath(); ctx.arc(14 * s, -73 * s, 4.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Snout
-              ctx.beginPath(); ctx.ellipse(0, -53 * s, 9 * s, 7 * s, 0, 0, Math.PI * 2); outlineFill('#c8a080');
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(0, -57 * s, 5 * s, 3.5 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Eyes
-              ctx.beginPath(); ctx.arc(-7 * s, -61 * s, 5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(7 * s, -61 * s, 5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-7 * s, -61 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(7 * s, -61 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-5.5 * s, -62.5 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(8.5 * s, -62.5 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Friendly smile
-              ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.arc(0, -50 * s, 5 * s, 0, Math.PI); ctx.stroke();
-              // Left arm
-              ctx.beginPath(); ctx.moveTo(-20 * s, -36 * s); ctx.lineTo(-30 * s, -18 * s); ctx.lineTo(-20 * s, -14 * s); outlineFill('#6a4020');
-              // WAVING arm
-              ctx.save(); ctx.translate(20 * s, -36 * s); ctx.rotate(waveArm);
-              wavingArm(30 * s, '#6a4020');
-              ctx.restore();
-              break;
-            }
-
-            case 'deer': {
-              ctx.beginPath(); ctx.ellipse(0, -26 * s, 14 * s, 18 * s, 0, 0, Math.PI * 2); outlineFill('#c87840');
-              ctx.beginPath(); ctx.ellipse(0, -50 * s, 11 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#c87840');
-              // Antlers
-              ctx.strokeStyle = '#7B3A10'; ctx.lineWidth = 3.5 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-6 * s, -60 * s); ctx.lineTo(-10 * s, -78 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(-10 * s, -78 * s); ctx.lineTo(-16 * s, -70 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(-10 * s, -78 * s); ctx.lineTo(-5 * s, -70 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(6 * s, -60 * s); ctx.lineTo(10 * s, -78 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(10 * s, -78 * s); ctx.lineTo(16 * s, -70 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(10 * s, -78 * s); ctx.lineTo(5 * s, -70 * s); ctx.stroke();
-              // White belly
-              ctx.beginPath(); ctx.ellipse(0, -28 * s, 8 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#f0e0c8');
-              // Eyes
-              ctx.beginPath(); ctx.arc(-5 * s, -51 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(5 * s, -51 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#4a2800'; ctx.beginPath(); ctx.arc(-5 * s, -51 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#4a2800'; ctx.beginPath(); ctx.arc(5 * s, -51 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-4 * s, -52 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(6 * s, -52 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              // Nose
-              ctx.fillStyle = '#cc5533'; ctx.beginPath(); ctx.arc(0, -46 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              // WAVING arm/leg
-              ctx.save(); ctx.translate(12 * s, -30 * s); ctx.rotate(waveArm);
-              wavingArm(22 * s, '#c87840');
-              ctx.restore();
-              break;
-            }
-
-            case 'cow': {
-              ctx.beginPath(); ctx.ellipse(0, -24 * s, 22 * s, 20 * s, 0, 0, Math.PI * 2); outlineFill('#f5f5f0');
-              // Black patches
-              ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(-8 * s, -30 * s, 8 * s, 7 * s, -.3, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(10 * s, -18 * s, 7 * s, 6 * s, .2, 0, Math.PI * 2); ctx.fill();
-              // Head
-              ctx.beginPath(); ctx.ellipse(0, -50 * s, 14 * s, 13 * s, 0, 0, Math.PI * 2); outlineFill('#f5f5f0');
-              // Ears
-              ctx.beginPath(); ctx.ellipse(-16 * s, -50 * s, 5 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#f5f5f0');
-              ctx.beginPath(); ctx.ellipse(16 * s, -50 * s, 5 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#f5f5f0');
-              ctx.fillStyle = '#ffaabb'; ctx.beginPath(); ctx.ellipse(-16 * s, -50 * s, 3 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ffaabb'; ctx.beginPath(); ctx.ellipse(16 * s, -50 * s, 3 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Snout
-              ctx.beginPath(); ctx.ellipse(0, -45 * s, 8 * s, 6 * s, 0, 0, Math.PI * 2); outlineFill('#ffccaa');
-              ctx.fillStyle = '#885533'; ctx.beginPath(); ctx.arc(-3 * s, -46 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#885533'; ctx.beginPath(); ctx.arc(3 * s, -46 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              // Eyes
-              ctx.beginPath(); ctx.arc(-6 * s, -54 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(6 * s, -54 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#553300'; ctx.beginPath(); ctx.arc(-6 * s, -54 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#553300'; ctx.beginPath(); ctx.arc(6 * s, -54 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-5 * s, -55 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(7 * s, -55 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              // WAVING arm
-              ctx.save(); ctx.translate(18 * s, -30 * s); ctx.rotate(waveArm);
-              wavingArm(23 * s, '#f5f5f0');
-              ctx.restore();
-              break;
-            }
-
-            case 'horse': {
-              ctx.beginPath(); ctx.ellipse(0, -26 * s, 22 * s, 18 * s, 0, 0, Math.PI * 2); outlineFill('#9B5c30');
-              ctx.beginPath(); ctx.ellipse(18 * s, -44 * s, 10 * s, 18 * s, .2, 0, Math.PI * 2); outlineFill('#9B5c30');
-              // Mane
-              ctx.fillStyle = '#6a3010'; ctx.beginPath(); ctx.moveTo(10 * s, -55 * s); ctx.quadraticCurveTo(20 * s, -65 * s, 22 * s, -55 * s); ctx.quadraticCurveTo(18 * s, -52 * s, 14 * s, -55 * s); ctx.fill();
-              // Eye
-              ctx.beginPath(); ctx.arc(22 * s, -46 * s, 5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#332200'; ctx.beginPath(); ctx.arc(22 * s, -46 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(23 * s, -47 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Nostril
-              ctx.fillStyle = '#7a3010'; ctx.beginPath(); ctx.ellipse(26 * s, -40 * s, 3 * s, 2 * s, .3, 0, Math.PI * 2); ctx.fill();
-              // Tail
-              ctx.strokeStyle = '#6a3010'; ctx.lineWidth = 6 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-20 * s, -22 * s); ctx.quadraticCurveTo(-36 * s, -10 * s, -30 * s, 12 * s); ctx.stroke();
-              // WAVING front leg
-              ctx.save(); ctx.translate(16 * s, -26 * s); ctx.rotate(waveArm * 0.6);
-              ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(10 * s, 20 * s); ctx.lineTo(4 * s, 20 * s); outlineFill('#9B5c30');
-              // Rounded hoof on the raised leg - a horse has no fingers to wave with.
-              ctx.beginPath(); ctx.ellipse(7 * s, 20 * s, 6.5 * s, 5 * s, 0.22, 0, Math.PI * 2); outlineFill('#5a3418');
-              ctx.restore();
-              break;
-            }
-
-            case 'bird': case 'pigeon': {
-              const bCol = el.subtype === 'pigeon' ? '#9090a0' : '#4466aa';
-              const bDark = el.subtype === 'pigeon' ? '#70707e' : '#32508c';
-              const wingFlap = Math.sin((now / 180) * (el.flapRate ?? 1) + el.phase) * 0.7;
-              // Tail feathers, tucked in behind the body.
-              ctx.beginPath(); ctx.moveTo(-9 * s, -22 * s); ctx.lineTo(-27 * s, -18 * s); ctx.lineTo(-24 * s, -11 * s); ctx.lineTo(-8 * s, -18 * s); ctx.closePath(); outlineFill(bDark);
-              // Far wing: behind the body, darker and smaller, so the pair reads with depth.
-              ctx.save(); ctx.translate(-5 * s, -27 * s); ctx.rotate(-0.28 - wingFlap * 0.5); drawBirdWing(19 * s, bDark); ctx.restore();
-              // Body + head
-              ctx.beginPath(); ctx.ellipse(0, -22 * s, 13 * s, 9 * s, 0, 0, Math.PI * 2); outlineFill(bCol);
-              ctx.beginPath(); ctx.ellipse(12 * s, -26 * s, 9 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill(bCol);
-              // Beak
-              ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.moveTo(20 * s, -26 * s); ctx.lineTo(28 * s, -24 * s); ctx.lineTo(20 * s, -22 * s); ctx.fill();
-              // Eye
-              ctx.beginPath(); ctx.arc(15 * s, -28 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(15 * s, -28 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(16 * s, -29 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              // Near wing: in front of the body, driving the flap.
-              ctx.save(); ctx.translate(2 * s, -29 * s); ctx.rotate(-0.05 + wingFlap * 0.8); drawBirdWing(25 * s, bCol); ctx.restore();
-              break;
-            }
-
-            case 'crow': {
-              const cFlap = Math.sin((now / 200) * (el.flapRate ?? 1) + el.phase) * 0.6;
-              // Tail
-              ctx.beginPath(); ctx.moveTo(-9 * s, -22 * s); ctx.lineTo(-26 * s, -18 * s); ctx.lineTo(-23 * s, -11 * s); ctx.lineTo(-8 * s, -18 * s); ctx.closePath(); outlineFill('#12121f');
-              // Far wing
-              ctx.save(); ctx.translate(-5 * s, -27 * s); ctx.rotate(-0.28 - cFlap * 0.5); drawBirdWing(18 * s, '#12121f'); ctx.restore();
-              // Body + head
-              ctx.beginPath(); ctx.ellipse(0, -22 * s, 12 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#1a1a2a');
-              ctx.beginPath(); ctx.ellipse(11 * s, -26 * s, 8 * s, 7 * s, 0, 0, Math.PI * 2); outlineFill('#1a1a2a');
-              ctx.fillStyle = '#223333'; ctx.beginPath(); ctx.moveTo(18 * s, -26 * s); ctx.lineTo(26 * s, -25 * s); ctx.lineTo(18 * s, -23 * s); ctx.fill();
-              ctx.beginPath(); ctx.arc(14 * s, -28 * s, 3.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#2255ff'; ctx.beginPath(); ctx.arc(14 * s, -28 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(14 * s, -28 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              // Near wing
-              ctx.save(); ctx.translate(2 * s, -29 * s); ctx.rotate(-0.05 + cFlap * 0.8); drawBirdWing(24 * s, '#1a1a2a'); ctx.restore();
-              break;
-            }
-
-            case 'seagull': {
-              const sgFlap = Math.sin((now / 210) * (el.flapRate ?? 1) + el.phase) * 0.65;
-              // Tail
-              ctx.beginPath(); ctx.moveTo(-9 * s, -22 * s); ctx.lineTo(-26 * s, -18 * s); ctx.lineTo(-23 * s, -11 * s); ctx.lineTo(-8 * s, -18 * s); ctx.closePath(); outlineFill('#d8d8e2');
-              // Far wing
-              ctx.save(); ctx.translate(-5 * s, -27 * s); ctx.rotate(-0.28 - sgFlap * 0.5); drawBirdWing(19 * s, '#d8d8e2'); ctx.restore();
-              // Body + head
-              ctx.beginPath(); ctx.ellipse(0, -22 * s, 12 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#f8f8ff');
-              ctx.beginPath(); ctx.ellipse(11 * s, -26 * s, 9 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#f8f8ff');
-              ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.moveTo(19 * s, -25 * s); ctx.lineTo(27 * s, -23 * s); ctx.lineTo(19 * s, -21 * s); ctx.fill();
-              ctx.beginPath(); ctx.arc(14 * s, -28 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#ff8800'; ctx.beginPath(); ctx.arc(14 * s, -28 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              // Near wing
-              ctx.save(); ctx.translate(2 * s, -29 * s); ctx.rotate(-0.05 + sgFlap * 0.8); drawBirdWing(25 * s, '#f0f0f6'); ctx.restore();
-              break;
-            }
-
-            case 'owl': {
-              ctx.beginPath(); ctx.ellipse(0, -28 * s, 14 * s, 20 * s, 0, 0, Math.PI * 2); outlineFill('#9a7a30');
-              // Ear tufts
-              ctx.beginPath(); ctx.moveTo(-10 * s, -46 * s); ctx.lineTo(-14 * s, -58 * s); ctx.lineTo(-5 * s, -46 * s); outlineFill('#7a5a20');
-              ctx.beginPath(); ctx.moveTo(10 * s, -46 * s); ctx.lineTo(14 * s, -58 * s); ctx.lineTo(5 * s, -46 * s); outlineFill('#7a5a20');
-              // Face disc
-              ctx.beginPath(); ctx.arc(0, -34 * s, 12 * s, 0, Math.PI * 2); outlineFill('#f5e8a0');
-              // Eyes — big
-              ctx.beginPath(); ctx.arc(-5 * s, -35 * s, 6.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(5 * s, -35 * s, 6.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#ff8800'; ctx.beginPath(); ctx.arc(-5 * s, -35 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ff8800'; ctx.beginPath(); ctx.arc(5 * s, -35 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-5 * s, -35 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(5 * s, -35 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-3.5 * s, -37 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(6.5 * s, -37 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Beak
-              ctx.fillStyle = '#cc8800'; ctx.beginPath(); ctx.moveTo(0, -29 * s); ctx.lineTo(-3.5 * s, -25 * s); ctx.lineTo(3.5 * s, -25 * s); ctx.fill();
-              // Wings open slightly
-              ctx.beginPath(); ctx.moveTo(-12 * s, -28 * s); ctx.lineTo(-28 * s, -14 * s); ctx.lineTo(-18 * s, -6 * s); outlineFill('#9a7a30');
-              ctx.beginPath(); ctx.moveTo(12 * s, -28 * s); ctx.lineTo(28 * s, -14 * s); ctx.lineTo(18 * s, -6 * s); outlineFill('#9a7a30');
-              break;
-            }
-
-            case 'eagle': {
-              const eagleWing = Math.sin((now / 400) * (el.flapRate ?? 1) + el.phase) * 0.25;
-              // Far wing: broad, behind the body.
-              ctx.save(); ctx.translate(-7 * s, -35 * s); ctx.rotate(-0.24 - eagleWing * 0.7); drawBirdWing(30 * s, '#3a1e00'); ctx.restore();
-              // Body
-              ctx.beginPath(); ctx.ellipse(0, -26 * s, 16 * s, 20 * s, 0, 0, Math.PI * 2); outlineFill('#5a3010');
-              // Tail
-              ctx.beginPath(); ctx.moveTo(-10 * s, -14 * s); ctx.lineTo(-30 * s, -8 * s); ctx.lineTo(-27 * s, 2 * s); ctx.lineTo(-9 * s, -6 * s); ctx.closePath(); outlineFill('#4a2800');
-              // White head + hooked beak
-              ctx.beginPath(); ctx.ellipse(12 * s, -46 * s, 10 * s, 11 * s, 0, 0, Math.PI * 2); outlineFill('#5a3010');
-              ctx.beginPath(); ctx.arc(12 * s, -48 * s, 7 * s, 0, Math.PI * 2); outlineFill('#f8f8f8');
-              ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.moveTo(18 * s, -46 * s); ctx.lineTo(26 * s, -44 * s); ctx.lineTo(22 * s, -42 * s); ctx.closePath(); ctx.fill();
-              ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(14 * s, -49 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(14 * s, -49 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(15 * s, -50 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
-              // Near wing: broad, in front, gently soaring.
-              ctx.save(); ctx.translate(4 * s, -37 * s); ctx.rotate(-0.02 + eagleWing * 0.7); drawBirdWing(34 * s, '#4a2800'); ctx.restore();
-              break;
-            }
-
-            case 'squirrel': {
-              ctx.beginPath(); ctx.ellipse(0, -26 * s, 10 * s, 15 * s, 0, 0, Math.PI * 2); outlineFill('#c87030');
-              ctx.beginPath(); ctx.ellipse(0, -44 * s, 9 * s, 10 * s, 0, 0, Math.PI * 2); outlineFill('#c87030');
-              // Ears
-              ctx.beginPath(); ctx.arc(-6 * s, -52 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('#c87030');
-              ctx.beginPath(); ctx.arc(6 * s, -52 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('#c87030');
-              // Eyes
-              ctx.beginPath(); ctx.arc(-4 * s, -45 * s, 3.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(4 * s, -45 * s, 3.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-4 * s, -45 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(4 * s, -45 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-3 * s, -46 * s, 0.8 * s, 0, Math.PI * 2); ctx.fill();
-              // Nose
-              ctx.fillStyle = '#cc5533'; ctx.beginPath(); ctx.arc(0, -42 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              // Bushy tail
-              ctx.fillStyle = '#c87030'; ctx.strokeStyle = '#a05820'; ctx.lineWidth = 10 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(8 * s, -22 * s); ctx.quadraticCurveTo(30 * s, -16 * s, 22 * s, 8 * s); ctx.stroke();
-              ctx.strokeStyle = '#d99040'; ctx.lineWidth = 5 * s;
-              ctx.beginPath(); ctx.moveTo(8 * s, -22 * s); ctx.quadraticCurveTo(30 * s, -16 * s, 22 * s, 8 * s); ctx.stroke();
-              // Arm holding nut
-              ctx.beginPath(); ctx.moveTo(-8 * s, -32 * s); ctx.lineTo(-14 * s, -22 * s); ctx.lineTo(-8 * s, -18 * s); outlineFill('#c87030');
-              ctx.fillStyle = '#885500'; ctx.beginPath(); ctx.arc(-14 * s, -20 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
-              break;
-            }
-
-            case 'fox': {
-              ctx.beginPath(); ctx.ellipse(0, -24 * s, 14 * s, 18 * s, 0, 0, Math.PI * 2); outlineFill('#e06820');
-              ctx.fillStyle = '#f8f0e0'; ctx.beginPath(); ctx.ellipse(0, -22 * s, 7 * s, 12 * s, 0, 0, Math.PI * 2); ctx.fill();
-              ctx.beginPath(); ctx.ellipse(0, -46 * s, 11 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#e06820');
-              // Triangle ears
-              ctx.beginPath(); ctx.moveTo(-10 * s, -54 * s); ctx.lineTo(-14 * s, -68 * s); ctx.lineTo(-3 * s, -54 * s); outlineFill('#e06820');
-              ctx.beginPath(); ctx.moveTo(10 * s, -54 * s); ctx.lineTo(14 * s, -68 * s); ctx.lineTo(3 * s, -54 * s); outlineFill('#e06820');
-              ctx.fillStyle = '#cc4411'; ctx.beginPath(); ctx.moveTo(-9 * s, -55 * s); ctx.lineTo(-12 * s, -65 * s); ctx.lineTo(-4 * s, -55 * s); ctx.fill();
-              ctx.fillStyle = '#cc4411'; ctx.beginPath(); ctx.moveTo(9 * s, -55 * s); ctx.lineTo(12 * s, -65 * s); ctx.lineTo(4 * s, -55 * s); ctx.fill();
-              // Snout
-              ctx.beginPath(); ctx.ellipse(0, -42 * s, 6 * s, 5 * s, 0, 0, Math.PI * 2); outlineFill('#f8e8d0');
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(0, -45 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Eyes
-              ctx.beginPath(); ctx.arc(-5 * s, -49 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(5 * s, -49 * s, 4.5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#cc8800'; ctx.beginPath(); ctx.arc(-5 * s, -49 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#cc8800'; ctx.beginPath(); ctx.arc(5 * s, -49 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-5 * s, -49 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(5 * s, -49 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Fluffy tail
-              ctx.strokeStyle = '#e06820'; ctx.lineWidth = 10 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-12 * s, -14 * s); ctx.quadraticCurveTo(-34 * s, -2 * s, -28 * s, 18 * s); ctx.stroke();
-              ctx.strokeStyle = 'white'; ctx.lineWidth = 4 * s;
-              ctx.beginPath(); ctx.moveTo(-26 * s, 8 * s); ctx.quadraticCurveTo(-30 * s, 14 * s, -28 * s, 18 * s); ctx.stroke();
-              break;
-            }
-
-            case 'rat': {
-              ctx.beginPath(); ctx.ellipse(0, -18 * s, 12 * s, 10 * s, 0, 0, Math.PI * 2); outlineFill('#8a8070');
-              ctx.beginPath(); ctx.ellipse(9 * s, -30 * s, 8 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#8a8070');
-              // Big round ears
-              ctx.beginPath(); ctx.arc(-3 * s, -36 * s, 6 * s, 0, Math.PI * 2); outlineFill('#b89080');
-              ctx.beginPath(); ctx.arc(9 * s, -36 * s, 6 * s, 0, Math.PI * 2); outlineFill('#b89080');
-              ctx.fillStyle = '#ffaabb'; ctx.beginPath(); ctx.arc(-3 * s, -36 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ffaabb'; ctx.beginPath(); ctx.arc(9 * s, -36 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Eyes
-              ctx.beginPath(); ctx.arc(6 * s, -31 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(12 * s, -32 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#ff2244'; ctx.beginPath(); ctx.arc(6 * s, -31 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ff2244'; ctx.beginPath(); ctx.arc(12 * s, -32 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(6 * s, -31 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(12 * s, -32 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Long nose
-              ctx.fillStyle = '#cc8877'; ctx.beginPath(); ctx.arc(16 * s, -29 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              // Whiskers
-              ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1 * s;
-              ctx.beginPath(); ctx.moveTo(14 * s, -29 * s); ctx.lineTo(26 * s, -27 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(14 * s, -29 * s); ctx.lineTo(26 * s, -31 * s); ctx.stroke();
-              // Tail
-              ctx.strokeStyle = '#9a8070'; ctx.lineWidth = 3 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-11 * s, -14 * s); ctx.quadraticCurveTo(-26 * s, -2 * s, -22 * s, 12 * s); ctx.stroke();
-              break;
-            }
-
-            case 'bat': {
-              const batFlap = Math.sin((now / 120) * (el.flapRate ?? 1) + el.phase);
-              ctx.beginPath(); ctx.ellipse(0, -36 * s, 10 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#553366');
-              // Ears
-              ctx.beginPath(); ctx.moveTo(-7 * s, -46 * s); ctx.lineTo(-11 * s, -58 * s); ctx.lineTo(-2 * s, -46 * s); outlineFill('#442255');
-              ctx.beginPath(); ctx.moveTo(7 * s, -46 * s); ctx.lineTo(11 * s, -58 * s); ctx.lineTo(2 * s, -46 * s); outlineFill('#442255');
-              // Glowing eyes
-              ctx.fillStyle = '#ff2222'; ctx.beginPath(); ctx.arc(-4 * s, -38 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ff2222'; ctx.beginPath(); ctx.arc(4 * s, -38 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ff8888'; ctx.beginPath(); ctx.arc(-4 * s, -38 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ff8888'; ctx.beginPath(); ctx.arc(4 * s, -38 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              // Wings
-              ctx.save(); ctx.translate(-8 * s, -36 * s); ctx.rotate(-batFlap * 0.8 - 0.3);
-              ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-32 * s, -10 * s); ctx.quadraticCurveTo(-28 * s, 5 * s, -20 * s, 6 * s); ctx.closePath(); outlineFill('#442255');
-              ctx.restore();
-              ctx.save(); ctx.translate(8 * s, -36 * s); ctx.rotate(batFlap * 0.8 + 0.3);
-              ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(32 * s, -10 * s); ctx.quadraticCurveTo(28 * s, 5 * s, 20 * s, 6 * s); ctx.closePath(); outlineFill('#442255');
-              ctx.restore();
-              // Little fangs
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(-3 * s, -28 * s); ctx.lineTo(-1.5 * s, -24 * s); ctx.lineTo(0, -28 * s); ctx.fill();
-              ctx.beginPath(); ctx.moveTo(3 * s, -28 * s); ctx.lineTo(1.5 * s, -24 * s); ctx.lineTo(0, -28 * s); ctx.fill();
-              break;
-            }
-
-            case 'crab': {
-              ctx.beginPath(); ctx.ellipse(0, -14 * s, 18 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#dd4422');
-              // Eyes on stalks
-              ctx.fillStyle = '#cc3311'; ctx.fillRect(-10 * s, -20 * s, 4 * s, 8 * s); ctx.fillRect(6 * s, -20 * s, 4 * s, 8 * s);
-              ctx.beginPath(); ctx.arc(-8 * s, -22 * s, 5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(8 * s, -22 * s, 5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-8 * s, -22 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(8 * s, -22 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              // Claws
-              const clawSnap = Math.sin(now / 300 + el.phase) * 0.4;
-              ctx.save(); ctx.translate(-22 * s, -12 * s); ctx.rotate(clawSnap - 0.3);
-              ctx.beginPath(); ctx.ellipse(0, 0, 10 * s, 7 * s, 0, 0, Math.PI * 2); outlineFill('#ee5533');
-              ctx.restore();
-              ctx.save(); ctx.translate(22 * s, -12 * s); ctx.rotate(-clawSnap + 0.3);
-              ctx.beginPath(); ctx.ellipse(0, 0, 10 * s, 7 * s, 0, 0, Math.PI * 2); outlineFill('#ee5533');
-              ctx.restore();
-              // Legs
-              ctx.strokeStyle = '#cc3322'; ctx.lineWidth = 3 * s;
-              for (let leg = -2; leg <= 2; leg++) {
-                if (leg === 0) continue;
-                ctx.beginPath(); ctx.moveTo(leg * 7 * s, -10 * s); ctx.lineTo(leg * 11 * s, 2 * s); ctx.stroke();
-              }
-              break;
-            }
-
-            case 'seal': {
-              ctx.beginPath(); ctx.ellipse(0, -18 * s, 22 * s, 14 * s, .15, 0, Math.PI * 2); outlineFill('#7090a0');
-              ctx.beginPath(); ctx.ellipse(18 * s, -14 * s, 10 * s, 7 * s, -.2, 0, Math.PI * 2); outlineFill('#7090a0');
-              // Head
-              ctx.beginPath(); ctx.ellipse(-14 * s, -28 * s, 13 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#8898a8');
-              // Big round eyes
-              ctx.beginPath(); ctx.arc(-18 * s, -30 * s, 6 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(-10 * s, -30 * s, 6 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-18 * s, -30 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-10 * s, -30 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-17 * s, -32 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-9 * s, -32 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Nose
-              ctx.fillStyle = '#cc8899'; ctx.beginPath(); ctx.arc(-6 * s, -26 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              // Whiskers
-              ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.2 * s;
-              ctx.beginPath(); ctx.moveTo(-6 * s, -26 * s); ctx.lineTo(6 * s, -24 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(-6 * s, -26 * s); ctx.lineTo(6 * s, -28 * s); ctx.stroke();
-              // Flipper WAVING
-              ctx.save(); ctx.translate(-14 * s, -20 * s); ctx.rotate(waveArm * 0.7);
-              ctx.beginPath(); ctx.ellipse(-12 * s, 0, 12 * s, 5 * s, -.4, 0, Math.PI * 2); outlineFill('#7090a0');
-              ctx.restore();
-              break;
-            }
-
-            case 'pelican': {
-              ctx.beginPath(); ctx.ellipse(0, -22 * s, 16 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#f8f4ee');
-              ctx.beginPath(); ctx.ellipse(14 * s, -32 * s, 9 * s, 10 * s, 0, 0, Math.PI * 2); outlineFill('#f8f4ee');
-              // Long beak
-              ctx.fillStyle = '#ddaa20'; ctx.beginPath(); ctx.moveTo(20 * s, -30 * s); ctx.lineTo(40 * s, -28 * s); ctx.lineTo(38 * s, -24 * s); ctx.lineTo(20 * s, -26 * s); ctx.closePath(); ctx.fill();
-              ctx.fillStyle = '#ffcc44'; ctx.beginPath(); ctx.ellipse(30 * s, -26 * s, 8 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Eye
-              ctx.beginPath(); ctx.arc(16 * s, -34 * s, 5 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#223300'; ctx.beginPath(); ctx.arc(16 * s, -34 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(17 * s, -35 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Wing
-              const pelFlap = Math.sin((now / 190) * (el.flapRate ?? 1) + el.phase) * 0.55;
-              ctx.save(); ctx.translate(-12 * s, -24 * s); ctx.rotate(-pelFlap - 0.15);
-              ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-30 * s, -8 * s); ctx.lineTo(-22 * s, 6 * s); outlineFill('#e0dcd8');
-              ctx.restore();
-              break;
-            }
-
-            case 'alien_creature': {
-              // Green glowing body
-              ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 12 * s;
-              ctx.beginPath(); ctx.ellipse(0, -30 * s, 15 * s, 22 * s, 0, 0, Math.PI * 2); outlineFill('#22dd66');
-              ctx.shadowBlur = 0;
-              // Big head
-              ctx.beginPath(); ctx.ellipse(0, -58 * s, 16 * s, 16 * s, 0, 0, Math.PI * 2); outlineFill('#22dd66');
-              // Huge alien eyes
-              ctx.beginPath(); ctx.arc(-7 * s, -60 * s, 7 * s, 0, Math.PI * 2); outlineFill('#001100');
-              ctx.beginPath(); ctx.arc(7 * s, -60 * s, 7 * s, 0, Math.PI * 2); outlineFill('#001100');
-              ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(-7 * s, -60 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(7 * s, -60 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-7 * s, -60 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(7 * s, -60 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-5.5 * s, -62 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(8.5 * s, -62 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-              // Antennae
-              ctx.strokeStyle = '#22dd66'; ctx.lineWidth = 2.5 * s;
-              ctx.beginPath(); ctx.moveTo(-6 * s, -73 * s); ctx.lineTo(-10 * s, -84 * s); ctx.stroke();
-              ctx.fillStyle = '#ff44ff'; ctx.beginPath(); ctx.arc(-10 * s, -84 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.beginPath(); ctx.moveTo(6 * s, -73 * s); ctx.lineTo(10 * s, -84 * s); ctx.stroke();
-              ctx.fillStyle = '#ff44ff'; ctx.beginPath(); ctx.arc(10 * s, -84 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-              // Slit mouth
-              ctx.strokeStyle = '#001100'; ctx.lineWidth = 2 * s;
-              ctx.beginPath(); ctx.arc(0, -52 * s, 5 * s, 0.2, Math.PI - 0.2); ctx.stroke();
-              // WAVING 3-fingered hand
-              ctx.save(); ctx.translate(14 * s, -42 * s); ctx.rotate(waveArm);
-              wavingArm(23 * s, '#22dd66');
-              ctx.restore();
-              break;
-            }
-
-            case 'goat': {
-              ctx.beginPath(); ctx.ellipse(0, -22 * s, 16 * s, 14 * s, 0, 0, Math.PI * 2); outlineFill('#d8d0b8');
-              ctx.beginPath(); ctx.ellipse(10 * s, -38 * s, 10 * s, 12 * s, 0, 0, Math.PI * 2); outlineFill('#d8d0b8');
-              // Curved horns
-              ctx.strokeStyle = '#8a7a60'; ctx.lineWidth = 3.5 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(6 * s, -48 * s); ctx.quadraticCurveTo(2 * s, -60 * s, 10 * s, -58 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(14 * s, -48 * s); ctx.quadraticCurveTo(18 * s, -60 * s, 10 * s, -58 * s); ctx.stroke();
-              // Eyes
-              ctx.beginPath(); ctx.arc(7 * s, -40 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.beginPath(); ctx.arc(14 * s, -40 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#886600'; ctx.beginPath(); ctx.arc(7 * s, -40 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = '#886600'; ctx.beginPath(); ctx.arc(14 * s, -40 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(7 * s, -40 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(14 * s, -40 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Beard
-              ctx.fillStyle = '#e8e0c8'; ctx.beginPath(); ctx.ellipse(10 * s, -30 * s, 4 * s, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
-              break;
-            }
-
-            case 'snake': {
-              const snakeWiggle = Math.sin(now / 300 + el.phase);
-              ctx.strokeStyle = '#2a7a2a'; ctx.lineWidth = 14 * s; ctx.lineCap = 'round';
-              ctx.beginPath();
-              ctx.moveTo(-30 * s, -10 * s);
-              ctx.quadraticCurveTo(-10 * s, -10 * s + 18 * s * snakeWiggle, 10 * s, -10 * s);
-              ctx.quadraticCurveTo(22 * s, -10 * s - 14 * s * snakeWiggle, 30 * s, -10 * s);
-              ctx.stroke();
-              ctx.strokeStyle = '#3a9a3a'; ctx.lineWidth = 8 * s;
-              ctx.beginPath();
-              ctx.moveTo(-30 * s, -10 * s);
-              ctx.quadraticCurveTo(-10 * s, -10 * s + 18 * s * snakeWiggle, 10 * s, -10 * s);
-              ctx.quadraticCurveTo(22 * s, -10 * s - 14 * s * snakeWiggle, 30 * s, -10 * s);
-              ctx.stroke();
-              // Head
-              ctx.beginPath(); ctx.arc(32 * s, -10 * s, 9 * s, 0, Math.PI * 2); outlineFill('#2a7a2a');
-              ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(35 * s, -13 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(35 * s, -13 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-              // Forked tongue
-              ctx.strokeStyle = '#ff2222'; ctx.lineWidth = 2 * s;
-              ctx.beginPath(); ctx.moveTo(40 * s, -9 * s); ctx.lineTo(48 * s, -7 * s); ctx.moveTo(40 * s, -9 * s); ctx.lineTo(48 * s, -11 * s); ctx.stroke();
-              // Pattern
-              ctx.fillStyle = '#1a5a1a';
-              for (let p2 = -2; p2 <= 2; p2++) {
-                ctx.beginPath(); ctx.ellipse(p2 * 14 * s, -10 * s + Math.sin((p2 + el.phase) * 2) * snakeWiggle * 16 * s, 4 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
-              }
-              break;
-            }
-
-            case 'lizard': {
-              ctx.beginPath(); ctx.ellipse(0, -16 * s, 16 * s, 8 * s, 0, 0, Math.PI * 2); outlineFill('#7a9a20');
-              // Spiny back
-              ctx.fillStyle = '#5a7a10';
-              for (let sp = -3; sp <= 3; sp++) {
-                ctx.beginPath(); ctx.moveTo(sp * 5 * s, -22 * s); ctx.lineTo(sp * 5 * s - 3 * s, -30 * s); ctx.lineTo(sp * 5 * s + 3 * s, -30 * s); ctx.fill();
-              }
-              // Head
-              ctx.beginPath(); ctx.ellipse(16 * s, -18 * s, 10 * s, 7 * s, 0, 0, Math.PI * 2); outlineFill('#7a9a20');
-              ctx.beginPath(); ctx.arc(22 * s, -20 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#ff8800'; ctx.beginPath(); ctx.arc(22 * s, -20 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(22 * s, -20 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              // Tongue
-              ctx.strokeStyle = '#ff2222'; ctx.lineWidth = 2 * s;
-              ctx.beginPath(); ctx.moveTo(25 * s, -17 * s); ctx.lineTo(32 * s, -15 * s); ctx.moveTo(25 * s, -17 * s); ctx.lineTo(32 * s, -19 * s); ctx.stroke();
-              // Tail
-              ctx.strokeStyle = '#7a9a20'; ctx.lineWidth = 7 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-14 * s, -14 * s); ctx.quadraticCurveTo(-28 * s, -8 * s, -24 * s, 8 * s); ctx.stroke();
-              break;
-            }
-
-            case 'rooster': {
-              ctx.beginPath(); ctx.ellipse(0, -28 * s, 14 * s, 20 * s, 0, 0, Math.PI * 2); outlineFill('#b84820');
-              // Tail feathers
-              ctx.fillStyle = '#ff6600';
-              ctx.beginPath(); ctx.moveTo(-12 * s, -34 * s); ctx.quadraticCurveTo(-28 * s, -40 * s, -26 * s, -24 * s); ctx.fill();
-              ctx.fillStyle = '#ffcc00';
-              ctx.beginPath(); ctx.moveTo(-10 * s, -36 * s); ctx.quadraticCurveTo(-30 * s, -38 * s, -26 * s, -22 * s); ctx.fill();
-              ctx.fillStyle = '#ff3300';
-              ctx.beginPath(); ctx.moveTo(-14 * s, -32 * s); ctx.quadraticCurveTo(-26 * s, -44 * s, -22 * s, -26 * s); ctx.fill();
-              // Head
-              ctx.beginPath(); ctx.ellipse(8 * s, -48 * s, 11 * s, 11 * s, 0, 0, Math.PI * 2); outlineFill('#b84820');
-              // Red comb
-              ctx.fillStyle = '#ff2200';
-              ctx.beginPath(); ctx.moveTo(4 * s, -58 * s); ctx.lineTo(0, -68 * s); ctx.lineTo(6 * s, -62 * s); ctx.lineTo(10 * s, -70 * s); ctx.lineTo(14 * s, -60 * s); ctx.lineTo(16 * s, -58 * s); ctx.fill();
-              // Wattle
-              ctx.fillStyle = '#ff3322'; ctx.beginPath(); ctx.ellipse(6 * s, -42 * s, 4 * s, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Beak
-              ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.moveTo(16 * s, -47 * s); ctx.lineTo(24 * s, -46 * s); ctx.lineTo(16 * s, -44 * s); ctx.fill();
-              // Eye
-              ctx.beginPath(); ctx.arc(12 * s, -50 * s, 4 * s, 0, Math.PI * 2); outlineFill('white');
-              ctx.fillStyle = '#ff8800'; ctx.beginPath(); ctx.arc(12 * s, -50 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-              ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(12 * s, -50 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-              break;
-            }
-
-            case 'robot_bird': {
-              ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10 * s;
-              ctx.beginPath(); ctx.ellipse(0, -22 * s, 13 * s, 9 * s, 0, 0, Math.PI * 2); outlineFill('#8898b0');
-              ctx.beginPath(); ctx.ellipse(12 * s, -28 * s, 11 * s, 10 * s, 0, 0, Math.PI * 2); outlineFill('#8898b0');
-              ctx.shadowBlur = 0;
-              // Visor
-              ctx.fillStyle = '#00ccff'; ctx.beginPath(); ctx.rect(8 * s, -34 * s, 8 * s, 5 * s); ctx.fill();
-              // Beak
-              ctx.fillStyle = '#aabbcc'; ctx.beginPath(); ctx.moveTo(21 * s, -28 * s); ctx.lineTo(30 * s, -26 * s); ctx.lineTo(21 * s, -24 * s); ctx.fill();
-              // Panel lines
-              ctx.strokeStyle = '#6688aa'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.moveTo(-5 * s, -18 * s); ctx.lineTo(-5 * s, -26 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(0, -18 * s); ctx.lineTo(0, -26 * s); ctx.stroke();
-              // Mechanical wings
-              const mWing = Math.sin((now / 200) * (el.flapRate ?? 1) + el.phase) * 0.5;
-              ctx.save(); ctx.translate(-10 * s, -22 * s); ctx.rotate(-mWing);
-              ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-26 * s, -6 * s); ctx.lineTo(-22 * s, 6 * s); outlineFill('#7090a8');
-              ctx.fillStyle = '#003355'; ctx.fillRect(-18 * s, -4 * s, 6 * s, 3 * s); ctx.fillRect(-12 * s, -4 * s, 6 * s, 3 * s);
-              ctx.restore();
-              break;
-            }
-
-            default: { break; }
-          }
-
-          // ── Universal legs / feet for ALL ground animals ──────────────────
-          if (!el.isSkyAnimal) {
-            const legWalk = Math.sin(now / 280 + el.phase);
-            const legColor = el.subtype === 'cat' || el.subtype === 'stray_cat' || el.subtype === 'space_cat' ? '#778899'
-              : el.subtype === 'dog' ? '#c8943a'
-                : el.subtype === 'rabbit' ? '#e8ddd0'
-                  : el.subtype === 'bear' ? '#5a3010'
-                    : el.subtype === 'deer' ? '#c87840'
-                      : el.subtype === 'cow' ? '#f5f5f0'
-                        : el.subtype === 'horse' ? '#9B5c30'
-                          : el.subtype === 'fox' ? '#e06820'
-                            : el.subtype === 'squirrel' ? '#c87030'
-                              : el.subtype === 'goat' ? '#d8d0b8'
-                                : el.subtype === 'rooster' ? '#b84820'
-                                  : el.subtype === 'alien_creature' ? '#22dd66'
-                                    : el.subtype === 'rat' ? '#8a8070'
-                                      : el.subtype === 'owl' ? '#9a7a30'
-                                        : '#888877';
-
-            const legW = 5 * s;
-            const footW = 8 * s;
-            const footH = 4 * s;
-
-            if (['cat', 'stray_cat', 'space_cat', 'rabbit', 'squirrel', 'rat', 'alien_creature'].includes(el.subtype)) {
-              // Bipedal — 2 legs
-              const leftLeg = legWalk * 8 * s;
-              const rightLeg = -legWalk * 8 * s;
-              // Left leg
-              ctx.fillStyle = legColor;
-              ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.roundRect(-8 * s, -14 * s + leftLeg, legW, 14 * s, 2 * s); ctx.fill(); ctx.stroke();
-              // Left foot
-              ctx.beginPath(); ctx.ellipse(-6 * s, leftLeg, footW, footH, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-              // Right leg
-              ctx.beginPath(); ctx.roundRect(3 * s, -14 * s + rightLeg, legW, 14 * s, 2 * s); ctx.fill(); ctx.stroke();
-              // Right foot
-              ctx.beginPath(); ctx.ellipse(5 * s, rightLeg, footW, footH, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-
-            } else if (['bear', 'cow', 'goat', 'deer'].includes(el.subtype)) {
-              // Quadruped — 4 thick legs with hooves
-              const fl = legWalk * 6 * s;
-              const rl = -legWalk * 6 * s;
-              const legH = 18 * s;
-              const hoof = el.subtype === 'cow' || el.subtype === 'goat' || el.subtype === 'deer' ? '#333' : '#4a2800';
-              // Front-left
-              ctx.fillStyle = legColor; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.roundRect(-16 * s, -legH + fl, legW + 2 * s, legH, 2 * s); ctx.fill(); ctx.stroke();
-              ctx.fillStyle = hoof; ctx.beginPath(); ctx.ellipse(-14 * s, fl, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Front-right
-              ctx.fillStyle = legColor;
-              ctx.beginPath(); ctx.roundRect(-6 * s, -legH + rl, legW + 2 * s, legH, 2 * s); ctx.fill(); ctx.stroke();
-              ctx.fillStyle = hoof; ctx.beginPath(); ctx.ellipse(-4 * s, rl, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Back-left
-              ctx.fillStyle = legColor;
-              ctx.beginPath(); ctx.roundRect(4 * s, -legH + rl, legW + 2 * s, legH, 2 * s); ctx.fill(); ctx.stroke();
-              ctx.fillStyle = hoof; ctx.beginPath(); ctx.ellipse(6 * s, rl, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-              // Back-right
-              ctx.fillStyle = legColor;
-              ctx.beginPath(); ctx.roundRect(14 * s, -legH + fl, legW + 2 * s, legH, 2 * s); ctx.fill(); ctx.stroke();
-              ctx.fillStyle = hoof; ctx.beginPath(); ctx.ellipse(16 * s, fl, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-
-            } else if (['horse'].includes(el.subtype)) {
-              // Horse — 4 long legs
-              const fl = legWalk * 8 * s;
-              const rl = -legWalk * 8 * s;
-              const legH = 26 * s;
-              ctx.fillStyle = '#9B5c30'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              for (const [ox, phase] of [[-18 * s, fl], [-8 * s, rl], [6 * s, rl], [16 * s, fl]] as [number, number][]) {
-                ctx.beginPath(); ctx.roundRect(ox, -legH + phase, 6 * s, legH, 2 * s); ctx.fill(); ctx.stroke();
-                ctx.fillStyle = '#333'; ctx.beginPath(); ctx.ellipse(ox + 3 * s, phase, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#9B5c30';
-              }
-
-            } else if (['dog', 'fox'].includes(el.subtype)) {
-              // Dog/fox — 4 legs
-              const fl = legWalk * 6 * s;
-              const rl = -legWalk * 6 * s;
-              const legH = 16 * s;
-              const fc = el.subtype === 'fox' ? '#e06820' : '#c8943a';
-              ctx.fillStyle = fc; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5 * s;
-              for (const [ox, phase] of [[-12 * s, fl], [-4 * s, rl], [4 * s, rl], [12 * s, fl]] as [number, number][]) {
-                ctx.beginPath(); ctx.roundRect(ox, -legH + phase, 5 * s, legH, 2 * s); ctx.fill(); ctx.stroke();
-                // Paw
-                ctx.beginPath(); ctx.ellipse(ox + 2.5 * s, phase, 6 * s, 3.5 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-                // Toes
-                ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                for (let t = -2; t <= 2; t += 2) {
-                  ctx.beginPath(); ctx.arc(ox + 2.5 * s + t * 2 * s, phase - 1 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
-                }
-                ctx.fillStyle = fc;
-              }
-
-            } else if (el.subtype === 'rooster') {
-              // Rooster — 2 scaly legs + claws
-              const fl = legWalk * 7 * s;
-              const rl = -legWalk * 7 * s;
-              ctx.fillStyle = '#ddaa20'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              // Left leg (thigh + shin)
-              ctx.beginPath(); ctx.roundRect(-8 * s, -16 * s + fl, 5 * s, 10 * s, 1 * s); ctx.fill(); ctx.stroke();
-              ctx.beginPath(); ctx.roundRect(-9 * s, -6 * s + fl, 4 * s, 8 * s, 1 * s); ctx.fill(); ctx.stroke();
-              // Left claws
-              ctx.strokeStyle = '#997700'; ctx.lineWidth = 1.5 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(-8 * s, fl); ctx.lineTo(-16 * s, fl + 4 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(-8 * s, fl); ctx.lineTo(-8 * s, fl + 6 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(-8 * s, fl); ctx.lineTo(-2 * s, fl + 4 * s); ctx.stroke();
-              // Right leg
-              ctx.fillStyle = '#ddaa20'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.roundRect(3 * s, -16 * s + rl, 5 * s, 10 * s, 1 * s); ctx.fill(); ctx.stroke();
-              ctx.beginPath(); ctx.roundRect(2 * s, -6 * s + rl, 4 * s, 8 * s, 1 * s); ctx.fill(); ctx.stroke();
-              ctx.strokeStyle = '#997700'; ctx.lineWidth = 1.5 * s; ctx.lineCap = 'round';
-              ctx.beginPath(); ctx.moveTo(3 * s, rl); ctx.lineTo(-5 * s, rl + 4 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(3 * s, rl); ctx.lineTo(3 * s, rl + 6 * s); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(3 * s, rl); ctx.lineTo(10 * s, rl + 4 * s); ctx.stroke();
-
-            } else if (['owl'].includes(el.subtype)) {
-              // Owl — perch talons
-              ctx.fillStyle = '#cc8800'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.roundRect(-5 * s, -8 * s, 4 * s, 8 * s, 1 * s); ctx.fill(); ctx.stroke();
-              ctx.beginPath(); ctx.roundRect(1 * s, -8 * s, 4 * s, 8 * s, 1 * s); ctx.fill(); ctx.stroke();
-              ctx.strokeStyle = '#996600'; ctx.lineWidth = 2 * s; ctx.lineCap = 'round';
-              for (const [bx, by] of [[-8 * s, 2 * s], [-5 * s, 4 * s], [-2 * s, 2 * s], [1 * s, 2 * s], [4 * s, 4 * s], [7 * s, 2 * s]] as [number, number][]) {
-                ctx.beginPath(); ctx.moveTo(bx > 0 ? 3 * s : -3 * s, by - 2 * s); ctx.lineTo(bx, by); ctx.stroke();
-              }
-
-            } else if (['snake', 'lizard', 'crab', 'seal'].includes(el.subtype)) {
-              // No legs needed — they crawl/slither/flipper
-            } else {
-              // Generic 2 legs fallback
-              const fl = legWalk * 6 * s;
-              const rl = -legWalk * 6 * s;
-              ctx.fillStyle = legColor; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5 * s;
-              ctx.beginPath(); ctx.roundRect(-7 * s, -14 * s + fl, 5 * s, 14 * s, 2 * s); ctx.fill(); ctx.stroke();
-              ctx.beginPath(); ctx.ellipse(-5 * s, fl, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-              ctx.beginPath(); ctx.roundRect(2 * s, -14 * s + rl, 5 * s, 14 * s, 2 * s); ctx.fill(); ctx.stroke();
-              ctx.beginPath(); ctx.ellipse(4 * s, rl, 7 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-            }
-          }
-        }
-        ctx.restore();
-        });
-      });
-      ctx.globalAlpha = 1;
-      ctx.restore();
-
-      // Solid earth below the ground line, so the area under the slabs reads as
-      // ground instead of leaking the bright sky through the gaps.
-      const earthGrad = ctx.createLinearGradient(0, game.groundY, 0, canvas.height);
-      // Soil, not sky-blue: the band under the turf used to read as a black void
-      // with a green stripe above it.
-      earthGrad.addColorStop(0, '#2b1d13');
-      earthGrad.addColorStop(0.45, '#1a1109');
-      earthGrad.addColorStop(1, '#080506');
-      ctx.fillStyle = earthGrad;
-      ctx.fillRect(0, game.groundY, canvas.width, canvas.height - game.groundY);
-      // Faint horizontal strata give the soil some scale.
-      ctx.save();
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = '#000000';
-      for (let sy = game.groundY + 18; sy < canvas.height; sy += 26) {
-        ctx.fillRect(0, sy, canvas.width, 1.5);
-      }
-      ctx.restore();
-
-      // Pebbles and roots in the exposed soil. They are laid out in world space
-      // (not screen space) so they scroll with the level instead of sliding
-      // along under the cat. Deterministic positions keep them from flickering.
-      ctx.save();
-      const soilH = canvas.height - game.groundY;
-      const pebbleStep = 34;
-      const pebbleStart = Math.floor(game.scrollX / pebbleStep) - 1;
-      const pebbleEnd = pebbleStart + Math.ceil(canvas.width / pebbleStep) + 2;
-      for (let i = pebbleStart; i < pebbleEnd; i++) {
-        const sx = i * pebbleStep - game.scrollX;
-        const h1 = skyHashNoise(i * 1.7);
-        const h2 = skyHashNoise(i * 3.1 + 4);
-        const py = game.groundY + 12 + h1 * Math.max(8, soilH - 22);
-        const pr = 2 + h2 * 4.5;
-        ctx.fillStyle = `rgba(${h2 > 0.5 ? '150, 126, 100' : '92, 72, 54'}, ${0.2 + h1 * 0.22})`;
-        ctx.beginPath();
-        ctx.ellipse(sx + h2 * 20, py, pr, pr * 0.62, h1 * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-        // A thin root hanging from the turf every third slot.
-        if (i % 3 === 0 && soilH > 34) {
-          ctx.strokeStyle = 'rgba(74, 52, 32, 0.5)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(sx + 8, game.groundY + 4);
-          ctx.bezierCurveTo(sx + 2, game.groundY + 14, sx + 16, game.groundY + 20, sx + 9, game.groundY + 30 + h2 * 14);
-          ctx.stroke();
-        }
-      }
-
-      // Glowing mineral veins in the exposed soil. They give the cross-section
-      // a reason to exist and echo the neon palette above ground.
-      const veinStep = 116;
-      const veinStart = Math.floor(game.scrollX / veinStep) - 1;
-      const veinEnd = veinStart + Math.ceil(canvas.width / veinStep) + 2;
-      for (let i = veinStart; i < veinEnd; i++) {
-        const h = skyHashNoise(i * 5.7);
-        if (h < 0.4) continue;
-        const sx = i * veinStep - game.scrollX + h * 40;
-        const sy = game.groundY + 24 + h * Math.max(8, soilH - 46);
-        const tint = h > 0.72 ? '#4ce8ff' : h > 0.55 ? '#ff4fd8' : '#2bee79';
-        ctx.save();
-        ctx.globalAlpha = 0.28 + h * 0.22;
-        ctx.strokeStyle = tint;
-        ctx.fillStyle = tint;
-        ctx.shadowColor = tint;
-        ctx.shadowBlur = 8;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy + 7);
-        ctx.lineTo(sx + 4, sy - 5);
-        ctx.lineTo(sx + 9, sy + 2);
-        ctx.lineTo(sx + 5, sy + 10);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(sx + 9, sy + 4);
-        ctx.lineTo(sx + 14, sy - 2);
-        ctx.lineTo(sx + 15, sy + 8);
-        ctx.stroke();
-        ctx.restore();
-      }
-      ctx.restore();
-
-      // Platforms - dark neon slabs with a glowing top edge
-      game.platforms.forEach(plat => {
+      // Platforms - chunky cartoon slabs and planks. Every shape is a
+      // rounded, inked body with a saturated cap; that outline is what keeps
+      // the cat readable against the sky. The cap follows the biome, so a snow
+      // chapter gets snow, a desert gets sand and a meadow gets swaying grass.
+      const fam = familyForTheme(String(game.theme || ''));
+      const capStyle: 'grass' | 'snow' | 'sand' | 'stone' | 'metal' | 'lava' =
+        fam === 'snow' || fam === 'ice' ? 'snow'
+          : fam === 'desert' ? 'sand'
+            : fam === 'lava' ? 'lava'
+              : fam === 'space' ? 'metal'
+                : fam === 'city' && game.timeOfDay === 'NIGHT' ? 'stone'
+                  : 'grass';
+      game.platforms.forEach((plat: any, platIndex: number) => {
         const platX = plat.x - game.scrollX;
+        if (platX + plat.width < -40 || platX > canvas.width + 40) return;
         const platY = plat.y;
-        if (platX + plat.width > 0 && platX < canvas.width) {
-          if (plat.isGround && !plat.bossWalkway) {
-            // Mark/marknivå: gräs + jord
-            // The gradient spans a fixed depth instead of each slab's own height:
-            // adjacent ground platforms of different heights used to shade the
-            // same y differently, leaving a visible vertical seam every 480 px.
-            const gGrad = ctx.createLinearGradient(platX, platY, platX, game.groundY + 130);
-            // Väder-anpassat utseende
-            if (game.weather === 'SNÖIGT') {
-              gGrad.addColorStop(0, '#e8f4ff');   // Snö
-              gGrad.addColorStop(0.15, '#aac8e8'); // Is
-              gGrad.addColorStop(0.3, '#667788');  // Frusen jord
-              gGrad.addColorStop(1, '#445566');    // Djup jord
-            } else if (game.timeOfDay === 'NIGHT') {
-              gGrad.addColorStop(0, '#1e3a2a');   // Nattgräs
-              gGrad.addColorStop(0.2, '#12281a'); // Mörk yta
-              gGrad.addColorStop(1, '#070f0a');   // Djup jord
-            } else {
-              gGrad.addColorStop(0, '#4a9e42');   // Ljust gräs
-              gGrad.addColorStop(0.16, '#26602a'); // Gräs
-              gGrad.addColorStop(0.34, '#2e2010'); // Jord
-              gGrad.addColorStop(1, '#120a05');   // Djup jord
-            }
-            ctx.fillStyle = gGrad;
-          } else if (!plat.bossArena) {
-            // Luftplattform: sten/trä look
-            const pGrad = ctx.createLinearGradient(platX, platY, platX, platY + plat.height);
-            pGrad.addColorStop(0, '#4a8a5a');  // Ljus kant
-            pGrad.addColorStop(0.3, '#2a5a3a');
-            pGrad.addColorStop(1, '#1a3a25');
-            ctx.fillStyle = pGrad;
-          } else {
-            const arenaGrad = ctx.createLinearGradient(platX, platY, platX, platY + plat.height);
-            arenaGrad.addColorStop(0, '#815735');
-            arenaGrad.addColorStop(0.35, '#4b392e');
-            arenaGrad.addColorStop(1, '#262431');
-            ctx.fillStyle = arenaGrad;
-          }
+
+        if (plat.bossArena) {
+          drawGroundSlab(ctx, {
+            x: platX, y: platY, width: plat.width, height: plat.height,
+            pal: {
+              ...worldPal,
+              groundTop: blend(worldPal.groundTop, '#ffb347', 0.55),
+              groundBody: blend(worldPal.groundBody, '#8a4a2a', 0.45),
+            },
+            grass: false, cap: 'stone', time: timeSec,
+            seed: platIndex * 31, motion: reduceNow ? 0.2 : 1,
+          });
+          ctx.save();
+          ctx.strokeStyle = withAlpha('#ffb347', 0.7);
+          ctx.lineWidth = 2.5;
           ctx.beginPath();
-          ctx.roundRect(platX, platY, plat.width, plat.height, plat.isGround ? 0 : 4);
-          ctx.fill();            // Turf detail: lit rim and a shadow just beneath it.
-          if (plat.isGround && !plat.bossWalkway && !plat.bossArena) {
-            const groundNight = game.timeOfDay === 'NIGHT';
-            const groundSnow = game.weather === 'SNÖIGT';
-            ctx.fillStyle = groundSnow
-              ? 'rgba(255,255,255,0.9)'
-              : groundNight ? 'rgba(96,196,132,0.6)' : 'rgba(196,255,150,0.8)';
-            ctx.fillRect(platX, platY, plat.width, 2);
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.fillRect(platX, platY + 2, plat.width, 5);
-            // Neon spill: a cheap gradient band (no shadowBlur) so the ground
-            // glows green at night and mint by day, in line with the neon theme.
-            const spill = ctx.createLinearGradient(0, platY - 16, 0, platY);
-            spill.addColorStop(0, 'rgba(43,238,121,0)');
-            spill.addColorStop(1, `rgba(43,238,121,${groundNight ? 0.32 : 0.16})`);
-            ctx.fillStyle = spill;
-            ctx.fillRect(platX, platY - 16, plat.width, 16);
-          }
-
-          // Grass fringe on solid ground. Deterministic sine-based blades keep
-          // the edge organic without per-frame random flicker.
-          if (plat.isGround && !plat.bossWalkway && !plat.bossArena) {
-            const night = game.timeOfDay === 'NIGHT';
-            ctx.strokeStyle = game.weather === 'SNÖIGT'
-              ? 'rgba(235,248,255,0.9)'
-              : night ? 'rgba(74,160,108,0.85)' : 'rgba(120,214,96,0.9)';
-            ctx.lineWidth = 1.6;
-            ctx.lineCap = 'round';
-            const start = Math.max(platX + 3, -4);
-            const end = Math.min(platX + plat.width - 2, canvas.width + 4);
-            for (let gx = start; gx < end; gx += 6) {
-              const blade = 3.4 + (Math.sin(gx * 0.63) + 1) * 4.4;
-              ctx.beginPath();
-              ctx.moveTo(gx, platY + 1);
-              ctx.quadraticCurveTo(gx + Math.sin(gx * 0.31) * 2.4, platY - blade * 0.6, gx + Math.sin(gx * 0.31) * 3.4, platY - blade);
-              ctx.stroke();
-              // A second, darker blade behind the first adds density without
-              // turning the fringe into a solid comb.
-              if (gx % 12 === 0) {
-                ctx.strokeStyle = night ? 'rgba(40,96,64,0.65)' : 'rgba(70,150,60,0.7)';
-                ctx.beginPath();
-                ctx.moveTo(gx + 2, platY + 1);
-                ctx.quadraticCurveTo(gx + 5, platY - blade * 0.4, gx + 6, platY - blade * 0.8);
-                ctx.stroke();
-                ctx.strokeStyle = game.weather === 'SNÖIGT'
-                  ? 'rgba(235,248,255,0.9)'
-                  : night ? 'rgba(74,160,108,0.85)' : 'rgba(120,214,96,0.9)';
-              }
-            }
-            // Tiny wildflowers every few metres. They are deterministic, so
-            // they never pop in and out as the camera moves.
-            for (let gx = start + 18; gx < end; gx += 54) {
-              const h = skyHashNoise(gx * 0.21);
-              if (h < 0.45) continue;
-              const fy = platY - 5 - h * 4;
-              ctx.fillStyle = h > 0.8 ? '#ffd166' : h > 0.62 ? '#ff9ecb' : '#9df3ff';
-              ctx.beginPath();
-              ctx.arc(gx, fy, 1.5, 0, Math.PI * 2);
-              ctx.fill();
-              ctx.strokeStyle = night ? 'rgba(74,160,108,0.8)' : 'rgba(90,180,80,0.8)';
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(gx, fy + 1.5);
-              ctx.lineTo(gx, platY);
-              ctx.stroke();
-            }
-          }
-
-          // Kant-highlight (top edge). Ground gets a soft mint rim, floating
-          // ledges a brighter neon line, so the two read as different materials.
-          if (!plat.isGround || plat.y < game.groundY) {
-            const rimColor = plat.bossArena
-              ? '#ffd18a'
-              : plat.bossWalkway
-                ? '#53e5a0'
-                : game.weather === 'SNÖIGT'
-                  ? '#eaf8ff'
-                  : game.timeOfDay === 'NIGHT'
-                    ? '#5fe6a0'
-                    : '#a8ff9a';
-            ctx.fillStyle = rimColor;
-            ctx.fillRect(platX, platY, plat.width, plat.bossArena || plat.bossWalkway ? 4 : 2);
-            drawGroundRim(ctx, platX, platY, plat.width, rimColor, plat.isGround ? 0.35 : 0.65);
-          }
+          ctx.moveTo(platX + 6, platY + 2);
+          ctx.lineTo(platX + plat.width - 6, platY + 2);
+          ctx.stroke();
+          ctx.restore();
+        } else if (plat.isGround && !plat.bossWalkway) {
+          drawGroundSlab(ctx, {
+            x: platX, y: platY, width: plat.width, height: plat.height,
+            pal: worldPal, grass: true, cap: capStyle, time: timeSec,
+            seed: platIndex * 17.3, scrollX: game.scrollX,
+          });
+        } else {
+          // Floating ledges, bridges, moving lifts and boss walkways.
+          drawLedge(ctx, {
+            x: platX, y: platY, width: plat.width, height: plat.height,
+            pal: worldPal, time: timeSec, seed: platIndex * 9.1,
+            theme: String(game.theme || ''), moving: !!plat.mover,
+            accent: plat.bossWalkway ? '#53e5a0' : undefined,
+          });
           if (plat.bossWalkway) {
             ctx.save();
-            ctx.globalAlpha = 0.28;
+            ctx.globalAlpha = 0.2;
             ctx.fillStyle = '#20d98a';
-            ctx.fillRect(platX, platY + 4, plat.width, plat.height - 4);
+            ctx.fillRect(platX + 3, platY + 4, plat.width - 6, plat.height - 6);
             ctx.restore();
           }
-          if (plat.bossArena) {
+          if (plat.mover) {
+            // Dashed rail so a lift lane is legible before the lift arrives.
             ctx.save();
-            ctx.shadowColor = '#ff9f43';
-            ctx.shadowBlur = 16;
-            ctx.strokeStyle = 'rgba(255, 159, 67, 0.72)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(platX + 2, platY + 2, plat.width - 4, plat.height - 3);
-            ctx.restore();
-          }
-
-          // Floating platforms get a neon underglow and a soft drop shadow, so
-          // they read as hovering rather than pasted onto the sky.
-          if (!plat.isGround) {
-            if (plat.mover) {
-              // A faint dashed rail spanning the shuttle's travel: the player
-              // reads the lane before the platform ever reaches the edge.
-              ctx.save();
-              ctx.strokeStyle = 'rgba(126, 220, 255, 0.28)';
-              ctx.lineWidth = 2;
-              ctx.setLineDash([6, 9]);
-              ctx.beginPath();
-              if (plat.mover.axis === 'h') {
-                ctx.moveTo(plat.baseX - plat.mover.amp - game.scrollX, plat.baseY + plat.height / 2);
-                ctx.lineTo(plat.baseX + plat.mover.amp - game.scrollX, plat.baseY + plat.height / 2);
-              } else {
-                const railCx = plat.baseX - game.scrollX + plat.width / 2;
-                ctx.moveTo(railCx, plat.baseY - plat.mover.amp);
-                ctx.lineTo(railCx, plat.baseY + plat.mover.amp + plat.height);
-              }
-              ctx.stroke();
-              ctx.restore();
+            ctx.strokeStyle = withAlpha(worldPal.accent2, 0.45);
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([7, 10]);
+            ctx.lineDashOffset = -timeSec * 26;
+            ctx.beginPath();
+            if (plat.mover.axis === 'h') {
+              ctx.moveTo(plat.baseX - plat.mover.amp - game.scrollX, plat.baseY + plat.height / 2);
+              ctx.lineTo(plat.baseX + plat.mover.amp - game.scrollX, plat.baseY + plat.height / 2);
+            } else {
+              const railCx = plat.baseX - game.scrollX + plat.width / 2;
+              ctx.moveTo(railCx, plat.baseY - plat.mover.amp);
+              ctx.lineTo(railCx, plat.baseY + plat.mover.amp + plat.height);
             }
-            ctx.save();
-            ctx.globalAlpha = 0.5;
-            ctx.shadowColor = plat.bossArena ? '#ff9f43' : plat.mover ? '#4ce8ff' : '#2bee79';
-            ctx.shadowBlur = 18;
-            ctx.fillStyle = plat.bossArena ? 'rgba(255,159,67,0.5)' : plat.mover ? 'rgba(76, 232, 255, 0.5)' : 'rgba(43,238,121,0.45)';
-            ctx.beginPath();
-            ctx.roundRect(platX + 10, platY + plat.height - 1, Math.max(0, plat.width - 20), 2.5, 2);
-            ctx.fill();
+            ctx.stroke();
             ctx.restore();
-            ctx.fillStyle = 'rgba(0,0,0,0.22)';
-            ctx.beginPath();
-            ctx.ellipse(platX + plat.width / 2, platY + plat.height + 7, plat.width * 0.42, 4, 0, 0, Math.PI * 2);
-            ctx.fill();
           }
         }
       });
 
-      // Draw holes (chasms)
-      game.holes.forEach(hole => {
+      // Chasms: inked, deep and rounded, with a lit lip and hanging rock
+      // spikes. A drawing with depth, not a black rectangle.
+      game.holes.forEach((hole: any) => {
         const hx = hole.x - game.scrollX;
         if (hx + hole.width <= 0 || hx >= canvas.width) return;
-        const holeDepth = canvas.height - hole.y;
-        // A deep blue-black wall instead of flat black, so a pit reads as depth
-        // rather than as a cut-out where the ground simply stops.
-        const pitGrad = ctx.createLinearGradient(0, hole.y, 0, hole.y + holeDepth);
-        pitGrad.addColorStop(0, '#22344d');
-        pitGrad.addColorStop(0.28, '#142033');
-        pitGrad.addColorStop(0.68, '#0a1220');
-        pitGrad.addColorStop(1, '#05080f');
-        ctx.fillStyle = pitGrad;
-        ctx.fillRect(hx, hole.y, hole.width, holeDepth);
-        // Rock strata on the back wall: a few faint bands stop the chasm from
-        // reading as an empty rectangle.
-        ctx.save();
-        ctx.globalAlpha = 0.22;
-        ctx.strokeStyle = '#7f9fc4';
-        ctx.lineWidth = 1;
-        for (let band = 1; band <= 3; band++) {
-          const bandY = hole.y + (holeDepth * band) / 4;
-          ctx.beginPath();
-          ctx.moveTo(hx, bandY);
-          ctx.lineTo(hx + hole.width, bandY + 2);
-          ctx.stroke();
-        }
-        ctx.restore();
-        // Fog pooling at the bottom hides the hard edge of the canvas.
-        const pitFog = ctx.createLinearGradient(0, hole.y + holeDepth * 0.45, 0, hole.y + holeDepth);
-        pitFog.addColorStop(0, 'rgba(130,180,255,0)');
-        pitFog.addColorStop(1, 'rgba(130,180,255,0.28)');
-        ctx.fillStyle = pitFog;
-        ctx.fillRect(hx, hole.y, hole.width, holeDepth);
-        // Rim light on both lips so the ledge is readable before the drop.
-        ctx.save();
-        ctx.shadowColor = 'rgba(255, 90, 90, 0.9)';
-        ctx.shadowBlur = 14;
-        ctx.fillStyle = 'rgba(255,140,120,0.8)';
-        ctx.fillRect(hx - 1, hole.y - 2, 4, 12);
-        ctx.fillRect(hx + hole.width - 3, hole.y - 2, 4, 12);
-        ctx.restore();
+        drawChasm(ctx, hx, hole.y, hole.width, canvas.height - hole.y, worldPal);
       });
 
       // Hazards
@@ -7028,461 +5753,35 @@ export const PlayingView: React.FC<{
       ctx.globalCompositeOperation = 'source-over';
 
       // Enemies - Detailed premium enemies with ground shadows and animations
-      game.enemies.forEach(e => {
+      // Enemies - the same cartoon language as the hero: thick warm outlines,
+      // two flat body tones, a big readable eye and an idle animation. These
+      // replaced glossy gradient props that looked like clip-art next to the
+      // hand-drawn cat.
+      game.enemies.forEach((e: any) => {
         if (e.x < -500) return;
-
         const ex = e.x - game.scrollX;
         const ey = e.y;
         const ew = e.width;
         const eh = e.height;
+        if (ex + ew < -80 || ex > canvas.width + 80) return;
 
         if (e.isShadow) {
           drawShadowWraith(ctx, ex, ey, ew, eh, Date.now());
           return;
         }
 
-        // Ground shadow for enemies (hovering drones get their own beacon glow)
-        if (e.type !== 5) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2, ey + eh + 2, ew * 0.45, 5, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        if (e.type === 0) { // Dog enemy - Bulldog with spiked collar and jowls
-          const dogFacing = e.velocityX >= 0 ? 1 : -1;
-          const trot = Math.sin(Date.now() / 90) * 3;
-
-          // Muscular dog body
-          const dogGrad = ctx.createLinearGradient(ex, ey, ex, ey + eh);
-          dogGrad.addColorStop(0, '#8B2500');
-          dogGrad.addColorStop(0.6, '#5C1800');
-          dogGrad.addColorStop(1, '#3B0E00');
-          ctx.fillStyle = dogGrad;
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2, ey + eh * 0.58, ew * 0.44, eh * 0.38, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Bulldog Head
-          ctx.fillStyle = '#6E1D00';
-          ctx.beginPath();
-          ctx.arc(ex + ew / 2 + dogFacing * 4, ey + eh * 0.32, ew * 0.34, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Spiked Collar (rött halsband med silverspikar)
-          ctx.fillStyle = '#dc2626';
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2, ey + eh * 0.52, ew * 0.36, 6, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#f1f5f9';
-          for (let sp = -2; sp <= 2; sp++) {
-            ctx.beginPath();
-            ctx.arc(ex + ew / 2 + sp * 8, ey + eh * 0.52, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          // Floppy dark ears
-          ctx.fillStyle = '#3a1005';
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2 - 12, ey + eh * 0.22, 6, 11, -0.3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2 + 12, ey + eh * 0.22, 6, 11, 0.3, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Angry Eyes
-          ctx.fillStyle = '#fef08a';
-          ctx.beginPath(); ctx.arc(ex + ew / 2 - 8, ey + eh * 0.28, 5.5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(ex + ew / 2 + 8, ey + eh * 0.28, 5.5, 0, Math.PI * 2); ctx.fill();
-          // Pupils looking at cat
-          ctx.fillStyle = '#000000';
-          ctx.beginPath(); ctx.arc(ex + ew / 2 - 8 + dogFacing * 2, ey + eh * 0.28, 2.5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(ex + ew / 2 + 8 + dogFacing * 2, ey + eh * 0.28, 2.5, 0, Math.PI * 2); ctx.fill();
-
-          // Big Bulldog Snout & Jowls
-          ctx.fillStyle = '#4a1400';
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2 + dogFacing * 6, ey + eh * 0.4, 10, 8, 0, 0, Math.PI * 2);
-          ctx.fill();
-          // Black nose
-          ctx.fillStyle = '#000000';
-          ctx.beginPath();
-          ctx.arc(ex + ew / 2 + dogFacing * 6, ey + eh * 0.36, 4, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Bottom Canine Teeth (underbett)
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.moveTo(ex + ew / 2 + dogFacing * 2, ey + eh * 0.44);
-          ctx.lineTo(ex + ew / 2 + dogFacing * 4, ey + eh * 0.38);
-          ctx.lineTo(ex + ew / 2 + dogFacing * 6, ey + eh * 0.44);
-          ctx.closePath();
-          ctx.fill();
-
-          // Bulldog running legs
-          ctx.fillStyle = '#5C1800';
-          ctx.beginPath();
-          ctx.arc(ex + ew * 0.25, ey + eh - 3 + trot, 6, 0, Math.PI * 2);
-          ctx.arc(ex + ew * 0.75, ey + eh - 3 - trot, 6, 0, Math.PI * 2);
-          ctx.fill();
-
-        } else if (e.type === 1) { // Mouse enemy - Ninja rat with red headband
-          const ratFacing = e.velocityX >= 0 ? 1 : -1;
-          const trot = Math.sin(Date.now() / 70) * 3;
-
-          // Tail
-          ctx.strokeStyle = '#f472b6';
-          ctx.lineWidth = 3;
-          ctx.lineCap = 'round';
-          const tailWiggle = Math.sin(Date.now() / 100) * 6;
-          ctx.beginPath();
-          ctx.moveTo(ex + (ratFacing > 0 ? 6 : ew - 6), ey + eh * 0.7);
-          ctx.quadraticCurveTo(
-            ex + (ratFacing > 0 ? -18 : ew + 18), ey + eh * 0.7 + tailWiggle,
-            ex + (ratFacing > 0 ? -12 : ew + 12), ey + eh * 0.4
-          );
-          ctx.stroke();
-
-          // Gray Body
-          const mouseGrad = ctx.createLinearGradient(ex, ey, ex, ey + eh);
-          mouseGrad.addColorStop(0, '#94a3b8');
-          mouseGrad.addColorStop(1, '#475569');
-          ctx.fillStyle = mouseGrad;
-          ctx.beginPath();
-          ctx.ellipse(ex + ew / 2, ey + eh * 0.55, ew * 0.42, eh * 0.38, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Big Round Ears with pink inside
-          ctx.fillStyle = '#64748b';
-          ctx.beginPath(); ctx.arc(ex + ew / 2 - 10, ey + eh * 0.22, 9, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(ex + ew / 2 + 10, ey + eh * 0.22, 9, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#f472b6';
-          ctx.beginPath(); ctx.arc(ex + ew / 2 - 10, ey + eh * 0.22, 5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(ex + ew / 2 + 10, ey + eh * 0.22, 5, 0, Math.PI * 2); ctx.fill();
-
-          // Red Ninja Bandana on head
-          ctx.fillStyle = '#ef4444';
-          ctx.fillRect(ex + ew * 0.15, ey + eh * 0.25, ew * 0.7, 7);
-          // Bandana knot ribbons flying behind
-          const ribbonX = ratFacing > 0 ? ex + 4 : ex + ew - 4;
-          const ribbonWave = Math.sin(Date.now() / 120) * 4;
-          ctx.beginPath();
-          ctx.moveTo(ribbonX, ey + eh * 0.28);
-          ctx.lineTo(ribbonX - ratFacing * 14, ey + eh * 0.22 + ribbonWave);
-          ctx.lineTo(ribbonX - ratFacing * 16, ey + eh * 0.34 + ribbonWave);
-          ctx.closePath();
-          ctx.fill();
-
-          // Glowing Angry Red Eyes
-          ctx.fillStyle = '#ef4444';
-          ctx.beginPath(); ctx.arc(ex + ew / 2 - 6, ey + eh * 0.38, 3.5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(ex + ew / 2 + 6, ey + eh * 0.38, 3.5, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#fef08a';
-          ctx.beginPath(); ctx.arc(ex + ew / 2 - 6 + ratFacing, ey + eh * 0.38, 1.5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(ex + ew / 2 + 6 + ratFacing, ey + eh * 0.38, 1.5, 0, Math.PI * 2); ctx.fill();
-
-          // Sharp Buck Teeth
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(ex + ew / 2 - 3, ey + eh * 0.52, 2.5, 5);
-          ctx.fillRect(ex + ew / 2 + 0.5, ey + eh * 0.52, 2.5, 5);
-
-          // Little paws
-          ctx.fillStyle = '#cbd5e1';
-          ctx.beginPath();
-          ctx.arc(ex + ew * 0.3, ey + eh - 2 + trot, 4, 0, Math.PI * 2);
-          ctx.arc(ex + ew * 0.7, ey + eh - 2 - trot, 4, 0, Math.PI * 2);
-          ctx.fill();
-
-        } else if (e.type === 2) { // Spike ball - Floating mechanical saw drone
-          const radius = ew / 2;
-          const spin = Date.now() / 150;
-          const pulse = (Math.sin(Date.now() / 100) + 1) / 2;
-
-          // Glowing warning aura
-          ctx.save();
-          ctx.shadowColor = '#ef4444';
-          ctx.shadowBlur = 14 + pulse * 8;
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
-          ctx.beginPath();
-          ctx.arc(ex + radius, ey + radius, radius + 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-
-          // Rotating Razor Spikes
-          ctx.fillStyle = '#dc2626';
-          const spikeCount = 8;
-          for (let i = 0; i < spikeCount; i++) {
-            const angle = (i * 2 * Math.PI) / spikeCount + spin;
-            const spikeLength = radius * 0.75;
-
-            ctx.beginPath();
-            ctx.moveTo(
-              ex + radius + Math.cos(angle - 0.2) * (radius * 0.8),
-              ey + radius + Math.sin(angle - 0.2) * (radius * 0.8)
-            );
-            ctx.lineTo(
-              ex + radius + Math.cos(angle) * (radius + spikeLength),
-              ey + radius + Math.sin(angle) * (radius + spikeLength)
-            );
-            ctx.lineTo(
-              ex + radius + Math.cos(angle + 0.2) * (radius * 0.8),
-              ey + radius + Math.sin(angle + 0.2) * (radius * 0.8)
-            );
-            ctx.closePath();
-            ctx.fill();
-          }
-
-          // Metallic Outer Shell
-          const metalGrad = ctx.createRadialGradient(ex + radius - 4, ey + radius - 4, 2, ex + radius, ey + radius, radius);
-          metalGrad.addColorStop(0, '#64748b');
-          metalGrad.addColorStop(0.6, '#334155');
-          metalGrad.addColorStop(1, '#0f172a');
-          ctx.fillStyle = metalGrad;
-          ctx.beginPath();
-          ctx.arc(ex + radius, ey + radius, radius * 0.85, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#94a3b8';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-
-          // Pulsating Glowing Core (Evil Red Eye)
-          ctx.save();
-          ctx.shadowColor = '#ff0033';
-          ctx.shadowBlur = 12;
-          ctx.fillStyle = `rgba(255, ${Math.floor(40 + pulse * 60)}, 40, 1)`;
-          ctx.beginPath();
-          ctx.arc(ex + radius, ey + radius, radius * 0.38, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(ex + radius - 2, ey + radius - 2, radius * 0.12, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        } else if (e.type === 3) {
-          // Sentry turret: a low armoured pod on a tripod, with a scanning eye
-          // that turns red just before it fires.
-          const cx = ex + ew / 2;
-          const cy = ey + eh * 0.52;
-          const winding = (e.shootTimer ?? 99) < 34;
-          const eyeColor = winding ? '#ff3b3b' : '#ffb703';
-
-          // Tripod legs
-          ctx.strokeStyle = '#2b3546';
-          ctx.lineWidth = 4;
-          ctx.lineCap = 'round';
-          [-1, 0, 1].forEach((leg) => {
-            ctx.beginPath();
-            ctx.moveTo(cx + leg * 4, cy + 8);
-            ctx.lineTo(cx + leg * 13, ey + eh - 1);
-            ctx.stroke();
-          });
-
-          // Armoured pod
-          const podGrad = ctx.createLinearGradient(cx, cy - 16, cx, cy + 14);
-          podGrad.addColorStop(0, '#5b6b85');
-          podGrad.addColorStop(0.55, '#303b4e');
-          podGrad.addColorStop(1, '#161d29');
-          ctx.fillStyle = podGrad;
-          ctx.beginPath();
-          ctx.roundRect(cx - 16, cy - 14, 32, 28, 9);
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          // Shoulder plates + antenna
-          ctx.fillStyle = '#3d4a60';
-          ctx.beginPath();
-          ctx.roundRect(cx - 20, cy - 6, 7, 12, 3);
-          ctx.roundRect(cx + 13, cy - 6, 7, 12, 3);
-          ctx.fill();
-          ctx.strokeStyle = '#7d8ba3';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(cx + 11, cy - 14);
-          ctx.lineTo(cx + 15, cy - 24);
-          ctx.stroke();
-          ctx.fillStyle = '#ff4d4d';
-          ctx.beginPath();
-          ctx.arc(cx + 15, cy - 25, 2.4, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Eye lens, glowing stronger while charging
-          ctx.save();
-          ctx.shadowColor = eyeColor;
-          ctx.shadowBlur = winding ? 18 : 8;
-          ctx.fillStyle = eyeColor;
-          ctx.beginPath();
-          ctx.arc(cx, cy, winding ? 6.2 : 5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#1a0d05';
-          ctx.beginPath();
-          ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.arc(cx, cy, winding ? 9.5 : 8, 0, Math.PI * 2);
-          ctx.stroke();
-        } else if (e.type === 5) {
-          // Hover drone: patrolling neon sentinel with spinning rotors and a
-          // scanning eye that turns red and tracks the cat once it is close.
-          const dcx = ex + ew / 2;
-          const dcy = ey + eh / 2;
-          const rotorT = Date.now() / 30;
-          const aggro = !!e.aggroTo;
-          // Hover beacon on the ground far below reads the threat's lane.
-          ctx.save();
-          ctx.globalAlpha = 0.35 + 0.25 * Math.sin(Date.now() / 240);
-          ctx.shadowColor = aggro ? '#ff4060' : '#7ee7ff';
-          ctx.shadowBlur = 12;
-          ctx.fillStyle = aggro ? 'rgba(255, 64, 96, 0.5)' : 'rgba(126, 231, 255, 0.4)';
-          ctx.beginPath();
-          ctx.ellipse(dcx, game.groundY - 4, 13, 3.2, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          // Rotor blur lines above the pod
-          ctx.strokeStyle = 'rgba(190, 220, 255, 0.75)';
-          ctx.lineWidth = 2.5;
-          ctx.lineCap = 'round';
-          [-1, 1].forEach((side) => {
-            const rotorX = dcx + side * 14;
-            ctx.beginPath();
-            ctx.moveTo(rotorX - 9 + Math.sin(rotorT) * 1.5, ey + 3);
-            ctx.lineTo(rotorX + 9, ey + 3);
-            ctx.stroke();
-            ctx.fillStyle = '#3a4a66';
-            ctx.beginPath();
-            ctx.arc(rotorX, ey + 5, 3.2, 0, Math.PI * 2);
-            ctx.fill();
-          });
-          // Armoured pod
-          const droneGrad = ctx.createLinearGradient(dcx, ey, dcx, ey + eh);
-          droneGrad.addColorStop(0, '#8ea4c6');
-          droneGrad.addColorStop(0.55, '#42526e');
-          droneGrad.addColorStop(1, '#1d2738');
-          ctx.fillStyle = droneGrad;
-          ctx.beginPath();
-          ctx.ellipse(dcx, dcy, ew * 0.42, eh * 0.42, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          // Panel seam
-          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.moveTo(dcx - ew * 0.24, dcy + 4);
-          ctx.lineTo(dcx + ew * 0.24, dcy + 4);
-          ctx.stroke();
-          // Scanning eye tracks the cat
-          ctx.save();
-          ctx.shadowColor = aggro ? '#ff4060' : '#7ee7ff';
-          ctx.shadowBlur = aggro ? 16 : 8;
-          ctx.fillStyle = aggro ? '#ff4060' : '#7ee7ff';
-          ctx.beginPath();
-          ctx.arc(dcx, dcy - 1, 5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#0b1020';
-          const pupilOffset = Math.sin(rotorT / 40) * 1.4;
-          ctx.beginPath();
-          ctx.arc(dcx + pupilOffset, dcy - 1, 2.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          // Tail antenna with a running light
-          ctx.strokeStyle = '#93a7c4';
-          ctx.lineWidth = 2;
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(dcx - ew * 0.4, dcy + 2);
-          ctx.lineTo(dcx - ew * 0.62, dcy + 7);
-          ctx.stroke();
-          ctx.fillStyle = aggro ? '#ff4060' : '#2bee79';
-          ctx.beginPath();
-          ctx.arc(dcx - ew * 0.62, dcy + 7, 2.2, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          // Charger beetle: wide, low, with a glowing horn and splayed legs.
-          const charging = (e.chargeTimer ?? 0) > 0;
-          const facing = e.velocityX >= 0 ? 1 : -1;
-          const cx = ex + ew / 2;
-          const baseY = ey + eh;
-          const shell = ctx.createLinearGradient(cx, ey + 8, cx, baseY);
-          if (charging) {
-            shell.addColorStop(0, '#ff7b5a');
-            shell.addColorStop(0.55, '#c0392b');
-            shell.addColorStop(1, '#5a120c');
-          } else {
-            shell.addColorStop(0, '#8b5cf6');
-            shell.addColorStop(0.5, '#6d28d9');
-            shell.addColorStop(1, '#2e1065');
-          }
-          // Legs
-          ctx.strokeStyle = '#1e1b4b';
-          ctx.lineWidth = 3;
-          ctx.lineCap = 'round';
-          [-1, 1].forEach((side) => {
-            for (let i = 0; i < 2; i++) {
-              ctx.beginPath();
-              ctx.moveTo(cx + side * (6 + i * 8), ey + eh * 0.62);
-              ctx.lineTo(cx + side * (16 + i * 8), baseY - 2);
-              ctx.stroke();
-            }
-          });
-          // Shell
-          ctx.save();
-          ctx.shadowColor = charging ? '#ff5f3b' : '#7c3aed';
-          ctx.shadowBlur = charging ? 22 : 8;
-          ctx.fillStyle = shell;
-          ctx.beginPath();
-          ctx.ellipse(cx, ey + eh * 0.55, ew * 0.52, eh * 0.42, 0, Math.PI, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          // Shell seam + spots
-          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(cx, ey + eh * 0.2);
-          ctx.lineTo(cx, ey + eh * 0.58);
-          ctx.stroke();
-          ctx.fillStyle = 'rgba(255,255,255,0.35)';
-          ctx.beginPath();
-          ctx.arc(cx - 7, ey + eh * 0.36, 2.4, 0, Math.PI * 2);
-          ctx.arc(cx + 7, ey + eh * 0.33, 2, 0, Math.PI * 2);
-          ctx.fill();
-          // Head + glowing horn pointing at the direction of travel
-          ctx.fillStyle = charging ? '#ffb4a2' : '#3b2b63';
-          ctx.beginPath();
-          ctx.arc(cx + facing * 14, ey + eh * 0.62, 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-          ctx.lineWidth = 1.8;
-          ctx.stroke();
-          ctx.fillStyle = charging ? '#fff1a8' : '#fbbf24';
-          ctx.beginPath();
-          ctx.moveTo(cx + facing * 20, ey + eh * 0.56);
-          ctx.lineTo(cx + facing * 34, ey + eh * 0.32);
-          ctx.lineTo(cx + facing * 18, ey + eh * 0.44);
-          ctx.closePath();
-          ctx.fill();
-          // Eyes
-          ctx.fillStyle = charging ? '#fff' : '#fca5a5';
-          ctx.beginPath();
-          ctx.arc(cx + facing * 17, ey + eh * 0.6, 2.4, 0, Math.PI * 2);
-          ctx.fill();
-          // Telegraph ring while winding up
-          if (charging) {
-            ctx.strokeStyle = 'rgba(255,90,60,0.7)';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(cx, ey + eh * 0.55, ew * 0.68 + Math.sin(Date.now() / 70) * 3, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-        }
+        drawCartoonEnemy(ctx, {
+          type: e.type,
+          x: ex,
+          y: ey,
+          w: ew,
+          h: eh,
+          now: Date.now(),
+          facing: (e.velocityX ?? e.direction ?? 1) >= 0 ? 1 : -1,
+          charging: (e.chargeTimer ?? 0) > 0,
+          winding: (e.shootTimer ?? 99) < 34,
+          aggro: !!e.aggroTo,
+        });
       });
 
       // Enemy projectiles: slow glowing orbs with a readable core.
@@ -8426,7 +6725,35 @@ export const PlayingView: React.FC<{
         );
       }
 
-      drawGhost(ctx, game);
+      // Meteors: a burning rock with a long tail, drawn in world space so it
+      // reads as a physical object falling through the level.
+      (game.meteors || []).forEach((m: any) => {
+        const mx = m.x - game.scrollX;
+        if (mx < -120 || mx > canvas.width + 120) return;
+        ctx.save();
+        const tail = ctx.createLinearGradient(mx, m.y - 90, mx, m.y);
+        tail.addColorStop(0, 'rgba(255,120,40,0)');
+        tail.addColorStop(1, 'rgba(255,190,90,0.85)');
+        ctx.strokeStyle = tail;
+        ctx.lineWidth = m.r * 1.15;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(mx - 6, m.y - 90);
+        ctx.lineTo(mx, m.y);
+        ctx.stroke();
+        ctx.fillStyle = '#ff8f43';
+        ctx.strokeStyle = '#3a1a10';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(mx, m.y, m.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#ffd166';
+        ctx.beginPath();
+        ctx.arc(mx - m.r * 0.25, m.y - m.r * 0.25, m.r * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
 
       // Player
       // Squash and stretch scale around the cat's feet so it never floats off the floor.
@@ -8449,11 +6776,39 @@ export const PlayingView: React.FC<{
         ctx.restore();
       });
 
+      // Landing ring: a thin, expanding ellipse that fades in a quarter second.
+      if (game.landRing && game.landRing.life > 0) {
+        const lr = game.landRing;
+        lr.life--;
+        const k = 1 - lr.life / 14;
+        ctx.save();
+        ctx.globalAlpha = (1 - k) * 0.55;
+        ctx.strokeStyle = worldPal.groundRim;
+        ctx.lineWidth = 3 * (1 - k) + 1;
+        ctx.beginPath();
+        ctx.ellipse(lr.x - game.scrollX, lr.y, lr.r * (0.5 + k * 1.6), lr.r * (0.14 + k * 0.4), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // Contact shadow keeps the cat glued to the platform instead of floating.
       // Only drawn while the cat is actually on the ground/grass - it must not
       // linger under the cat mid-jump.
       if (game.player.onGround) {
         ctx.save();
+        // A lit patch of ground behind the paws. The baked hero is a dark cat on
+        // a dark slab; this soft light pool is what stops it reading as a hole in
+        // the floor, and unlike a glow around the body it never washes out the
+        // artwork itself.
+        const halo = ctx.createRadialGradient(px + pw / 2, py + ph, 4, px + pw / 2, py + ph, 62);
+        halo.addColorStop(0, 'rgba(255,252,238,0.26)');
+        halo.addColorStop(0.5, 'rgba(226,246,255,0.11)');
+        halo.addColorStop(1, 'rgba(226,246,255,0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.ellipse(px + pw / 2, py + ph, 62, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.fillStyle = 'rgba(0,0,0,0.26)';
         ctx.beginPath();
         // Sized to the atlas cat's drawn width (66 px) rather than the hitbox.
@@ -8466,14 +6821,12 @@ export const PlayingView: React.FC<{
       const shifted = game.shadowActive > 0;
       if (shifted) ctx.globalAlpha = 0.84;
       else if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Date.now() / 55);
-      // One hero cat everywhere: the same articulated drawing as the menu,
-      // shop and attract loop. The origin is the paw line (py + ph), so the cat
-      // stands on the exact top of the platform rather than hovering above it.
+      // The hero cat is the baked atlas sprite again - the same drawing the
+      // game shipped with. The origin is the paw line (py + ph), so the cat
+      // stands on the exact top of the platform instead of hovering above it.
       const catFacing: 1 | -1 = game.player.facing === -1 ? -1 : 1;
       const catGrounded = !!game.player.onGround;
       const catSpeed = game.player.velocityX || 0;
-      // The baked 3D atlas is the hero now; the vector cat stays as the
-      // fallback for the frames before the PNG has decoded.
       const atlasDrawn = drawCatAtlasSprite(ctx, px + pw / 2, py + ph, {
         color: shifted ? '#7c3aed' : game.player.color,
         accent: shifted ? '#e9d5ff' : game.player.accent,
@@ -8494,6 +6847,7 @@ export const PlayingView: React.FC<{
         // hitbox.
         w: 66,
       });
+      // Vector cat only until the atlas PNG has decoded.
       if (!atlasDrawn) {
         drawCatSprite(ctx, px + pw / 2, py + ph, {
           color: shifted ? '#7c3aed' : game.player.color,
@@ -8507,13 +6861,8 @@ export const PlayingView: React.FC<{
           phase: game.player.runCycle || 0,
           dashing: (game.player.dashing || 0) > 0,
           blinking: !!game.player.isBlinking,
-          // The blaster flashes for a few frames after each shot.
           shooting: (game.shootCooldown || 0) > 6,
           facing: catFacing,
-          // The drawing is about 46 x 46 at scale 1 (paws at y=0, ear tips at
-          // y=-46). Scale it into the hitbox without stretching the anatomy:
-          // ~50 px wide and ~56 px tall, feet on the platform. The hitbox
-          // stays 50 x 70 so the collision code is unchanged.
           sx: pw / 46,
           sy: ph / 62,
         });
@@ -8658,9 +7007,9 @@ export const PlayingView: React.FC<{
         grade.addColorStop(1, 'rgba(60,20,80,0.16)');
       } else {
         // Cyan-to-magenta wash keeps daylight stages inside the neon palette.
-        grade.addColorStop(0, 'rgba(90,240,255,0.10)');
+        grade.addColorStop(0, 'rgba(120,235,255,0.06)');
         grade.addColorStop(0.5, 'rgba(255,255,255,0)');
-        grade.addColorStop(1, 'rgba(170,60,255,0.12)');
+        grade.addColorStop(1, 'rgba(170,90,255,0.07)');
       }
       ctx.fillStyle = grade;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -8672,9 +7021,27 @@ export const PlayingView: React.FC<{
         canvas.width / 2, canvas.height / 2, canvas.height * 0.85
       );
       vignette.addColorStop(0, 'rgba(0,0,0,0)');
-      vignette.addColorStop(1, 'rgba(0,0,0,0.45)');
+      vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Two surprise events that are pure atmosphere. Both fade in and out
+      // around their own window so neither ever snaps on.
+      if (game.surprise && (game.surprise.id === 'blackout' || game.surprise.id === 'goldRush')) {
+        const evDef = EVENTS[game.surprise.id];
+        const elapsed = evDef.warning + evDef.duration - game.surprise.timer;
+        // 0 during the warning, 0..1 over the first 24 frames of the event,
+        // then back to 0 over the last 30 frames.
+        const before = Math.max(0, elapsed - evDef.warning);
+        const fadeIn = Math.min(1, before / 24);
+        const fadeOut = Math.min(1, Math.max(0, game.surprise.timer) / 30);
+        const strength = Math.min(fadeIn, fadeOut);
+        if (game.surprise.id === 'blackout') {
+          drawBlackout(ctx, game, { width: canvas.width, height: canvas.height, strength });
+        } else {
+          drawGoldRush(ctx, game, { width: canvas.width, height: canvas.height, strength, time: timeSec });
+        }
+      }
 
       // Lightning is drawn in world space, underneath the rain, so the drops
       // read as falling in front of a strike behind them.
@@ -8760,7 +7127,7 @@ export const PlayingView: React.FC<{
       // rather than paint.
       const cinematic = progress.settings.cinematicEffects !== false;
       if (q.bloom && cinematic && !isReducedMotion(progress.settings.reduceMotion)) {
-        drawBloom(ctx, canvas, isNight ? 0.22 : 0.14);
+        drawBloom(ctx, canvas, isNight ? 0.18 : 0.1);
       }
 
       // Screen-space finish: volumetric light, ground mist, vignette and a
@@ -8791,6 +7158,13 @@ export const PlayingView: React.FC<{
           levelType: game.levelType,
           timer: game.levelTimer || 0,
           miniEvent: game.miniEvent?.active ? game.miniEvent.type : 'NONE',
+          twist: game.twist?.id || 'none',
+          twistAccent: game.twist?.accent || '#7ee7ff',
+          surprise: game.surprise ? game.surprise.id : null,
+          surpriseName: game.surprise ? EVENTS[game.surprise.id].name : '',
+          surpriseIcon: game.surprise ? EVENTS[game.surprise.id].icon : 'bolt',
+          surpriseAccent: game.surprise ? EVENTS[game.surprise.id].accent : '#7ee7ff',
+          surpriseProgress: game.surprise ? game.surprise.progress : 0,
           xp: game.xp || 0,
           runLevel: game.runLevel || 1,
           xpNeeded: game.xpNeeded || 120,
@@ -9012,11 +7386,54 @@ export const PlayingView: React.FC<{
                   })}
                 </div>
                 <div className={`mt-1 items-center justify-between gap-2 text-[8.5px] font-bold uppercase tracking-[0.14em] text-white/40 ${isMobile ? 'hidden' : 'hidden sm:flex'}`}>
-                  <span className="truncate">{t(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}</span>
+                  <span className="truncate">{t(placeForLevel(currentLevel, gameRef.current?.theme))}</span>
                   <span className="tabular shrink-0">{t('RANK {r} · {a}/{b} XP', { r: stats.runLevel, a: stats.xpIntoLevel, b: stats.xpNeeded })}</span>
                 </div>
               </div>
 
+              {/* This stage's named rule, always visible while it is active. */}
+              {stats.twist && stats.twist !== 'none' && (
+                <div
+                  className="flex w-full max-w-[300px] items-center gap-1.5 rounded-full border bg-black/50 px-2.5 py-1 backdrop-blur-md"
+                  style={{ borderColor: `${stats.twistAccent}55` }}
+                  title={t((TWISTS[stats.twist as keyof typeof TWISTS] || TWISTS.none).detail)}
+                >
+                  <span
+                    className="material-symbols-outlined text-[14px]"
+                    style={{ color: stats.twistAccent }}
+                  >
+                    {(TWISTS[stats.twist as keyof typeof TWISTS] || TWISTS.none).icon}
+                  </span>
+                  <span
+                    className="truncate text-[9px] font-black uppercase tracking-[0.16em]"
+                    style={{ color: stats.twistAccent }}
+                  >
+                    {t((TWISTS[stats.twist as keyof typeof TWISTS] || TWISTS.none).name)}
+                  </span>
+                </div>
+              )}
+              {/* A surprise event, with the warning spelled out before it lands. */}
+              {stats.surprise && (
+                <div
+                  className="animate-pulse flex w-full max-w-[320px] items-center gap-2 rounded-full border bg-black/65 px-3 py-1 backdrop-blur-md"
+                  style={{ borderColor: `${stats.surpriseAccent}99`, boxShadow: `0 0 22px ${stats.surpriseAccent}44` }}
+                >
+                  <span className="material-symbols-outlined text-[15px]" style={{ color: stats.surpriseAccent }}>
+                    {stats.surpriseIcon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: stats.surpriseAccent }}>
+                      {t(stats.surpriseName)}
+                    </span>
+                    <span className="mt-0.5 block h-1 overflow-hidden rounded-full bg-white/15">
+                      <span
+                        className="block h-full rounded-full"
+                        style={{ width: `${Math.round((stats.surpriseProgress || 0) * 100)}%`, background: stats.surpriseAccent }}
+                      />
+                    </span>
+                  </span>
+                </div>
+              )}
               {stats.combo > 1 && (
                 <div className="w-full max-w-[260px] rounded-full bg-black/45 px-2.5 py-1 backdrop-blur-md">
                   <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-[0.16em]">
@@ -9140,7 +7557,7 @@ export const PlayingView: React.FC<{
           <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-4">
             <div className="level-intro-card animate-level-intro text-center">
               <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary/80">
-                {t(CHAPTER_NAMES[(Math.max(1, currentLevel) - 1) % CHAPTER_NAMES.length] || 'Neon City')}
+                {t(placeForLevel(currentLevel, gameRef.current?.theme))}
               </p>
               <h2 className="mt-2 text-5xl font-black uppercase leading-none tracking-tight text-white md:text-6xl">
                 {t('Nivå {n}', { n: currentLevel })}
@@ -9164,6 +7581,27 @@ export const PlayingView: React.FC<{
               <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
                 {t(LEVEL_LAYOUT_META[getLevelLayout(currentLevel)].name)}
               </p>
+              {gameRef.current?.twist && gameRef.current.twist.id !== 'none' && (
+                <div
+                  className="mx-auto mt-3 flex max-w-[300px] items-center gap-2 rounded-2xl border px-3 py-1.5"
+                  style={{
+                    borderColor: `${gameRef.current.twist.accent}66`,
+                    background: `${gameRef.current.twist.accent}14`,
+                  }}
+                >
+                  <span className="material-symbols-outlined text-[18px]" style={{ color: gameRef.current.twist.accent }}>
+                    {gameRef.current.twist.icon}
+                  </span>
+                  <span className="text-left">
+                    <span className="block text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: gameRef.current.twist.accent }}>
+                      {t('Dagens regel · {n}', { n: t(gameRef.current.twist.name) })}
+                    </span>
+                    <span className="block text-[10px] font-medium leading-tight text-white/55">
+                      {t(gameRef.current.twist.detail)}
+                    </span>
+                  </span>
+                </div>
+              )}
               <p className="mt-3 text-[9px] font-black uppercase tracking-[0.2em] text-primary/70">
                 {isTouchDevice ? t('Tryck för att börja') : t('Tryck valfri tangent för att börja')}
               </p>
@@ -9328,7 +7766,7 @@ export const PlayingView: React.FC<{
           const stars = grade === 'S' || grade === 'A' ? 3 : grade === 'B' ? 2 : 1;
           return createPortal(<div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
             <div className="flex min-h-full items-center justify-center">
-              <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#101a2c] to-[#060b16] p-5 shadow-[0_40px_120px_-40px_rgba(0,0,0,1)] md:p-7">
+              <div className="toon-card relative w-full max-w-md overflow-hidden rounded-[1.75rem] p-5 md:p-7">
                 {/* Accent light behind the grade */}
                 <div
                   className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full blur-3xl"
@@ -9338,15 +7776,15 @@ export const PlayingView: React.FC<{
 
                 <div className="relative flex items-start gap-4">
                   <div
-                    className="flex size-20 shrink-0 flex-col items-center justify-center rounded-2xl border-2 md:size-24"
-                    style={{ borderColor: gradeTone.ring, boxShadow: `0 0 32px ${gradeTone.glow}`, background: 'rgba(255,255,255,0.03)' }}
+                    className="flex size-20 shrink-0 flex-col items-center justify-center rounded-2xl border-[3px] border-[#12182b] md:size-24"
+                    style={{ background: gradeTone.ring, boxShadow: '0 4px 0 0 #12182b' }}
                   >
-                    <span className="font-display text-4xl font-black leading-none md:text-5xl" style={{ color: gradeTone.text }}>{grade}</span>
-                    <span className="mt-1 text-[8px] font-black uppercase tracking-[0.2em] text-white/40">{t('Betyg')}</span>
+                    <span className="font-display text-4xl font-black leading-none text-[#12182b] md:text-5xl">{grade}</span>
+                    <span className="mt-1 text-[8px] font-black uppercase tracking-[0.2em] text-[#12182b]/60">{t('Betyg')}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="eyebrow text-primary">{t('Nivå {n} klar', { n: currentLevel })}</p>
-                    <h2 className="mt-1 font-display text-2xl font-black uppercase leading-tight tracking-tight text-white md:text-3xl">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0f8a3c]">{t('Nivå {n} klar', { n: currentLevel })}</p>
+                    <h2 className="mt-1 font-display text-2xl font-black uppercase leading-tight tracking-tight text-[#12182b] md:text-3xl">
                       {t('Snyggt jobbat!')}
                     </h2>
                     <div className="mt-1.5 flex items-center gap-1">
@@ -9355,14 +7793,14 @@ export const PlayingView: React.FC<{
                           key={i}
                           className="material-symbols-outlined text-lg"
                           style={{
-                            color: i < stars ? gradeTone.ring : 'rgba(255,255,255,0.12)',
-                            filter: i < stars ? `drop-shadow(0 0 6px ${gradeTone.glow})` : 'none',
+                            color: i < stars ? gradeTone.ring : 'rgba(18,24,43,0.18)',
+                            WebkitTextStroke: i < stars ? '1.5px #12182b' : undefined,
                           }}
                         >
                           star
                         </span>
                       ))}
-                      <span className="ml-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                      <span className="ml-1 text-[10px] font-black uppercase tracking-wider text-[#12182b]/50">
                         {t((LEVEL_MODE_META[levelSummary.levelType] || LEVEL_MODE_META.Classic).short)} · {levelSummary.time}s
                       </span>
                     </div>
@@ -9378,16 +7816,16 @@ export const PlayingView: React.FC<{
                     { label: t('Nästan'), value: levelSummary.nearMisses, tone: 'text-[#7ef7c2]' },
                     { label: t('Runnivå'), value: levelSummary.runLevel, tone: 'text-white' },
                   ].map((s) => (
-                    <div key={s.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2 py-2.5 text-center">
-                      <p className={`tabular text-lg font-black leading-none ${s.tone}`}>{s.value}</p>
-                      <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-white/35">{s.label}</p>
+                    <div key={s.label} className="rounded-2xl border-2 border-[#12182b]/25 bg-[#12182b]/[0.05] px-2 py-2.5 text-center">
+                      <p className={`tabular text-lg font-black leading-none text-[#12182b]`}>{s.value}</p>
+                      <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-[#12182b]/45">{s.label}</p>
                     </div>
                   ))}
                 </div>
 
-                <div className={`relative mt-3 flex items-center justify-center gap-2 rounded-2xl border p-2.5 ${levelSummary.noHit ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-white/[0.03]'}`}>
-                  <span className={`material-symbols-outlined text-base ${levelSummary.noHit ? 'text-primary' : 'text-white/35'}`}>verified</span>
-                  <span className={`text-[11px] font-black uppercase tracking-wider ${levelSummary.noHit ? 'text-primary' : 'text-white/45'}`}>
+                <div className={`relative mt-3 flex items-center justify-center gap-2 rounded-2xl border-2 p-2.5 ${levelSummary.noHit ? 'border-[#0c3a20] bg-[#c9fbd9] text-[#0c3a20]' : 'border-[#12182b]/20 bg-[#12182b]/[0.04] text-[#12182b]/55'}`}>
+                  <span className="material-symbols-outlined text-base">verified</span>
+                  <span className="text-[11px] font-black uppercase tracking-wider">
                     {levelSummary.noHit ? t('Felfri · utan skada +750') : levelSummary.perfect ? t('Perfekt nivå +500') : t('Nivå avklarad')}
                   </span>
                 </div>
@@ -9402,13 +7840,13 @@ export const PlayingView: React.FC<{
                 {/* Risk/reward: one of three seeded cards. Every option has a
                     cost, so this is a build decision, not a free upgrade. */}
                 {perkOffer.length > 0 && (
-                  <div className="relative mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="relative mt-4 rounded-2xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-base text-primary">style</span>
-                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-white/60">{t('Välj ett kort inför nästa nivå')}</span>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-[#12182b]/60">{t('Välj ett kort inför nästa nivå')}</span>
                       </span>
-                      {perkChoice && <span className="text-[9px] font-black uppercase tracking-wider text-primary">{t('Låst för rundan')}</span>}
+                      {perkChoice && <span className="text-[9px] font-black uppercase tracking-wider text-[#0f8a3c]">{t('Låst för rundan')}</span>}
                     </div>
                     <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       {perkOffer.map((perk) => {
@@ -9424,23 +7862,23 @@ export const PlayingView: React.FC<{
                               runPerksRef.current = [...runPerksRef.current, perk.id];
                               AudioEngine.playUiClick();
                             }}
-                            className={`flex min-h-[104px] flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                            className={`flex min-h-[104px] flex-col items-start gap-1 rounded-xl border-2 p-2.5 text-left transition-all ${
                               active
-                                ? 'border-primary/70 bg-primary/15'
+                                ? 'border-[#0c3a20] bg-[#c9fbd9] shadow-[0_3px_0_0_#0c3a20]'
                                 : perkChoice
-                                  ? 'cursor-not-allowed border-white/[0.06] bg-white/[0.02] opacity-40'
-                                  : 'border-white/10 bg-white/[0.04] hover:border-white/30 hover:bg-white/[0.07]'
+                                  ? 'cursor-not-allowed border-[#12182b]/15 bg-white/40 opacity-45'
+                                  : 'border-[#12182b]/20 bg-white hover:-translate-y-0.5'
                             }`}
                           >
                             <span className="material-symbols-outlined text-lg" style={{ color: perk.color }}>{perk.icon}</span>
-                            <span className="text-[11px] font-black uppercase tracking-wide text-white">{t(perk.name)}</span>
-                            <span className="text-[10px] leading-snug text-white/50">{t(perk.desc)}</span>
+                            <span className="text-[11px] font-black uppercase tracking-wide text-[#12182b]">{t(perk.name)}</span>
+                            <span className="text-[10px] leading-snug text-[#12182b]/55">{t(perk.desc)}</span>
                           </button>
                         );
                       })}
                     </div>
                     {runPerksRef.current.length > 0 && (
-                      <p className="mt-2 truncate text-[9px] uppercase tracking-wider text-white/30">
+                      <p className="mt-2 truncate text-[9px] uppercase tracking-wider text-[#12182b]/40">
                         {t('Aktiva kort: {n}', { n: runPerksRef.current.length })}
                         {' · '}{runPerksRef.current.map((id) => t(PERK_BY_ID[id]?.name || id)).join(' · ')}
                       </p>
@@ -9449,13 +7887,13 @@ export const PlayingView: React.FC<{
                 )}
 
                 <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button onClick={startNextLevel} className="btn-primary w-full py-3.5 text-sm md:text-base">
+                  <button onClick={startNextLevel} className="toon-btn toon-btn-green w-full py-3.5 text-sm md:text-base">
                     <span className="material-symbols-outlined text-xl">arrow_forward</span>
                     {currentLevel % 5 === 4 ? t('Bosskamp · nivå {n}', { n: currentLevel + 1 }) : t('Nästa nivå · {n}', { n: currentLevel + 1 })}
                   </button>
                   <button
                     onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)}
-                    className="btn-ghost w-full py-3.5 text-xs uppercase tracking-wider sm:w-auto sm:px-6"
+                    className="toon-btn w-full py-3.5 text-xs uppercase tracking-wider sm:w-auto sm:px-6"
                   >
                     {t('Avsluta')}
                   </button>
@@ -9610,33 +8048,35 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="eyebrow text-primary">{t('Butik')}</p>
-          <h1 className="mt-0.5 font-display text-2xl font-black uppercase tracking-tight md:text-4xl">{t('Kattens verkstad')}</h1>
+          <h1 className="toon-title mt-1 font-display text-2xl font-black uppercase tracking-tight md:text-4xl">{t('Kattens verkstad')}</h1>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-yellow-400/25 bg-yellow-400/10 py-1.5 pl-2.5 pr-4">
-          <span className="material-symbols-outlined text-xl text-yellow-300">monetization_on</span>
-          <span className="tabular text-lg font-black leading-none text-yellow-200">{progress.coins}</span>
+        <div className="flex items-center gap-2 rounded-full border-[2.5px] border-[#6b4708] bg-gradient-to-b from-[#ffe58a] to-[#ffbe3d] py-1.5 pl-2.5 pr-4 text-[#2a1c00] shadow-[0_4px_0_0_#6b4708]">
+          <span className="material-symbols-outlined text-xl">monetization_on</span>
+          <span className="tabular text-lg font-black leading-none">{progress.coins}</span>
         </div>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[300px_1fr]">
         {/* Studio: the cat as it will look in the game */}
-        <aside className="overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/80 backdrop-blur-md lg:sticky lg:top-20 lg:self-start">
-          <div className="relative flex h-56 items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_50%_100%,rgba(43,238,121,0.16),transparent_70%)] lg:h-64">
-            <div className="absolute inset-x-6 bottom-6 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+        <aside className="toon-card-dark overflow-hidden lg:sticky lg:top-20 lg:self-start">
+          <div className="relative flex h-56 items-center justify-center overflow-hidden bg-[linear-gradient(180deg,#8fd8ff_0%,#c6efff_52%,#eafaf0_72%,#d6f3c4_100%)] lg:h-64">
+            {/* A tiny meadow so the preview reads as a stage, not a black box. */}
+            <div className="absolute -bottom-6 left-1/2 h-24 w-[130%] -translate-x-1/2 rounded-[50%] bg-[#7ed957] shadow-[0_-3px_0_0_#3d8b2f]" aria-hidden="true" />
+            <div className="absolute left-3 top-3 size-7 rounded-full bg-[#ffe98a] shadow-[0_0_0_3px_#f6c94a]" aria-hidden="true" />
             <CatPreview color={shown.color} accent={shown.accent} original={shown.original} width={220} height={150} scale={2.2} animated className="max-w-full" />
           </div>
           <div className="space-y-3 p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate font-display text-base font-black uppercase tracking-tight">{shown.name}</p>
-                <p className="truncate text-[10px] text-white/40">
+                <p className="truncate font-display text-base font-black uppercase tracking-tight text-white">{shown.name}</p>
+                <p className="truncate text-[10px] text-white/45">
                   {shownEquipped ? t('Aktivt skinn') : shownUnlocked ? t('Upplåst') : t(shown.unlockHint)}
                 </p>
               </div>
               {shownUnlocked && !shownEquipped && (
                 <button
                   onClick={() => equipSkin(preview)}
-                  className="shrink-0 rounded-full bg-primary px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#06210f] transition-transform hover:scale-[1.04]"
+                  className="toon-btn toon-btn-green shrink-0 px-3.5 py-1.5 text-[10px] uppercase tracking-wider"
                 >
                   {t('Utrusta')}
                 </button>
@@ -9648,7 +8088,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <div key={u.type}>
                   <span className={`material-symbols-outlined text-base ${u.tone}`}>{u.icon}</span>
                   <p className="tabular text-sm font-black text-white">{u.now.toFixed(u.digits)}</p>
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/30">{t(u.short)}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/35">{t(u.short)}</p>
                 </div>
               ))}
             </div>
@@ -9657,15 +8097,17 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         {/* Market */}
         <section className="min-w-0">
-          <div role="tablist" className="flex gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
+          <div role="tablist" className="flex gap-1.5 rounded-full border-[2.5px] border-[#0a0f20] bg-[#0a0f20]/70 p-1.5">
             {tabs.map((tb) => (
               <button
                 key={tb.id}
                 role="tab"
                 aria-selected={tab === tb.id}
                 onClick={() => setTab(tb.id)}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-colors sm:text-[11px] ${
-                  tab === tb.id ? 'bg-primary text-[#06210f]' : 'text-white/50 hover:text-white'
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-[10px] font-black uppercase tracking-wider transition-all sm:text-[11px] ${
+                  tab === tb.id
+                    ? 'border-2 border-[#0c3a20] bg-gradient-to-b from-[#5cfa9e] to-[#22cf66] text-[#06210f] shadow-[0_3px_0_0_#0c3a20]'
+                    : 'border-2 border-transparent text-white/55 hover:text-white'
                 }`}
               >
                 <span className="material-symbols-outlined hidden text-base sm:inline">{tb.icon}</span>
@@ -9681,26 +8123,26 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           )}
 
           {tab === 'upgrades' && (
-            <ul className="mt-3 divide-y divide-white/[0.06] overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/75 backdrop-blur-md">
+            <ul className="toon-card mt-3 divide-y-2 divide-[#12182b]/15 overflow-hidden p-0">
               {upgrades.map((u) => {
                 const affordable = progress.coins >= u.cost;
                 return (
                   <li key={u.type} className="flex items-center gap-3 p-3.5 sm:gap-4 sm:p-4">
-                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/[0.05] ${u.tone}`}>
+                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl border-2 border-[#12182b] bg-[#e6ecff] shadow-[0_3px_0_0_#12182b] ${u.tone}`}>
                       <span className="material-symbols-outlined text-2xl">{u.icon}</span>
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-black text-white">{t(u.title)}</p>
-                      <p className="truncate text-[11px] text-white/40">{t(u.desc)}</p>
-                      <p className="tabular mt-1 text-[11px] font-bold text-white/70">
-                        {u.now.toFixed(u.digits)}{u.unit ? ' ' + t(u.unit) : ''} <span className="text-primary">→ {(u.now + u.step).toFixed(u.digits)}{u.unit ? ' ' + t(u.unit) : ''}</span>
+                      <p className="truncate text-sm font-black text-[#12182b]">{t(u.title)}</p>
+                      <p className="truncate text-[11px] font-semibold text-[#12182b]/55">{t(u.desc)}</p>
+                      <p className="tabular mt-1 text-[11px] font-black text-[#12182b]/70">
+                        {u.now.toFixed(u.digits)}{u.unit ? ' ' + t(u.unit) : ''} <span className="text-[#0f8a3c]">→ {(u.now + u.step).toFixed(u.digits)}{u.unit ? ' ' + t(u.unit) : ''}</span>
                       </p>
                     </div>
                     <button
                       onClick={() => handleBuy(u.type, u.cost)}
                       disabled={!affordable}
-                      className={`flex shrink-0 items-center gap-1 rounded-full px-3.5 py-2 text-xs font-black transition-all ${
-                        affordable ? 'bg-yellow-300 text-[#241a02] hover:scale-[1.05]' : 'cursor-not-allowed bg-white/[0.06] text-white/30'
+                      className={`toon-btn shrink-0 px-3.5 py-2 text-xs ${
+                        affordable ? 'toon-btn-gold' : 'border-[#12182b]/30 bg-[#12182b]/10 text-[#12182b]/40 !shadow-none'
                       }`}
                     >
                       <span className="material-symbols-outlined text-[15px]">monetization_on</span>
@@ -9725,17 +8167,19 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <button
                       key={id}
                       onClick={() => setPreview(id)}
-                      className={`relative overflow-hidden rounded-2xl border p-2 text-left transition-all ${
-                        preview === id ? 'border-primary/60 bg-primary/[0.08]' : 'border-white/10 bg-white/[0.03] hover:border-white/25'
+                      className={`relative overflow-hidden rounded-2xl border-2 p-2 text-left transition-all ${
+                        preview === id
+                          ? 'border-[#0c3a20] bg-[#c9fbd9] shadow-[0_4px_0_0_#0c3a20]'
+                          : 'border-[#0a0f20] bg-[#1b2447] shadow-[0_3px_0_0_#0a0f20] hover:-translate-y-0.5'
                       }`}
                     >
                       <div className={`flex justify-center rounded-xl bg-black/25 pt-2 ${unlocked ? '' : 'opacity-60 grayscale'}`}>
                         <CatPreview color={skin.color} accent={skin.accent} original={skin.original} width={92} height={74} scale={1.1} />
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-1 px-1">
-                        <p className={`truncate text-xs font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{skin.name}</p>
+                        <p className={`truncate text-xs font-black ${preview === id ? 'text-[#0c3a20]' : unlocked ? 'text-white' : 'text-white/40'}`}>{skin.name}</p>
                         {equipped ? (
-                          <span className="material-symbols-outlined text-base text-primary">check_circle</span>
+                          <span className={`material-symbols-outlined text-base ${preview === id ? 'text-[#0c3a20]' : 'text-primary'}`}>check_circle</span>
                         ) : !unlocked ? (
                           <span className="material-symbols-outlined text-sm text-white/30">lock</span>
                         ) : null}
@@ -9748,7 +8192,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           )}
 
           {tab === 'perks' && (
-            <ul className="mt-3 divide-y divide-white/[0.06] overflow-hidden rounded-3xl border border-white/10 bg-[#0a1220]/75 backdrop-blur-md">
+            <ul className="toon-card mt-3 divide-y-2 divide-[#12182b]/15 overflow-hidden p-0">
               {[
                 { level: 5, label: 'Smidiga tassar', desc: 'Lite mer fart', icon: 'directions_run' },
                 { level: 10, label: 'Ammoeffektiv', desc: '+2 skott per nivå', icon: 'bolt' },
@@ -9757,14 +8201,14 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 const unlocked = progress.level >= perk.level;
                 return (
                   <li key={perk.level} className="flex items-center gap-3 p-3.5 sm:p-4">
-                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${unlocked ? 'bg-primary/15 text-primary' : 'bg-white/[0.05] text-white/25'}`}>
+                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl border-2 ${unlocked ? 'border-[#0c3a20] bg-[#8ff5b6] text-[#0c3a20] shadow-[0_3px_0_0_#0c3a20]' : 'border-[#12182b]/25 bg-[#12182b]/10 text-[#12182b]/35'}`}>
                       <span className="material-symbols-outlined text-2xl">{unlocked ? perk.icon : 'lock'}</span>
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className={`truncate text-sm font-black ${unlocked ? 'text-white' : 'text-white/40'}`}>{t(perk.label)}</p>
-                      <p className="truncate text-[11px] text-white/35">{t(perk.desc)}</p>
+                      <p className={`truncate text-sm font-black ${unlocked ? 'text-[#12182b]' : 'text-[#12182b]/40'}`}>{t(perk.label)}</p>
+                      <p className="truncate text-[11px] font-semibold text-[#12182b]/45">{t(perk.desc)}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${unlocked ? 'bg-primary/15 text-primary' : 'bg-white/[0.06] text-white/35'}`}>
+                    <span className={`shrink-0 rounded-full border-2 px-3 py-1 text-[10px] font-black uppercase tracking-wider ${unlocked ? 'border-[#0c3a20] bg-[#8ff5b6] text-[#0c3a20]' : 'border-[#12182b]/20 bg-[#12182b]/10 text-[#12182b]/40'}`}>
                       {unlocked ? t('Aktiv') : t('Rank {n}', { n: perk.level })}
                     </span>
                   </li>
@@ -9773,7 +8217,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </ul>
           )}
 
-          <button onClick={onBack} className="btn-ghost mt-4 w-full py-3 text-xs uppercase tracking-wider">
+          <button onClick={onBack} className="toon-btn mt-4 w-full py-3 text-xs uppercase tracking-wider">
             <span className="material-symbols-outlined text-base">arrow_back</span>
             {t('Tillbaka')}
           </button>
@@ -9801,44 +8245,46 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return (
       <div
         key={quest.id}
-        className={`rounded-2xl border p-3.5 transition-colors ${
+        className={`rounded-2xl border-2 p-3.5 transition-transform ${
           quest.completed
-            ? tone === 'daily' ? 'border-primary/30 bg-[#0c1f18]/85' : 'border-yellow-400/30 bg-[#1d1a0b]/85'
-            : 'border-white/[0.08] bg-[#0a1220]/75'
+            ? 'border-[#0c3a20] bg-[#c9fbd9] text-[#0c3a20] shadow-[0_3px_0_0_#0c3a20]'
+            : 'border-[#0a0f20] bg-[#1b2447] text-white shadow-[0_3px_0_0_#0a0f20]'
         }`}
       >
         <div className="flex items-center gap-3">
-          <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${quest.completed ? (tone === 'daily' ? 'bg-primary/20' : 'bg-yellow-400/20') : 'bg-white/[0.05]'}`}>
-            <span className={`material-symbols-outlined text-lg ${quest.completed ? (tone === 'daily' ? 'text-primary' : 'text-yellow-300') : 'text-white/30'}`}>
+          <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl border-2 ${quest.completed ? 'border-[#0c3a20] bg-white/70 text-[#0c3a20]' : 'border-[#0a0f20] bg-white/[0.06] text-white/40'}`}>
+            <span className="material-symbols-outlined text-lg">
               {quest.completed ? 'check_circle' : tone === 'daily' ? 'radio_button_unchecked' : 'pending'}
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`truncate text-xs font-bold ${quest.completed ? 'text-white' : 'text-white/70'}`}>{t(quest.description)}</p>
+            <p className={`truncate text-xs font-black ${quest.completed ? 'text-[#0c3a20]' : 'text-white/80'}`}>{t(quest.description)}</p>
             <div className="mt-1.5 flex items-center gap-2">
-              <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className={`h-full rounded-full ${tone === 'daily' ? 'bg-gradient-to-r from-primary/60 to-primary' : 'bg-gradient-to-r from-yellow-500/60 to-yellow-300'}`}
-                  style={{ width: `${pct}%` }}
+              <div className={`toon-bar flex-1 ${quest.completed ? 'opacity-70' : ''}`}>
+                <span
+                  style={{
+                    width: `${pct}%`,
+                    background: tone === 'daily' ? undefined : 'linear-gradient(180deg,#ffe58a,#ffbe3d)',
+                  }}
                 />
               </div>
-              <span className="tabular shrink-0 text-[9px] font-black text-white/40">{Math.min(quest.current, quest.target)}/{quest.target}</span>
+              <span className={`tabular shrink-0 text-[9px] font-black ${quest.completed ? 'text-[#0c3a20]/70' : 'text-white/45'}`}>{Math.min(quest.current, quest.target)}/{quest.target}</span>
             </div>
           </div>
           <div className="shrink-0 text-right">
-            <p className={`tabular text-xs font-black ${tone === 'daily' ? 'text-yellow-300' : 'text-yellow-200'}`}>+{quest.reward}</p>
+            <p className={`tabular text-xs font-black ${quest.completed ? 'text-[#0c3a20]' : 'text-yellow-300'}`}>+{quest.reward}</p>
             {quest.completed && !quest.claimed && (
               <button
                 onClick={() => claimQuestReward(quest.id)}
-                className={`mt-1 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${
-                  tone === 'daily' ? 'bg-primary text-[#06210f]' : 'bg-yellow-300 text-[#241a02]'
+                className={`toon-btn mt-1 px-2.5 py-1 text-[9px] uppercase tracking-wider ${
+                  tone === 'daily' ? 'toon-btn-green' : 'toon-btn-gold'
                 }`}
               >
                 {t('Hämta')}
               </button>
             )}
             {quest.claimed && (
-              <span className="mt-1 inline-block rounded-lg bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-white/35">
+              <span className="mt-1 inline-block rounded-lg border-2 border-[#0c3a20]/30 bg-[#0c3a20]/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-[#0c3a20]/60">
                 {t('Hämtad')}
               </span>
             )}
@@ -9853,64 +8299,64 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow text-primary">{t('Uppdrag')}</p>
-          <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Dagligt & veckans')}</h1>
-          <p className="mt-2 max-w-md text-sm text-white/50">{t('Utmaningar som roterar automatiskt. Hämta belöningen när du är klar.')}</p>
+          <h1 className="toon-title mt-1 font-display text-3xl font-black uppercase tracking-tight md:text-5xl">{t('Dagligt & veckans')}</h1>
+          <p className="mt-2 max-w-md text-sm font-semibold text-white/60">{t('Utmaningar som roterar automatiskt. Hämta belöningen när du är klar.')}</p>
         </div>
-        <div className="flex items-center gap-2 rounded-2xl border border-primary/25 bg-primary/[0.08] px-4 py-2.5">
-          <span className="material-symbols-outlined text-xl text-primary">military_tech</span>
+        <div className="flex items-center gap-2 rounded-2xl border-[2.5px] border-[#0c3a20] bg-gradient-to-b from-[#5cfa9e] to-[#22cf66] px-4 py-2.5 text-[#06210f] shadow-[0_4px_0_0_#0c3a20]">
+          <span className="material-symbols-outlined text-xl">military_tech</span>
           <div>
-            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-primary/60">{t('Rank {n}', { n: progress.level })}</p>
-            <p className="tabular text-sm font-black leading-none text-white">{t('{n} XP', { n: progress.xp })}</p>
+            <p className="text-[8px] font-black uppercase tracking-[0.2em] opacity-70">{t('Rank {n}', { n: progress.level })}</p>
+            <p className="tabular text-sm font-black leading-none">{t('{n} XP', { n: progress.xp })}</p>
           </div>
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-[#0a1220]/72 p-3 backdrop-blur-md">
-        <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-white/40">
+      <div className="toon-card-dark mt-5 p-3.5">
+        <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-white/70">
           <span>{t('Nästa rank')}</span>
           <span className="tabular">{t('{n} XP kvar', { n: xpLeft })}</span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full bg-gradient-to-r from-primary/60 via-primary to-cyan-300" style={{ width: `${xpInto / 10}%` }} />
+        <div className="toon-bar mt-2">
+          <span style={{ width: `${xpInto / 10}%` }} />
         </div>
       </div>
 
       <div className="mt-6 grid gap-2 lg:grid-cols-2 lg:gap-4">
         <section>
           <div className="flex items-center justify-between">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">{t('Dagliga')}</h2>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{t('{a}/{b} klara', { a: dailyDone, b: progress.dailyQuests.length })}</span>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">{t('Dagliga')}</h2>
+            <span className="text-[9px] font-black uppercase tracking-wider text-white/30">{t('{a}/{b} klara', { a: dailyDone, b: progress.dailyQuests.length })}</span>
           </div>
           <div className="mt-2.5 space-y-2">
             {progress.dailyQuests.map((q) => renderQuest(q, 'daily'))}
           </div>
 
           <div className="mt-5 flex items-center justify-between">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">{t('Veckans')}</h2>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-white/25">{t('{a}/{b} klara', { a: weeklyDone, b: progress.weeklyQuests.length })}</span>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">{t('Veckans')}</h2>
+            <span className="text-[9px] font-black uppercase tracking-wider text-white/30">{t('{a}/{b} klara', { a: weeklyDone, b: progress.weeklyQuests.length })}</span>
           </div>
           <div className="mt-2.5 space-y-2">
             {progress.weeklyQuests.map((q) => renderQuest(q, 'weekly'))}
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-[#0a1220]/72 p-4 backdrop-blur-md">
+        <section className="toon-card-dark self-start p-4">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base text-primary">workspace_premium</span>
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/55">{t('Prestationer')}</h2>
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">{t('Prestationer')}</h2>
           </div>
-          <p className="mt-1 text-[10px] text-white/35">
+          <p className="mt-1 text-[10px] font-semibold text-white/40">
             {t('{a} av {b} upplåsta', { a: progress.achievements.length, b: ACHIEVEMENTS.length })}
           </p>
           <div className="mt-3 space-y-1.5">
             {ACHIEVEMENTS.map((a) => {
               const unlocked = progress.achievements.includes(a.id);
               return (
-                <div key={a.id} className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 ${unlocked ? 'border-primary/30 bg-primary/[0.07]' : 'border-white/[0.06] bg-black/20'}`}>
-                  <span className={`material-symbols-outlined text-base ${unlocked ? 'text-primary' : 'text-white/20'}`}>{unlocked ? a.icon : 'lock'}</span>
+                <div key={a.id} className={`flex items-center gap-2.5 rounded-xl border-2 px-2.5 py-2 ${unlocked ? 'border-[#0c3a20] bg-[#c9fbd9] text-[#0c3a20]' : 'border-[#0a0f20] bg-black/25'}`}>
+                  <span className={`material-symbols-outlined text-base ${unlocked ? 'text-[#0c3a20]' : 'text-white/25'}`}>{unlocked ? a.icon : 'lock'}</span>
                   <div className="min-w-0">
-                    <p className={`truncate text-[11px] font-black ${unlocked ? 'text-white' : 'text-white/35'}`}>{t(a.label)}</p>
-                    <p className="truncate text-[9px] text-white/25">{t(a.desc)}</p>
+                    <p className={`truncate text-[11px] font-black ${unlocked ? 'text-[#0c3a20]' : 'text-white/40'}`}>{t(a.label)}</p>
+                    <p className={`truncate text-[9px] ${unlocked ? 'text-[#0c3a20]/65' : 'text-white/30'}`}>{t(a.desc)}</p>
                   </div>
                 </div>
               );
@@ -9919,7 +8365,7 @@ export const QuestsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </section>
       </div>
 
-      <button onClick={onBack} className="btn-ghost mt-6 w-full py-3 text-xs uppercase tracking-wider">
+      <button onClick={onBack} className="toon-btn mt-6 w-full py-3 text-xs uppercase tracking-wider">
         <span className="material-symbols-outlined text-base">arrow_back</span>
         {t('Tillbaka')}
       </button>

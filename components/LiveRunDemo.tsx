@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isReducedMotion, useProgress } from '../context/ProgressContext';
 import { drawCatSprite } from './catSprite';
-import { drawCatAtlasSprite, catAtlasReady, whenCatAtlasReady } from './catAtlasSprite';
+import { drawCatAtlasSprite, catAtlasReady, loadCatAtlas, whenCatAtlasReady } from './catAtlasSprite';
 import { useT, tr } from '../i18n';
 
 /**
@@ -40,30 +40,30 @@ const SCENES: Scene[] = [
     until: 7,
     kind: 'park',
     label: 'PARKEN',
-    sky: ['#0b4770', '#3a9ed4', '#a7e0f5'],
-    hill: '#3d86ab',
-    mid: '#2c6e8e',
-    ground: ['#5cb84e', '#27531f'],
+    sky: ['#62c7f0', '#a8e4f7', '#e4f7fb'],
+    hill: '#9fd0e0',
+    mid: '#5fa877',
+    ground: ['#6ed36a', '#2f7a3c'],
     accent: '#2bee79',
   },
   {
     until: 13,
     kind: 'rain',
     label: 'REGZONEN',
-    sky: ['#16233f', '#36466f', '#665074'],
-    hill: '#2b3c5c',
-    mid: '#22324c',
-    ground: ['#2f5f40', '#0d1f15'],
+    sky: ['#1b2450', '#3a3a78', '#6a4a7a'],
+    hill: '#2f3560',
+    mid: '#242a4c',
+    ground: ['#2f5a44', '#122a22'],
     accent: '#7ee7ff',
   },
   {
     until: LOOP_SECONDS,
     kind: 'boss',
     label: 'BOSSFIGHT',
-    sky: ['#2a1436', '#743544', '#cf7448'],
-    hill: '#42202f',
-    mid: '#2c1520',
-    ground: ['#362718', '#120c07'],
+    sky: ['#3a1030', '#8a2f46', '#e07050'],
+    hill: '#5a2434',
+    mid: '#3a1624',
+    ground: ['#4a2a20', '#1c0f0c'],
     accent: '#ff8f6b',
   },
 ];
@@ -338,9 +338,9 @@ const drawCat = (
   ctx.ellipse(x + 2, GROUND_Y + 2, 19 * shadowScale, 3.6 * shadowScale, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.translate(x, y);
-  // The baked atlas is the hero now; the vector cat stands in for the first
-  // frames until the PNG has decoded. 52 px wide matches the old 1.35x vector
-  // drawing's footprint on the 480x270 card.
+  // The same baked hero sprite the stage draws - the menu preview must show
+  // the cat the player is actually going to control. The vector cat only
+  // stands in for the frames before the PNG has decoded.
   const atlasDrawn = drawCatAtlasSprite(ctx, 0, 0, {
     color: '#4169E1',
     accent: '#2bee79',
@@ -353,10 +353,11 @@ const drawCat = (
     vy: jumping ? (jumpDelta < 0 ? -6 : 6) : 0,
     phase: t * 13,
     shooting,
-    w: 52,
+    facing: 1,
+    w: 78,
   });
   if (!atlasDrawn) {
-    ctx.scale(1.35, 1.35);
+    ctx.scale(1.5, 1.5);
     drawCatSprite(ctx, 0, 0, {
       color: '#4169E1',
       accent: '#2bee79',
@@ -365,9 +366,10 @@ const drawCat = (
       jumping,
       grounded: !jumping,
       speed: jumping ? 0 : 5.4,
-      vy: 0,
+      vy: jumping ? (jumpDelta < 0 ? -6 : 6) : 0,
       phase: t * 13,
       shooting,
+      facing: 1,
     });
   }
   ctx.restore();
@@ -614,18 +616,19 @@ const LiveRunDemo: React.FC = () => {
     const reduceMotion = isReducedMotion(motionSetting);
 
     if (reduceMotion) {
-      // Paint one frame as soon as the atlas can be shown, so the still hero is
-      // the 3D cat rather than the vector fallback from the very first tick.
-      let painted = false;
-      const paint = () => {
-        if (disposed || painted) return;
-        painted = true;
-        render(3.0);
-      };
-      whenCatAtlasReady().then(paint);
-      if (catAtlasReady()) paint(); // already decoded: skip the vector frame
+      // Still image instead of an animation loop. This used to define `paint`
+      // and return without ever calling it, which left the whole hero panel
+      // blank for anyone with "reduce motion" on - the one group that gets the
+      // least feedback when a decorative loop is broken.
+      render(3.0);
       return;
     }
+
+    // The demo can mount before anything else has asked for the atlas, so it
+    // has to start the decode itself; otherwise it would sit on the vector
+    // fallback forever on the home screen.
+    loadCatAtlas();
+    if (!catAtlasReady()) void whenCatAtlasReady().then(() => { if (!disposed) render(3.0); });
 
     const tick = (now: number) => {
       if (disposed) return;

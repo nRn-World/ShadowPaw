@@ -133,7 +133,7 @@ test('telemetry picks the dominant death cause with a stable tie-break', async (
     setItem: (k, v) => store.set(k, v),
   };
   const { getTopDeathCause, getMostDangerousLevel, readTelemetry } = await import('../game/telemetry.ts');
-  const { readDailyStreak, touchDailyStreak, saveGhost, loadGhost, recordDailyScore, loadDailyScores } = await import('../game/daily.ts');
+  const { readDailyStreak, touchDailyStreak, recordDailyScore, loadDailyScores } = await import('../game/daily.ts');
   store.set('shadow_paw_telemetry', JSON.stringify({
     deathsByCause: { hole: 4, enemy: 9, hazard: 2 },
     levelDeaths: { '7': 6, '3': 2 },
@@ -148,7 +148,4 @@ test('telemetry picks the dominant death cause with a stable tie-break', async (
   assert.equal(touchDailyStreak('2026-11-04').count, 2);
   assert.equal(recordDailyScore('2026-11-04', 5000, 12), 1);
   assert.equal(loadDailyScores('2026-11-04')[0].score, 5000);
-  assert.equal(saveGhost('daily:12:1', 1000, [[1, 2, 1]]), true);
-  assert.equal(loadGhost('daily:12:1').score, 1000);
-  assert.equal(saveGhost('daily:12:1', 900, [[2, 2, 1]]), false, 'a worse run must not replace the ghost');
 });
