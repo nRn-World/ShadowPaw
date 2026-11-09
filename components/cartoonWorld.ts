@@ -334,8 +334,22 @@ export const paletteFor = (theme: string, timeOfDay: string): Pal => {
 
 /* --------------------------------------------------------------- utils --- */
 
+/**
+ * Reads `#rgb`, `#rrggbb`, `rgb(r, g, b)` and `rgba(r, g, b, a)`.
+ *
+ * Handling the `rgb()` form is not a nicety - `blend()` *returns* `rgb(...)`, so
+ * any nested mix (a shade of a blend) used to run this parser on a string it
+ * could not read, fall through to NaN and come back as black. Every derived
+ * city tone was therefore black, which is why the industrial skyline rendered
+ * as near-black slabs no matter what base colours the palette offered.
+ */
 const hexToRgb = (hex: string): [number, number, number] => {
-  const h = hex.replace('#', '');
+  const s = String(hex).trim();
+  if (s.startsWith('rgb')) {
+    const parts = s.slice(s.indexOf('(') + 1, s.indexOf(')')).split(',').map((v) => parseFloat(v));
+    return [(parts[0] || 0) | 0, (parts[1] || 0) | 0, (parts[2] || 0) | 0];
+  }
+  const h = s.replace('#', '');
   const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
@@ -371,6 +385,12 @@ export interface BackdropOptions {
   theme: string;
   /** 0 = still, 1 = full animation (reduced-motion turns this off). */
   motion: number;
+  /**
+   * 0 = broad daylight (windows are just glass), 1 = dark enough for lamps.
+   * Derived from the time of day, because a city at noon with every window
+   * blazing looks like a switched-on film set.
+   */
+  lamp?: number;
 }
 
 /** Big, rounded, inked hills / towers for one depth plane. */
@@ -385,17 +405,19 @@ const drawFarHills = (
   seed: number,
 ) => {
   const span = 520;
-  const off = ((o.scrollX * parallax) % span + span) % span;
+  const shift = o.scrollX * parallax;
+  const firstSlot = Math.floor(shift / span) - 1;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
   const count = Math.ceil(o.width / span) + 3;
-  for (let i = -1; i < count; i++) {
+  for (let k = 0; k < count; k++) {
+    const i = firstSlot + k;
     const r = h1(seed + i * 3.77);
     const r2 = h1(seed + i * 8.13);
     const w = 300 + r * 260;
     const h = height * (0.62 + r2 * 0.5);
-    const x = i * span - off + r * 90;
+    const x = i * span - shift + r * 90;
     const y = baseline - h;
     // A soft, rounded hill: a wide arc rather than a triangle, so the horizon
     // reads as land and not as a graph.
@@ -409,6 +431,34 @@ const drawFarHills = (
 };
 
 /** Rounded cartoon towers for the city family. */
+/**
+ * Cartoon city: rounded towers with a lit face, a shaded side and an inked rim.
+ *
+ * The old version was a flat rounded rectangle filled with one colour, with a
+ * window grid on top. Next to the meadow's layered trees it read as paper
+ * cut-outs pasted on a backdrop - no light direction, no outline, no depth -
+ * which is exactly what the player noticed in the industrial chapter. Every
+ * volume now gets:
+ *
+ *   - an inked outline, matching the tree line's thick contour
+ *   - a lit left face and a shaded right side, from the same sun as the sky
+ *   - a roof edge highlight so the silhouette reads against the sky
+ *   - windows that sit inside the lit face, never on the shaded edge
+ */
+/**
+ * City block geometry. Shared with the chimney smoke, which has to land on the
+ * exact same rooftop, so this lives outside the draw call.
+ *
+ * The slots are deliberately tighter and the towers wider than a lone slab:
+ * a skyline only reads as a city when the buildings crowd each other and
+ * overlap. Evenly spaced rectangles with sky between them read as a bar chart,
+ * which is what the industrial chapter looked like before.
+ */
+const CITY_SPAN = 232;
+const cityWidth = (r1: number) => 128 + r1 * 96;
+const cityHeight = (r2: number) => 96 + r2 * 236;
+const cityOffset = (r1: number) => r1 * 26;
+
 const drawFarTowers = (
   ctx: CanvasRenderingContext2D,
   o: BackdropOptions,
@@ -419,71 +469,237 @@ const drawFarTowers = (
   seed: number,
   detail: number,
 ) => {
-  const span = 300;
-  const off = ((o.scrollX * parallax) % span + span) % span;
+  const span = CITY_SPAN;
+  // World-anchored window: a building's shape comes from its world slot, never
+  // from the loop counter, or the whole skyline swaps when the offset wraps.
+  const shift = o.scrollX * parallax;
+  const firstSlot = Math.floor(shift / span) - 1;
   const count = Math.ceil(o.width / span) + 3;
+  const ink = withAlpha(o.pal.ink, 0.3 + detail * 0.14);
+  // Far layers stay soft: the outline fades out with distance so the skyline
+  // has atmospheric perspective instead of a uniform sticker edge.
+  const rim = withAlpha(o.pal.ink, 0.1 + detail * 0.2);
+  // Volume from the sun, not from darkness: the lit face picks up the sun's own
+  // colour, and the shaded side is only mildly darker than the base. Building a
+  // tower by multiplying its colour toward the ink turns it into a black slab
+  // the moment the palette is warm and mid-dark, which is what happened in the
+  // sunset industrial chapter.
+  // Light comes from the sun, so the lit face is the base colour pulled toward
+  // the sun's own hue, and the shaded side is pulled toward the sky - never
+  // toward black. A wall in shadow on a sunset evening reflects the sky.
+  // The sun in this backdrop sits in the upper RIGHT (see drawBackdrop), so the
+  // right face is the lit one and the left third falls into shadow. Getting the
+  // side wrong is what made the skyline read as grey cardboard: the eye trusts
+  // the direction of the light before it trusts any amount of detail.
+  //
+  // Shadow is the wall reflecting the sky, not the wall turned black - on a
+  // sunset evening that means a cool violet-grey, which is also what separates
+  // the planes from each other. Only the base of the wall meets the ink, and
+  // only a little.
+  // Three tones off one base: the sun-facing wall picks up the sun's own warmth,
+  // the shadowed wall drops toward the ink, and only the outermost edge gets a
+  // hot rim. Every tone is a mix of the SAME base, so the plane keeps the value
+  // the ladder gave it - the light model adds form, it does not add brightness.
+  // (Blending every wall toward white is what flattened the earlier attempt
+  // into one lavender wash with no silhouette left.)
+  const lit = blend(color, o.pal.sun, 0.2 + detail * 0.04);
+  const shade = blend(color, o.pal.ink, 0.12);
+  const shadeDark = blend(color, o.pal.ink, 0.3);
+  // The recessed crown sits behind the body, so it is always a shade deeper.
+  const crownBody = blend(color, o.pal.ink, 0.2);
+  // Hot rim where the wall turns into the sun.
+  const bounce = blend(color, o.pal.sunCore, 0.34 + detail * 0.06);
+
   ctx.save();
   ctx.globalAlpha = alpha;
-  for (let i = -1; i < count; i++) {
+  for (let k = 0; k < count; k++) {
+    const i = firstSlot + k;
     const r1 = h1(seed + i * 3.11);
     const r2 = h1(seed + i * 6.9 + 4);
     const r3 = h1(seed + i * 11.3 + 9);
-    const w = 74 + r1 * 92;
-    const h = 110 + r2 * 220;
-    const x = i * span - off + r1 * 46;
+    const w = cityWidth(r1);
+    const h = cityHeight(r2);
+    const x = i * span - shift + cityOffset(r1);
     const y = baseline - h;
-    if (x + w < -60 || x > o.width + 60) continue;
-    ctx.fillStyle = color;
-    // Rounded roofline: the top corners are radiused so a skyline never looks
-    // like a bar chart.
+    if (x + w < -80 || x > o.width + 80) continue;
+
+    // A body plus a slightly narrower crown, so the skyline has a silhouette
+    // rather than one flat top per building.
+    const hasCrown = r3 > 0.45;
+    const cw = w * (0.42 + r2 * 0.26);
+    const ch = 18 + r1 * 30;
+    const bodyTop = y;
+    const crownTop = hasCrown ? y - ch : y;
     const r = Math.min(16, w * 0.22);
-    ctx.beginPath();
-    ctx.moveTo(x, baseline);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, baseline);
-    ctx.closePath();
-    ctx.fill();
-    // Setback crown.
-    if (r3 > 0.45) {
-      const cw = w * (0.42 + r2 * 0.26);
-      const ch = 18 + r1 * 30;
+
+    const shape = (top: number, width: number, left: number, radius: number) => {
       ctx.beginPath();
-      ctx.roundRect(x + (w - cw) / 2, y - ch, cw, ch + 4, [10, 10, 0, 0]);
+      ctx.moveTo(left, baseline);
+      ctx.lineTo(left, top + radius);
+      ctx.quadraticCurveTo(left, top, left + radius, top);
+      ctx.lineTo(left + width - radius, top);
+      ctx.quadraticCurveTo(left + width, top, left + width, top + radius);
+      ctx.lineTo(left + width, baseline);
+      ctx.closePath();
+    };
+
+    // Shadowed left face first, then the sunlit right face on top of it, so the
+    // two tones meet on a soft edge instead of a hard seam.
+    shape(bodyTop, w, x, r);
+    ctx.fillStyle = shadeDark;
+    ctx.fill();
+    ctx.save();
+    shape(bodyTop, w, x, r);
+    ctx.clip();
+    const wall = ctx.createLinearGradient(x, bodyTop, x + w, bodyTop);
+    wall.addColorStop(0, shadeDark);
+    wall.addColorStop(0.22, shade);
+    wall.addColorStop(0.72, lit);
+    wall.addColorStop(1, bounce);
+    ctx.fillStyle = wall;
+    ctx.fillRect(x, bodyTop, w, h + 4);
+    // A little sky bounce in the deepest shadow keeps the dark side from
+    // reading as an unlit hole.
+    const fall = ctx.createLinearGradient(x, bodyTop, x + w * 0.3, bodyTop);
+    fall.addColorStop(0, withAlpha(o.pal.skyMid, 0.22));
+    fall.addColorStop(1, withAlpha(o.pal.skyMid, 0));
+    ctx.fillStyle = fall;
+    ctx.fillRect(x, bodyTop, w * 0.3, h + 4);
+    const sky = ctx.createLinearGradient(0, bodyTop, 0, baseline);
+    sky.addColorStop(0, withAlpha(o.pal.sunCore, 0.1));
+    sky.addColorStop(0.45, withAlpha(o.pal.sunCore, 0));
+    sky.addColorStop(1, withAlpha(o.pal.ink, 0.08));
+    ctx.fillStyle = sky;
+    ctx.fillRect(x, bodyTop, w, h + 4);
+    ctx.restore();
+
+    const cx0 = x + (w - cw) / 2;
+    if (hasCrown) {
+      shape(crownTop, cw, cx0, 10);
+      ctx.fillStyle = crownBody;
       ctx.fill();
-      if (r1 > 0.55) {
-        // Antenna with a blinking tip light - the one moving detail far away.
-        ctx.fillRect(x + w / 2 - 1.5, y - ch - 22, 3, 22);
-        const blink = 0.5 + 0.5 * Math.sin(o.time * 2.4 + i * 1.7);
-        ctx.globalAlpha = alpha * (0.35 + blink * 0.65);
-        ctx.fillStyle = '#ff7a7a';
-        ctx.beginPath();
-        ctx.arc(x + w / 2, y - ch - 24, 3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = color;
-      }
+      ctx.save();
+      shape(crownTop, cw, cx0, 10);
+      ctx.clip();
+      const crownWall = ctx.createLinearGradient(cx0, crownTop, cx0 + cw, crownTop);
+      crownWall.addColorStop(0, blend(crownBody, o.pal.ink, 0.16));
+      crownWall.addColorStop(0.7, crownBody);
+      crownWall.addColorStop(1, blend(crownBody, o.pal.sun, 0.3));
+      ctx.fillStyle = crownWall;
+      ctx.fillRect(cx0, crownTop, cw, ch + 6);
+      ctx.restore();
+      // Roof lip: a bright edge that separates the crown from the sky.
+      ctx.fillStyle = withAlpha(o.pal.sunCore, 0.34);
+      ctx.fillRect(cx0 + 2, crownTop + 1.5, cw - 4, 2);
     }
-    // Warm windows. Cheap 2-tone grid, lit at different rates so towers have
-    // a living, irregular rhythm instead of a uniform checker.
+
+    // Outline the silhouette as one path so the crown and body read as a
+    // single building instead of two stacked boxes.
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 2 + detail;
+    ctx.lineJoin = 'round';
+    if (hasCrown) {
+      ctx.beginPath();
+      ctx.moveTo(x, baseline);
+      ctx.lineTo(x, bodyTop + r);
+      ctx.quadraticCurveTo(x, bodyTop, x + r, bodyTop);
+      ctx.lineTo(cx0, bodyTop);
+      ctx.lineTo(cx0, crownTop + 10);
+      ctx.quadraticCurveTo(cx0, crownTop, cx0 + 10, crownTop);
+      ctx.lineTo(cx0 + cw - 10, crownTop);
+      ctx.quadraticCurveTo(cx0 + cw, crownTop, cx0 + cw, crownTop + 10);
+      ctx.lineTo(cx0 + cw, bodyTop);
+      ctx.lineTo(x + w - r, bodyTop);
+      ctx.quadraticCurveTo(x + w, bodyTop, x + w, bodyTop + r);
+      ctx.lineTo(x + w, baseline);
+    } else {
+      shape(bodyTop, w, x, r);
+    }
+    ctx.stroke();
+
+    // Lit roof edge.
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.34, bodyTop + 1);
+    ctx.lineTo(x + w - r, bodyTop + 1);
+    ctx.stroke();
+
+    if (hasCrown && r1 > 0.55) {
+      // Antenna with a blinking tip light - the one moving detail far away.
+      ctx.strokeStyle = withAlpha(o.pal.ink, 0.45 + detail * 0.2);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, crownTop);
+      ctx.lineTo(x + w / 2, crownTop - 22);
+      ctx.stroke();
+      const blink = 0.5 + 0.5 * Math.sin(o.time * 2.4 + i * 1.7);
+      ctx.globalAlpha = alpha * (0.3 + blink * 0.7);
+      ctx.fillStyle = '#ff7a7a';
+      ctx.beginPath();
+      ctx.arc(x + w / 2, crownTop - 24, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+    }
+
+    // Warm windows, kept inside the lit face. They breathe on a slow cycle so
+    // the skyline feels inhabited without strobing.
     if (detail > 0) {
-      const cols = Math.max(2, Math.floor(w / 22));
-      const rows = Math.max(2, Math.floor(h / 26));
-      const cw = w / cols;
-      const chh = h / rows;
+      const cols = Math.max(2, Math.floor(w / 24));
+      const rows = Math.max(2, Math.floor(h / 30));
+      const cwid = w / cols;
+      const chei = h / rows;
       for (let rr = 0; rr < rows; rr++) {
         for (let cc = 0; cc < cols; cc++) {
-          const lit = h1(seed + i * 2.3 + rr * 1.7 + cc * 0.93 + Math.floor(o.time * 0.15));
-          if (lit < 0.52) continue;
-          ctx.globalAlpha = alpha * (0.55 + lit * 0.45);
-          ctx.fillStyle = lit > 0.83 ? o.pal.accent : withAlpha(o.pal.sunCore, 0.8);
+          if (cc === 0) continue; // leave the shaded edge clean
+          const base = h1(seed + i * 2.3 + rr * 1.7 + cc * 0.93);
+          // Most windows are dark. A fully lit facade reads as graph paper;
+          // a scattered handful reads as a city where people live.
+          if (base < 0.58) continue;
+          // Each window fades in and out on its own long period.
+          const flicker = 0.62 + 0.38 * Math.sin(o.time * (0.5 + base) + base * 30);
+          // A lit window is a lamp at dusk, so it is a warm pane with a soft
+          // halo around it. A plain pale square reads as a gap in the wall.
+          // A little per-window jitter: a perfect grid is the one thing that
+          // makes a cartoon city look machine-drawn.
+          const jx = (h1(base * 91 + cc) - 0.5) * cwid * 0.12;
+          const jy = (h1(base * 57 + rr) - 0.5) * chei * 0.1;
+          const wx = x + cc * cwid + cwid * 0.24 + jx;
+          const wy = y + rr * chei + chei * 0.26 + jy;
+          const ww = cwid * 0.46;
+          const wh = chei * 0.4;
+          const lamp = o.lamp ?? 1;
+          const warm = base > 0.82 ? o.pal.accent : '#ffd98a';
+          // Daylight: the pane is plain dark glass, no halo, no glow.
+          if (lamp < 0.5) {
+            ctx.globalAlpha = alpha * 0.16;
+            ctx.fillStyle = o.pal.ink;
+            ctx.beginPath();
+            ctx.roundRect(
+              x + cc * cwid + cwid * 0.24,
+              y + rr * chei + chei * 0.26,
+              cwid * 0.46,
+              chei * 0.4,
+              1.5,
+            );
+            ctx.fill();
+            continue;
+          }
+          ctx.globalAlpha = alpha * (0.14 + flicker * 0.2);
+          ctx.fillStyle = warm;
           ctx.beginPath();
-          ctx.roundRect(x + cc * cw + cw * 0.28, y + rr * chh + chh * 0.3, cw * 0.44, chh * 0.4, 2);
+          ctx.roundRect(wx - ww * 0.6, wy - wh * 0.6, ww * 2.2, wh * 2.2, 4);
+          ctx.fill();
+          ctx.globalAlpha = alpha * (0.78 + flicker * 0.22);
+          // Drawn opaque and faded only by globalAlpha - never by alpha inside
+          // its own colour, which stacked two transparencies into grey.
+          ctx.fillStyle = warm;
+          ctx.beginPath();
+          ctx.roundRect(wx, wy, ww, wh, 1.5);
           ctx.fill();
         }
       }
+      ctx.globalAlpha = alpha;
     }
   }
   ctx.restore();
@@ -504,21 +720,26 @@ const drawTreeLine = (
   seed: number,
   scale: number,
 ) => {
+  // World-anchored slots. Hashing the loop index meant every tree changed
+  // species the moment the parallax offset wrapped - the background visibly
+  // swapping mid-level as the player ran.
   const span = 200;
-  const off = ((o.scrollX * parallax) % span + span) % span;
+  const shift = o.scrollX * parallax;
+  const firstSlot = Math.floor(shift / span) - 1;
   const count = Math.ceil(o.width / span) + 3;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
-  for (let i = -1; i < count; i++) {
+  for (let k = 0; k < count; k++) {
+    const i = firstSlot + k;
     const r1 = h1(seed + i * 2.71);
     const r2 = h1(seed + i * 7.91 + 3);
     const r3 = h1(seed + i * 11.7 + 8);
     const pine = r3 > 0.45;
     const hBase = (74 + r1 * 74) * scale;
     const wBase = (36 + r2 * 26) * scale;
-    const x = i * span - off + r1 * 70 + wBase * 0.5;
+    const x = i * span - shift + r1 * 70 + wBase * 0.5;
     if (x + wBase < -60 || x - wBase > o.width + 60) continue;
     // Trees used to sway on a per-index sine. In a parallax layer that is real
     // scrolling, a whole tree line leaning back and forth reads as the screen
@@ -625,6 +846,43 @@ const drawToonCloud = (
 };
 
 /**
+ * Chimney smoke: a short trail of soft puffs that lifts, widens and fades.
+ *
+ * It is the one thing in the city that moves upward, which is what makes a
+ * skyline read as inhabited instead of as a still image with a camera panning
+ * over it. Drawn deterministically from time, so it costs nothing and cannot
+ * drift out of sync with the rest of the scene.
+ */
+const drawSmoke = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  t: number,
+  scale: number,
+  tint: string,
+) => {
+  ctx.save();
+  for (let i = 0; i < 6; i++) {
+    // Each puff starts a little later, rises a little further and spreads a
+    // little wider, so the column leans and dissolves as it climbs. A puff's
+    // life also wraps slightly off-phase, which keeps the plume continuous
+    // instead of popping back to the chimney.
+    const life = ((t * 0.17 + i * 0.167) % 1);
+    const rise = life * 96 * scale;
+    const drift = Math.sin(life * 2.4 + i) * 13 * scale + life * 30 * scale;
+    const r = (6 + life * 20) * scale;
+    // Thick at the chimney, gone by the top: a plume, not a string of beads.
+    const alpha = (1 - life) * (1 - life) * 0.5;
+    if (alpha <= 0.01) continue;
+    ctx.fillStyle = withAlpha(tint, alpha);
+    ctx.beginPath();
+    ctx.arc(x + drift, y - rise, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
+/**
  * The whole stage backdrop: sky, sun, clouds, three parallax planes and the
  * inked foreground frame. Drawn under every gameplay layer.
  */
@@ -725,9 +983,29 @@ export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) 
   const isCity = fam === 'city' || fam === 'space' || fam === 'night';
   const isOpen = fam === 'meadow' || fam === 'forest';
 
+  // City towers cannot use the plain far/mid/near silhouettes the tree line
+  // uses. A tree is a thin shape, so a dark tone reads as depth; a building is
+  // a huge filled rectangle, so the same tone reads as a black slab pasted over
+  // the sky - which is exactly what the industrial chapter looked like.
+  //
+  // The fix is not to make the towers pale. A pale tower on a pale sky has no
+  // silhouette at all, which is the other way this backdrop died: the whole
+  // skyline dissolved into the sunset as one lavender wash. What the meadow
+  // does, and what works here, is a firm value ladder with rising saturation -
+  // bright and desaturated at the back, deep and saturated at the front - so
+  // each plane is legible against the one behind it at any time of day.
+  //
+  // The ladder is built from the family's own far/mid/near, pushed a stop in
+  // each direction, then re-lit only by the sky's warmth (not by its
+  // brightness) so the city stays part of the sunset without bleaching out.
+  // A touch of haze on the farthest plane only: atmosphere, not bleaching.
+  const cityFar = blend(pal.haze, pal.far, 0.72);
+  const cityMid = pal.mid;
+  const cityNear = pal.near;
+
   // Plane 1: the pale, far silhouette. Barely darker than the sky.
   if (isCity) {
-    drawFarTowers(ctx, o, 0.03, pal.far, 0.85, horizon + 30, 13, 0);
+    drawFarTowers(ctx, o, 0.03, cityFar, 0.8, horizon + 30, 13, 0);
   } else if (isOpen) {
     drawFarHills(ctx, o, 0.03, pal.far, 0.8, 240, horizon + 40, 17);
   } else {
@@ -736,7 +1014,7 @@ export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) 
 
   // Plane 2: the readable middle distance.
   if (isCity) {
-    drawFarTowers(ctx, o, 0.075, pal.mid, 0.95, horizon + 90, 41, 1);
+    drawFarTowers(ctx, o, 0.075, cityMid, 0.92, horizon + 90, 41, 1);
   } else if (isOpen) {
     drawTreeLine(ctx, o, 0.06, pal.mid, 0.9, horizon + 80, 23, 1);
     drawFarHills(ctx, o, 0.05, pal.mid, 0.9, 190, horizon + 96, 31);
@@ -751,7 +1029,13 @@ export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) 
   // mistaken for an enemy.
   // Seated on the crest of the middle ridge - above the near tree caps, so
   // they read against open sky instead of being swallowed by the tree line.
-  drawBackgroundCritters(ctx, o, groundY - 146);
+  // In an open landscape the far ridge is a real surface, so wildlife is seated
+  // on it. A city has no ridge there - only sky between towers - and a pigeon
+  // sitting at ridge height reads as a bird stuck in mid-air, which is exactly
+  // how the industrial chapter looked. Street level is the honest seat for a
+  // city: the animals show through the gaps between the near towers, crossing
+  // the plaza behind the cat instead of hovering above it.
+  drawBackgroundCritters(ctx, o, isCity ? groundY - 10 : groundY - 146);
 
   // Atmospheric haze where the planes meet the ground.
   const haze = ctx.createLinearGradient(0, horizon - 90, 0, groundY + 10);
@@ -763,7 +1047,34 @@ export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) 
 
   // Plane 3: the near, saturated silhouette that frames the playfield.
   if (isCity) {
-    drawFarTowers(ctx, o, 0.14, pal.near, 1, groundY + 6, 73, 0);
+    drawFarTowers(ctx, o, 0.14, cityNear, 1, groundY + 6, 73, 2);
+    // Chimneys on the near skyline: the one upward motion in the frame, which
+    // is what stops the city reading as a static backdrop sliding past.
+    const smokeShift = o.scrollX * 0.14;
+    const smokeFirst = Math.floor(smokeShift / CITY_SPAN) - 1;
+    const smokeCount = Math.ceil(o.width / CITY_SPAN) + 3;
+    for (let k = 0; k < smokeCount; k++) {
+      const slot = smokeFirst + k;
+      const r1 = h1(73 + slot * 3.11);
+      const r2 = h1(73 + slot * 6.9 + 4);
+      // Only the tallest towers get a chimney, and only some of them.
+      if (r2 < 0.72) continue;
+      const bw = cityWidth(r1);
+      const bh = cityHeight(r2);
+      const bx = slot * CITY_SPAN - smokeShift + cityOffset(r1);
+      if (bx < -140 || bx > o.width + 140) continue;
+      const top = groundY + 6 - bh;
+      // Dusty violet-grey, not the sky's own haze. Tinting the plume with the
+      // haze colour made it literally invisible against a haze-coloured sky.
+      drawSmoke(
+        ctx,
+        bx + bw * 0.32,
+        top - 4,
+        o.time + slot * 3.1,
+        1,
+        blend(pal.ink, pal.haze, 0.52),
+      );
+    }
   } else if (isOpen) {
     // Two bands of trees: a darker, closer row and a lighter one behind it,
     // both seated below the horizon so they frame the route instead of
@@ -930,16 +1241,18 @@ export const drawBackgroundCritters = (
   const fam = familyForTheme(o.theme);
   const kinds = CRITTERS_BY_FAMILY[fam] || CRITTERS_BY_FAMILY.meadow;
   const span = 300;
-  const off = ((o.scrollX * 0.085) % span + span) % span;
+  const shift = o.scrollX * 0.085;
+  const firstSlot = Math.floor(shift / span) - 1;
   const baseY = seatY;
   const count = Math.ceil(o.width / span) + 2;
 
   ctx.save();
   ctx.fillStyle = withAlpha(pal.ink, pal.night ? 0.44 : 0.3);
-  for (let i = -1; i < count; i++) {
+  for (let k = 0; k < count; k++) {
+    const i = firstSlot + k;
     const seed = h1(i * 3.7 + 11);
     const kind = kinds[Math.floor(seed * kinds.length) % kinds.length];
-    const x = i * span - off + seed * 190;
+    const x = i * span - shift + seed * 190;
     const s = 1.05 + h1(i * 8.1 + 5) * 0.35;
     // A slow idle cycle: rabbits hop twice, then sit still. Motion is scaled
     // by o.motion so reduced-motion players get a still scene.
