@@ -1,0 +1,22 @@
+{
+  "frameW": 320,
+  "frameH": 180,
+  "frames": [
+    {
+      "muzzleX": 0.7689,
+      "muzzleY": 0.5099
+    },
+    {
+      "muzzleX": 0.9494,
+      "muzzleY": 0.4986
+    },
+    {
+      "muzzleX": 0.9545,
+      "muzzleY": 0.507
+    },
+    {
+      "muzzleX": 0.9306,
+      "muzzleY": 0.4394
+    }
+  ]
+}

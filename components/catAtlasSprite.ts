@@ -15,12 +15,60 @@
 
 const URL = 'cat_character.png';
 // Four running strides baked from the generated sheet (scripts/bake-run-frames
-// .mjs). They cycle while the cat is grounded and moving so a keyboard run
-// reads as real leg motion instead of a bobbing single stance.
+// .mjs). They are written on one shared canvas with the paws on one shared
+// baseline, so the only thing that changes between them is the leg positions -
+// the cat cannot grow, shrink or hop between frames.
 const RUN_URLS = ['cat_run_0.png', 'cat_run_1.png', 'cat_run_2.png', 'cat_run_3.png'];
-// Playback order that flows extend -> stride -> stance -> collect -> repeat.
-const RUN_ORDER = [0, 3, 1, 2];
-const RUN_FPS = 12;
+
+/**
+ * Cycle order, in gait phase.
+ *
+ * Reading the sheet's four poses as a stride: 1 is the full extension (front
+ * paws reaching, hind paws driving back), 2 is the gather (legs under the
+ * body), 3 is the reach-through and 0 is the plant. Cycling them in that order
+ * makes the legs sweep continuously instead of chattering between two similar
+ * stances, which is what the old order did - it alternated a stance with
+ * itself and killed the sense of speed.
+ */
+const RUN_ORDER = [1, 2, 3, 0];
+
+/**
+ * How far the cat travels per full stride, in world pixels, at the reference
+ * sprite width. Cadence is driven by DISTANCE, not by a fixed frame rate:
+ * advancing one stride per travelled distance is what stops the paws from
+ * skating on the ground when the cat speeds up or slows down, and it is the
+ * single biggest reason a sprite run reads as real or as a slideshow.
+ *
+ * Tuned so the paw contact points move at roughly the same rate as the world
+ * scrolls past at normal run speed.
+ */
+const STRIDE_PX = 26;
+/** Cadence clamp, in strides per second, so a crawl still animates and a dash
+ *  does not strobe. */
+const MIN_CADENCE = 2.2;
+const MAX_CADENCE = 11;
+
+/**
+ * Accumulated gait phase, integrated from distance travelled.
+ *
+ * This has to be stateful: the renderer only knows the instantaneous speed, so
+ * deriving the frame from `t * speed` directly makes the phase jump backwards
+ * whenever the speed changes, and the cat visibly stutters. Advancing a phase
+ * accumulator by `speed * dt` keeps the cycle continuous through acceleration.
+ */
+let gaitPhase = 0;
+let gaitLastT = 0;
+const advanceGait = (t: number, speed: number, runW: number): number => {
+  const dt = gaitLastT ? Math.min(0.1, Math.max(0, t - gaitLastT)) : 0;
+  gaitLastT = t;
+  // World px travelled per second, relative to the sprite's drawn width.
+  const pxPerSec = Math.abs(speed) * (runW / 66);
+  const stridePx = STRIDE_PX * (runW / 66);
+  let cadence = stridePx > 0 ? pxPerSec / stridePx : MIN_CADENCE;
+  cadence = Math.min(MAX_CADENCE, Math.max(MIN_CADENCE, cadence));
+  gaitPhase = (gaitPhase + cadence * dt) % RUN_ORDER.length;
+  return gaitPhase;
+};
 
 export interface AtlasCatOpts {
   /** Skin colour from the shop; tints the baked fur. */
@@ -315,10 +363,52 @@ const loadTight = (url: string, cb: (t: Tight | null) => void) => {
 
 /** Kick the four running strides. They fill `runTights` independently; the
     game falls back to the single stance until a given frame has decoded. */
+/**
+ * Per-frame blaster muzzle, measured from the artwork by the bake step.
+ *
+ * The four strides do not hold the gun in the same place - the reach-through
+ * frames carry it further forward than the gathered ones - so a single
+ * hard-coded position put the muzzle flash next to the barrel on some frames
+ * and through it on others. The manifest carries the real position per frame;
+ * the constant below is only a fallback for an older build without it.
+ */
+const RUN_MANIFEST_URL = 'cat_run_manifest.json';
+let runMuzzles: Array<{ muzzleX: number; muzzleY: number } | null> = RUN_URLS.map(() => null);
+
 const loadRunFrames = () => {
   if (runStarted) return;
   runStarted = true;
-  RUN_URLS.forEach((url, i) => loadTight(url, (t) => { runTights[i] = t; }));
+  RUN_URLS.forEach((url, i) => loadTight(url, (t) => {
+    if (!t) return;
+    const m = runMuzzles[i];
+    if (m) {
+      t.muzzleX = m.muzzleX;
+      t.muzzleY = m.muzzleY;
+    }
+    runTights[i] = t;
+  }));
+  // Fetch the manifest first; if it lands after a frame has decoded, patch that
+  // frame in place (Tight objects are shared, so the values take effect on the
+  // next draw).
+  fetch(RUN_MANIFEST_URL)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data || !Array.isArray(data.frames)) return;
+      runMuzzles = data.frames.map((f: { muzzleX: number; muzzleY: number }) => ({
+        muzzleX: f.muzzleX,
+        muzzleY: f.muzzleY,
+      }));
+      runTights.forEach((t, i) => {
+        const m = runMuzzles[i];
+        if (t && m) {
+          t.muzzleX = m.muzzleX;
+          t.muzzleY = m.muzzleY;
+        }
+      });
+    })
+    .catch(() => {
+      /* older build without a manifest: the baked constants still apply */
+    });
 };
 
 export const loadCatAtlas = () => {
@@ -409,14 +499,15 @@ const chooseFrame = (
   moving: boolean,
   air: boolean,
   dashing: boolean,
-  t: number,
-): { src: Tight; tag: string } => {
+  phase: number,
+): { src: Tight; tag: string; step: number } => {
   if (moving && !air && !dashing) {
-    const fi = RUN_ORDER[Math.floor(t * RUN_FPS) % RUN_ORDER.length];
+    const step = Math.floor(phase) % RUN_ORDER.length;
+    const fi = RUN_ORDER[step];
     const rt = runTights[fi];
-    if (rt) return { src: rt, tag: `run${fi}` };
+    if (rt) return { src: rt, tag: `run${fi}`, step };
   }
-  return { src: tight as Tight, tag: 'idle' };
+  return { src: tight as Tight, tag: 'idle', step: 0 };
 };
 
 /**
@@ -427,11 +518,22 @@ const chooseFrame = (
  * spawn a bullet exactly where the muzzle flash appears.
  */
 export const getCatMuzzle = (
-  o: { facing?: 1 | -1; moving?: boolean; air?: boolean; dashing?: boolean; t: number; w?: number },
+  o: {
+    facing?: 1 | -1;
+    moving?: boolean;
+    air?: boolean;
+    dashing?: boolean;
+    t: number;
+    w?: number;
+    speed?: number;
+  },
 ): { dx: number; dyUp: number } | null => {
   if (state !== 'ready' || !tight) return null;
-  const { src } = chooseFrame(!!o.moving, !!o.air, !!o.dashing, o.t);
   const w = o.w ?? 64;
+  // Same accumulator as the renderer, so the muzzle follows the pose actually
+  // on screen instead of a parallel guess.
+  const phase = advanceGait(o.t, o.speed ?? 0, w);
+  const { src } = chooseFrame(!!o.moving, !!o.air, !!o.dashing, phase);
   const h = (w * src.height) / src.width;
   const facing = o.facing === -1 ? -1 : 1;
   return {
@@ -465,7 +567,9 @@ export const drawCatAtlasSprite = (
   // While grounded and moving, cycle the baked strides so the legs actually
   // run; otherwise fall back to the single stance (idle, air, dash, or the
   // frames not having decoded yet).
-  const { src, tag } = chooseFrame(moving, air, o.dashing ?? false, o.t);
+  const gaitSpeed = Math.abs(o.speed ?? 0);
+  const phaseGait = advanceGait(o.t, gaitSpeed, w);
+  const { src, tag, step } = chooseFrame(moving, air, o.dashing ?? false, phaseGait);
 
   const art = getTinted(src, o.color, accent, tag, o.original);
   if (!art) return false;
@@ -485,10 +589,15 @@ export const drawCatAtlasSprite = (
     scaleX = 1.06;
     scaleY = 0.94;
   } else if (tag !== 'idle') {
-    // The stride frames carry the leg motion; a whisper of bob keeps it lively
-    // without fighting the artwork.
-    bob = -Math.abs(Math.sin(o.t * RUN_FPS * Math.PI)) * h * 0.015;
-    tilt = -0.02;
+    // The stride frames carry the leg motion. The vertical travel comes from
+    // the gait cycle itself: the body dips at the two contact steps and lifts
+    // through the gather, so the bounce is locked to the legs instead of
+    // free-running against them.
+    const stridePhase = (phaseGait % RUN_ORDER.length) / RUN_ORDER.length;
+    bob = -Math.abs(Math.sin(stridePhase * Math.PI * 2)) * h * 0.022;
+    // A small forward pitch that peaks at the extension frames sells the drive
+    // from the hind legs.
+    tilt = -0.014 - Math.cos(stridePhase * Math.PI * 2) * 0.012;
   } else if (moving) {
     bob = -Math.abs(Math.sin(phase)) * h * 0.03;
     tilt = -0.03 + Math.sin(phase * 2) * 0.015;
