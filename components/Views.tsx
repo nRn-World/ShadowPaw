@@ -370,7 +370,7 @@ export const StartMenuView: React.FC<{
             </button>
             <button
               onClick={() => onStart(dailyLevel, 'daily')}
-              className="toon-btn px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
+              className="toon-btn toon-btn-dark-accent px-5 py-4 text-[11px] uppercase tracking-[0.14em]"
               title={t('Starta direkt på nivå {n}', { n: dailyLevel })}
             >
               <span className="material-symbols-outlined text-lg text-primary">bolt</span>
@@ -382,7 +382,7 @@ export const StartMenuView: React.FC<{
             {storyLevel > 1 && (
               <button
                 onClick={() => onStart(storyLevel)}
-                className="toon-btn group flex items-center justify-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[0.16em] text-[#0c3a20] sm:flex-1 sm:justify-start"
+                className="toon-btn toon-btn-quiet group flex items-center justify-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[0.16em] sm:flex-1 sm:justify-start"
               >
                 <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">resume</span>
                 {t('Fortsätt · nivå {n}', { n: storyLevel })}
@@ -390,7 +390,7 @@ export const StartMenuView: React.FC<{
             )}
             <button
               onClick={() => onNavigate(AppView.LEVELS)}
-              className="toon-btn group flex items-center justify-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[0.16em] sm:flex-1 sm:justify-start"
+              className="toon-btn toon-btn-quiet group flex items-center justify-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[0.16em] sm:flex-1 sm:justify-start"
             >
               <span className="material-symbols-outlined text-base transition-transform duration-200 group-hover:translate-x-0.5">map</span>
               {t('Kapitelkarta · {a}/{b}', {

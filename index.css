@@ -200,6 +200,52 @@ body {
 .toon-btn-gold:hover { box-shadow: 0 5px 0 0 #6b4708; }
 .toon-btn-gold:active { box-shadow: 0 1px 0 0 #6b4708; }
 
+/* Dark variant: the same chunky 3D button, but in the card surface the rest of
+   the home screen uses. The default toon-btn is a white slab, which read as a
+   foreign element in the middle of a dark menu - two bright white blocks
+   fighting the hero CTA. */
+.toon-btn-dark {
+  background: linear-gradient(180deg, #24305a 0%, #19213f 100%);
+  color: #dbe6ff;
+  box-shadow: 0 4px 0 0 #0a0f20;
+}
+.toon-btn-dark:hover {
+  background: linear-gradient(180deg, #2c3a6b 0%, #1e284a 100%);
+  box-shadow: 0 5px 0 0 #0a0f20;
+}
+.toon-btn-dark:active { box-shadow: 0 1px 0 0 #0a0f20; }
+
+/* Dark with a green edge: the secondary call to action next to the green
+   "Play now". It belongs to the same family as the primary button without
+   competing with it. */
+.toon-btn-dark-accent {
+  background: linear-gradient(180deg, #1d3a3c 0%, #14262f 100%);
+  color: #b6f7cf;
+  border-color: #0a1f1a;
+  box-shadow: 0 4px 0 0 #0a1f1a;
+}
+.toon-btn-dark-accent:hover {
+  background: linear-gradient(180deg, #244b47 0%, #18303a 100%);
+  color: #dcffe9;
+  box-shadow: 0 5px 0 0 #0a1f1a;
+}
+.toon-btn-dark-accent:active { box-shadow: 0 1px 0 0 #0a1f1a; }
+
+/* Quieter dark secondary: no 3D edge, sits directly on the page like a link
+   with a hit area. Used for the pair of low-priority entries (resume, map). */
+.toon-btn-quiet {
+  background: rgba(27, 36, 71, 0.62);
+  border-color: rgba(10, 15, 32, 0.9);
+  color: #b9c8e8;
+  box-shadow: 0 3px 0 0 rgba(10, 15, 32, 0.9);
+}
+.toon-btn-quiet:hover {
+  background: rgba(36, 48, 90, 0.8);
+  color: #e8f0ff;
+  box-shadow: 0 4px 0 0 rgba(10, 15, 32, 0.9);
+}
+.toon-btn-quiet:active { box-shadow: 0 1px 0 0 rgba(10, 15, 32, 0.9); }
+
 /* Sticker-ish section label: white ink text with a heavy outline, the way a
    comic letterer would set a chapter title. */
 .toon-title {
