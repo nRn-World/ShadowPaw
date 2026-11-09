@@ -21,6 +21,8 @@
  * beyond a few gradients), so it runs every frame on a phone.
  */
 
+import { hash01, layerWindow } from './parallax';
+
 export type Family =
   | 'meadow'
   | 'forest'
@@ -354,10 +356,7 @@ export const withAlpha = (color: string, a: number): string => {
 };
 
 /** Stable 0..1 hash. Same input, same output - scenery never flickers. */
-const h1 = (n: number) => {
-  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
-  return s - Math.floor(s);
-};
+const h1 = hash01;
 
 /* ---------------------------------------------------------- background --- */
 
@@ -384,18 +383,20 @@ const drawFarHills = (
   baseline: number,
   seed: number,
 ) => {
+  // Hashed by world slot, not by loop index - see drawTreeLine. An index hash
+  // re-rolls every hill whenever the parallax offset wraps.
   const span = 520;
-  const off = ((o.scrollX * parallax) % span + span) % span;
+  const { firstSlot, count, shift } = layerWindow(o.scrollX, parallax, span, o.width);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
-  const count = Math.ceil(o.width / span) + 3;
-  for (let i = -1; i < count; i++) {
-    const r = h1(seed + i * 3.77);
-    const r2 = h1(seed + i * 8.13);
+  for (let k = 0; k < count; k++) {
+    const slot = firstSlot + k;
+    const r = h1(seed + slot * 3.77);
+    const r2 = h1(seed + slot * 8.13);
     const w = 300 + r * 260;
     const h = height * (0.62 + r2 * 0.5);
-    const x = i * span - off + r * 90;
+    const x = slot * span - shift + r * 90;
     const y = baseline - h;
     // A soft, rounded hill: a wide arc rather than a triangle, so the horizon
     // reads as land and not as a graph.
@@ -419,18 +420,19 @@ const drawFarTowers = (
   seed: number,
   detail: number,
 ) => {
+  // World-space slots, same reason as the tree line above.
   const span = 300;
-  const off = ((o.scrollX * parallax) % span + span) % span;
-  const count = Math.ceil(o.width / span) + 3;
+  const { firstSlot, count, shift } = layerWindow(o.scrollX, parallax, span, o.width);
   ctx.save();
   ctx.globalAlpha = alpha;
-  for (let i = -1; i < count; i++) {
+  for (let k = 0; k < count; k++) {
+    const i = firstSlot + k;
     const r1 = h1(seed + i * 3.11);
     const r2 = h1(seed + i * 6.9 + 4);
     const r3 = h1(seed + i * 11.3 + 9);
     const w = 74 + r1 * 92;
     const h = 110 + r2 * 220;
-    const x = i * span - off + r1 * 46;
+    const x = i * span - shift + r1 * 46;
     const y = baseline - h;
     if (x + w < -60 || x > o.width + 60) continue;
     ctx.fillStyle = color;
@@ -504,21 +506,26 @@ const drawTreeLine = (
   seed: number,
   scale: number,
 ) => {
+  // Each tree is a world-space slot, and its shape is hashed from that world
+  // slot - never from the loop index. The index is only how many spans fit on
+  // screen, so hashing it made every tree change species the moment the offset
+  // wrapped: the whole tree line would swap at once as the player ran, which
+  // reads as the background changing mid-level.
   const span = 200;
-  const off = ((o.scrollX * parallax) % span + span) % span;
-  const count = Math.ceil(o.width / span) + 3;
+  const { firstSlot, count, shift } = layerWindow(o.scrollX, parallax, span, o.width);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
-  for (let i = -1; i < count; i++) {
-    const r1 = h1(seed + i * 2.71);
-    const r2 = h1(seed + i * 7.91 + 3);
-    const r3 = h1(seed + i * 11.7 + 8);
+  for (let k = 0; k < count; k++) {
+    const slot = firstSlot + k;
+    const r1 = h1(seed + slot * 2.71);
+    const r2 = h1(seed + slot * 7.91 + 3);
+    const r3 = h1(seed + slot * 11.7 + 8);
     const pine = r3 > 0.45;
     const hBase = (74 + r1 * 74) * scale;
     const wBase = (36 + r2 * 26) * scale;
-    const x = i * span - off + r1 * 70 + wBase * 0.5;
+    const x = slot * span - shift + r1 * 70 + wBase * 0.5;
     if (x + wBase < -60 || x - wBase > o.width + 60) continue;
     // Trees used to sway on a per-index sine. In a parallax layer that is real
     // scrolling, a whole tree line leaning back and forth reads as the screen
@@ -929,17 +936,19 @@ export const drawBackgroundCritters = (
   const pal = o.pal;
   const fam = familyForTheme(o.theme);
   const kinds = CRITTERS_BY_FAMILY[fam] || CRITTERS_BY_FAMILY.meadow;
+  // World-space slots: a critter keeps its species for the whole level instead
+  // of turning into a different animal whenever the parallax offset wraps.
   const span = 300;
-  const off = ((o.scrollX * 0.085) % span + span) % span;
+  const { firstSlot, count, shift } = layerWindow(o.scrollX, 0.085, span, o.width);
   const baseY = seatY;
-  const count = Math.ceil(o.width / span) + 2;
 
   ctx.save();
   ctx.fillStyle = withAlpha(pal.ink, pal.night ? 0.44 : 0.3);
-  for (let i = -1; i < count; i++) {
+  for (let k = 0; k < count; k++) {
+    const i = firstSlot + k;
     const seed = h1(i * 3.7 + 11);
     const kind = kinds[Math.floor(seed * kinds.length) % kinds.length];
-    const x = i * span - off + seed * 190;
+    const x = i * span - shift + seed * 190;
     const s = 1.05 + h1(i * 8.1 + 5) * 0.35;
     // A slow idle cycle: rabbits hop twice, then sit still. Motion is scaled
     // by o.motion so reduced-motion players get a still scene.

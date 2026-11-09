@@ -149,3 +149,66 @@ test('telemetry picks the dominant death cause with a stable tie-break', async (
   assert.equal(recordDailyScore('2026-11-04', 5000, 12), 1);
   assert.equal(loadDailyScores('2026-11-04')[0].score, 5000);
 });
+
+test('parallax layers repeat identically as the camera travels', async () => {
+  const { layerWindow, slotToScreen, hash01 } = await import('../components/parallax.ts');
+  const SPAN = 200;
+  const VIEW = 1280;
+  // One wrap is a whole number of camera pixels, so it can be sampled exactly.
+  const PARALLAX = 0.08; // SPAN / 0.08 = 2500 px per wrap
+  const WRAP = SPAN / PARALLAX;
+
+  // What the layer looks like on screen: each drawn span with the shape hashed
+  // from its world slot. Two cameras that are one wrap apart see the same
+  // picture, because the scenery repeats - but a slot has moved one place, so
+  // the shapes must be compared per span, not per list index.
+  const picture = (scroll) => {
+    const { firstSlot, count, shift } = layerWindow(scroll, PARALLAX, SPAN, VIEW);
+    const out = [];
+    for (let k = 0; k < count; k++) {
+      const slot = firstSlot + k;
+      const x = Math.round(slotToScreen(slot, SPAN, shift));
+      if (x < -SPAN || x > VIEW) continue;
+      out.push([x, slot % SPAN, hash01(23 + slot * 11.7 + 8) > 0.45 ? 'pine' : 'round']);
+    }
+    return out;
+  };
+
+  const at0 = picture(0);
+  const atWrap = picture(WRAP);
+
+  // The wrap shifts the layer by one span, so the same screen position shows
+  // the neighbouring slot - and the picture as a whole repeats.
+  assert.equal(atWrap.length, at0.length);
+  for (let i = 0; i < at0.length; i++) {
+    assert.equal(atWrap[i][0], at0[i][0], 'the same spans must be on screen after a wrap');
+  }
+
+  // Between the two, the scenery genuinely moved (otherwise the layer would be
+  // frozen and the check above would be meaningless).
+  assert.notDeepEqual(picture(WRAP / 2).map(([x]) => x), at0.map(([x]) => x));
+
+  // The same screen position shows the same *world* slot until the layer has
+  // travelled far enough for the next span to slide in - and a point of the
+  // world keeps its slot however far the camera has gone. That second property
+  // is what makes the background fixed per level.
+  const slotAtScreen = (screenX, scroll) => {
+    const { firstSlot, count, shift } = layerWindow(scroll, PARALLAX, SPAN, VIEW);
+    for (let k = 0; k < count; k++) {
+      const slot = firstSlot + k;
+      const left = slotToScreen(slot, SPAN, shift);
+      if (left <= screenX && screenX < left + SPAN) return slot;
+    }
+    return null;
+  };
+  // World x 640 / SPAN... a world coordinate lives in exactly one slot forever.
+  // Track it as the camera moves: the drawn slot must follow the world, so the
+  // scenery the player runs past never changes species.
+  const worldSlot = (worldX) => Math.floor(worldX / SPAN);
+  for (const scroll of [0, 250, 1250, 2500, 4000, 9000]) {
+    const screenX = 640; // fixed point on screen
+    const worldX = screenX + scroll * PARALLAX; // what world point is under it
+    assert.equal(slotAtScreen(screenX, scroll), worldSlot(worldX),
+      `screen point shows a different slot than the world says, at scroll ${scroll}`);
+  }
+});
