@@ -519,7 +519,7 @@ export const StartMenuView: React.FC<{
           {t('Inställningar')}
         </button>
         <span aria-hidden="true">·</span>
-        <span>{t('Neon City · 40 kapitel')}</span>
+        <span>{t('8 trakter · 40 banor')}</span>
         <span aria-hidden="true">·</span>
         <span className="text-white/20">v2.0</span>
       </div>

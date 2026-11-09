@@ -53,6 +53,7 @@ export const STRINGS: Row[] = [
   ['Så spelar du', 'How to play', 'Nasıl oynanır', 'Cómo jugar', 'طريقة اللعب'],
   ['Inställningar', 'Settings', 'Ayarlar', 'Ajustes', 'الإعدادات'],
   ['Neon City · 40 kapitel', 'Neon City · 40 chapters', 'Neon Şehir · 40 bölüm', 'Neon City · 40 capítulos', 'مدينة النيون · 40 فصلاً'],
+  ['8 trakter · 40 banor', '8 regions · 40 stages', '8 bölge · 40 bölüm', '8 regiones · 40 niveles', '8 مناطق · 40 مستوى'],
   ['Demoloop: katten springer, hoppar, skjuter och besegrar en boss', 'Demo loop: the cat runs, jumps, shoots and defeats a boss', 'Demo döngüsü: kedi koşar, zıplar, ateş eder ve bir patronu yener', 'Demostración: el gato corre, salta, dispara y derrota a un jefe', 'عرض تجريبي: القط يركض ويقفز ويطلق النار ويهزم زعيماً'],
   ['PARKEN', 'THE PARK', 'PARK', 'EL PARQUE', 'الحديقة'],
   ['REGZONEN', 'RAIN ZONE', 'YAĞMUR BÖLGESİ', 'ZONA DE LLUVIA', 'منطقة المطر'],
