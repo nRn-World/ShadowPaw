@@ -5520,15 +5520,47 @@ export const PlayingView: React.FC<{
       const isNight = timePhase === 'night';
       const isGolden = timePhase === 'sunset' || timePhase === 'dawn';
       const reduceNow = isReducedMotion(progress.settings.reduceMotion);
-      const worldPal = game.worldPal;
+      // A COPY of the palette. This block runs inside the render loop, and the
+      // golden-hour grades below are relative blends - mutating game.worldPal in
+      // place re-applied them every frame, so a 55 % mix compounded to 100 %
+      // within half a second and the stage settled on whatever target colour
+      // was steepest, no matter what the palette actually said. Copying keeps
+      // every frame starting from the authored colour.
+      const worldPal = { ...game.worldPal };
       // Golden hour warms the family palette instead of swapping the sky out,
-      // so a sunset meadow still reads as a meadow.
+      // so a sunset meadow still reads as a meadow. It has to warm every layer,
+      // though: blending orange into the sky while the silhouettes stay cold
+      // cyan is what turned the industrial chapter into a muddy brown wash with
+      // pale blue slabs pasted on it.
       if (isGolden && !isNight) {
-        worldPal.skyTop = blend(worldPal.skyTop, '#6a4a8a', 0.38);
-        worldPal.skyMid = blend(worldPal.skyMid, '#ffb27a', 0.42);
-        worldPal.skyLow = blend(worldPal.skyLow, '#ffd9a0', 0.55);
-        worldPal.haze = blend(worldPal.haze, '#ffc48a', 0.5);
+        // Authored, not blended. A sunset cannot be mixed out of the daytime
+        // palette: cyan sky plus red-orange light averages to grey, which is
+        // why every earlier attempt at a golden hour produced a muddy mauve
+        // wash. These are the colours of an actual sunset - deep violet
+        // overhead, rose in the middle, amber at the horizon - and the family
+        // keeps its identity through the ground and the planes below, which is
+        // where the player reads it anyway.
+        worldPal.skyTop = '#6a4a8a';
+        worldPal.skyMid = '#ffa97a';
+        worldPal.skyLow = '#ffd9a0';
+        worldPal.haze = '#ffc48a';
         worldPal.sun = '#ffc46b';
+        worldPal.sunCore = '#fff4d6';
+        worldPal.cloud = '#ffcfa8';
+        worldPal.cloudShade = '#a8697e';
+        // Only the city re-tunes its depth planes. Mixing a BLUE city base with
+        // an ORANGE sky lands on grey - complementary colours cancel - and no
+        // amount of detail rescues a grey skyline on a peach sky, so the city
+        // gets its own dusk ladder authored in the sunset's own hue. A tree
+        // line needs none of this: warming it toward brass turned the forest
+        // chapter's trees khaki, because a thin rim of colour already reads at
+        // dusk through the sky behind it.
+        if (familyForTheme(String(game.theme || '')) === 'city') {
+          worldPal.far = '#e5a888';
+          worldPal.mid = '#a9645f';
+          worldPal.near = '#5b2f42';
+          worldPal.ink = blend(worldPal.ink, '#2a1c30', 0.35);
+        }
       }
       if (isNight && !worldPal.night) worldPal.starfield = true;
       const backdropOpts = {
@@ -5540,6 +5572,9 @@ export const PlayingView: React.FC<{
         pal: worldPal,
         theme: String(game.theme || ''),
         motion: reduceNow ? 0.25 : 1,
+        // Lamps are only lit once the sky is dim: dawn and sunset. Daylight
+        // keeps plain glass, and night is fully lit.
+        lamp: isNight ? 1 : isGolden ? 0.85 : 0,
       };
       drawBackdrop(ctx, backdropOpts);
       // Solid earth under the playfield. Without this the area below the last
