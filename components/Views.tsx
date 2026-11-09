@@ -32,7 +32,7 @@ import { createQualityMonitor, FULL_QUALITY } from '../game/quality';
 import type { GameState, HudStats } from '../game/types';
 import { ShadowShiftMeter, ObjectivePill } from './GameHud';
 import { drawCartoonEnemy } from './enemyArt';
-import { drawCheckpointBeacons, drawGhost } from './gameRender';
+import { drawCheckpointBeacons, drawGhost, drawBlackout, drawGoldRush } from './gameRender';
 import {
   getLevelDesign, getDifficultyProfile, getLevelLayout, LEVEL_LAYOUT_META,
   buildLevelLayout, makeRng, getWeatherForLevel, seededRandom,
@@ -7015,6 +7015,24 @@ export const PlayingView: React.FC<{
       vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Two surprise events that are pure atmosphere. Both fade in and out
+      // around their own window so neither ever snaps on.
+      if (game.surprise && (game.surprise.id === 'blackout' || game.surprise.id === 'goldRush')) {
+        const evDef = EVENTS[game.surprise.id];
+        const elapsed = evDef.warning + evDef.duration - game.surprise.timer;
+        // 0 during the warning, 0..1 over the first 24 frames of the event,
+        // then back to 0 over the last 30 frames.
+        const before = Math.max(0, elapsed - evDef.warning);
+        const fadeIn = Math.min(1, before / 24);
+        const fadeOut = Math.min(1, Math.max(0, game.surprise.timer) / 30);
+        const strength = Math.min(fadeIn, fadeOut);
+        if (game.surprise.id === 'blackout') {
+          drawBlackout(ctx, game, { width: canvas.width, height: canvas.height, strength });
+        } else {
+          drawGoldRush(ctx, game, { width: canvas.width, height: canvas.height, strength, time: timeSec });
+        }
+      }
 
       // Lightning is drawn in world space, underneath the rain, so the drops
       // read as falling in front of a strike behind them.

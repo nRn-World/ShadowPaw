@@ -740,6 +740,15 @@ export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) 
     drawDunes(ctx, o, 0.07, pal.mid, 0.9, horizon + 96, 4.3, 62);
   }
 
+  // Wildlife on the middle plane: dark silhouettes that hop and peck along the
+  // far ground. Drawn after this plane but before the near tree line, so the
+  // closest trees can partially occlude them - that overlap is what sells the
+  // depth. They are deliberately faint: a background animal must never be
+  // mistaken for an enemy.
+  // Seated on the crest of the middle ridge - above the near tree caps, so
+  // they read against open sky instead of being swallowed by the tree line.
+  drawBackgroundCritters(ctx, o, groundY - 146);
+
   // Atmospheric haze where the planes meet the ground.
   const haze = ctx.createLinearGradient(0, horizon - 90, 0, groundY + 10);
   haze.addColorStop(0, withAlpha(pal.haze, 0));
@@ -766,32 +775,182 @@ export const drawBackdrop = (ctx: CanvasRenderingContext2D, o: BackdropOptions) 
   ctx.fillRect(0, groundY - 3, width, 4);
 };
 
+/* ------------------------------------------------------- background life --- */
+
+/** Which critters belong to a biome. They are pure silhouettes, so only the
+    outline matters - a rabbit reads by its ears, a squirrel by its tail. */
+const CRITTERS_BY_FAMILY: Record<Family, string[]> = {
+  meadow: ['rabbit', 'squirrel', 'dog'],
+  forest: ['rabbit', 'deer', 'squirrel'],
+  city: ['cat', 'pigeon', 'dog'],
+  night: ['cat', 'owl', 'bat'],
+  snow: ['rabbit', 'deer', 'fox'],
+  desert: ['dog', 'fox', 'bird'],
+  lava: ['bat', 'fox', 'bird'],
+  space: ['cat', 'bird', 'bat'],
+  ice: ['rabbit', 'fox', 'bird'],
+};
+
+const drawCritter = (
+  ctx: CanvasRenderingContext2D,
+  kind: string,
+  x: number,
+  y: number,
+  s: number,
+  bob: number,
+) => {
+  ctx.beginPath();
+  switch (kind) {
+    case 'rabbit': {
+      // Body, then two long ears that keep a tiny bit of lag from `bob`.
+      ctx.ellipse(x, y - 9 * s, 8 * s, 9 * s, 0, 0, Math.PI * 2);
+      const ear = 2 + bob * 1.5;
+      ctx.moveTo(x - 4 * s, y - 16 * s);
+      ctx.ellipse(x - 4 * s, y - (22 + ear) * s, 2.4 * s, 7 * s, 0.16, 0, Math.PI * 2);
+      ctx.moveTo(x + 3 * s, y - 16 * s);
+      ctx.ellipse(x + 3 * s, y - (22 + ear) * s, 2.4 * s, 7 * s, -0.16, 0, Math.PI * 2);
+      break;
+    }
+    case 'squirrel': {
+      ctx.ellipse(x, y - 7 * s, 6 * s, 7.5 * s, 0, 0, Math.PI * 2);
+      // The tail is one big curl behind the body: the whole silhouette.
+      ctx.moveTo(x + 5 * s, y - 6 * s);
+      ctx.bezierCurveTo(
+        x + 22 * s, y - 8 * s,
+        x + 20 * s, y - 26 * s,
+        x + 9 * s, y - 22 * s,
+      );
+      ctx.bezierCurveTo(
+        x + 15 * s, y - 18 * s,
+        x + 14 * s, y - 9 * s,
+        x + 5 * s, y - 6 * s,
+      );
+      break;
+    }
+    case 'deer': {
+      ctx.ellipse(x, y - 12 * s, 11 * s, 8 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(x - 10 * s, y - 24 * s, 4.5 * s, 5 * s, 0.2, 0, Math.PI * 2);
+      ctx.moveTo(x - 12 * s, y - 28 * s);
+      ctx.lineTo(x - 16 * s, y - 36 * s);
+      ctx.lineTo(x - 14 * s, y - 37 * s);
+      ctx.lineTo(x - 10 * s, y - 29 * s);
+      break;
+    }
+    case 'cat': {
+      ctx.ellipse(x, y - 8 * s, 9 * s, 7 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + 8 * s, y - 16 * s, 5 * s, 4.5 * s, 0, 0, Math.PI * 2);
+      ctx.moveTo(x + 5 * s, y - 19 * s);
+      ctx.lineTo(x + 6 * s, y - 24 * s);
+      ctx.lineTo(x + 9 * s, y - 20 * s);
+      ctx.moveTo(x + 10 * s, y - 20 * s);
+      ctx.lineTo(x + 13 * s, y - 24 * s);
+      ctx.lineTo(x + 13 * s, y - 18 * s);
+      // Tail: an upward hook.
+      ctx.moveTo(x - 8 * s, y - 8 * s);
+      ctx.quadraticCurveTo(x - 18 * s, y - 10 * s, x - 15 * s, y - 20 * s);
+      ctx.quadraticCurveTo(x - 13 * s, y - 12 * s, x - 7 * s, y - 6 * s);
+      break;
+    }
+    case 'dog': {
+      ctx.ellipse(x, y - 9 * s, 10 * s, 8 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + 9 * s, y - 19 * s, 5 * s, 5 * s, 0, 0, Math.PI * 2);
+      ctx.moveTo(x + 6 * s, y - 23 * s);
+      ctx.ellipse(x + 5 * s, y - 20 * s, 2 * s, 4 * s, 0.35, 0, Math.PI * 2);
+      ctx.moveTo(x - 9 * s, y - 10 * s);
+      ctx.quadraticCurveTo(x - 17 * s, y - 22 * s, x - 20 * s, y - 16 * s);
+      break;
+    }
+    case 'fox': {
+      ctx.ellipse(x, y - 7 * s, 9 * s, 6.5 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + 8 * s, y - 15 * s, 4.5 * s, 4 * s, 0, 0, Math.PI * 2);
+      ctx.moveTo(x + 5 * s, y - 18 * s);
+      ctx.lineTo(x + 4 * s, y - 23 * s);
+      ctx.lineTo(x + 8 * s, y - 19 * s);
+      // Big brush tail.
+      ctx.moveTo(x - 7 * s, y - 8 * s);
+      ctx.quadraticCurveTo(x - 20 * s, y - 14 * s, x - 16 * s, y - 1 * s);
+      ctx.quadraticCurveTo(x - 14 * s, y - 8 * s, x - 6 * s, y - 5 * s);
+      break;
+    }
+    case 'owl': {
+      ctx.ellipse(x, y - 10 * s, 8 * s, 9 * s, 0, 0, Math.PI * 2);
+      ctx.moveTo(x - 5 * s, y - 18 * s);
+      ctx.lineTo(x - 8 * s, y - 25 * s);
+      ctx.lineTo(x - 1 * s, y - 19 * s);
+      ctx.moveTo(x + 5 * s, y - 18 * s);
+      ctx.lineTo(x + 8 * s, y - 25 * s);
+      ctx.lineTo(x + 1 * s, y - 19 * s);
+      break;
+    }
+    case 'bat': {
+      const flap = 3 + bob * 6;
+      ctx.ellipse(x, y - 14 * s, 4 * s, 5 * s, 0, 0, Math.PI * 2);
+      ctx.moveTo(x - 3 * s, y - 16 * s);
+      ctx.quadraticCurveTo(x - 14 * s, y - (20 + flap) * s, x - 17 * s, y - 12 * s);
+      ctx.quadraticCurveTo(x - 9 * s, y - 14 * s, x - 3 * s, y - 11 * s);
+      ctx.moveTo(x + 3 * s, y - 16 * s);
+      ctx.quadraticCurveTo(x + 14 * s, y - (20 + flap) * s, x + 17 * s, y - 12 * s);
+      ctx.quadraticCurveTo(x + 9 * s, y - 14 * s, x + 3 * s, y - 11 * s);
+      break;
+    }
+    case 'bird':
+    case 'pigeon': {
+      const hop = bob * 1.5;
+      ctx.ellipse(x, y - (7 + hop) * s, 7 * s, 5.5 * s, -0.15, 0, Math.PI * 2);
+      ctx.ellipse(x + 6 * s, y - (12 + hop) * s, 3.4 * s, 3.4 * s, 0, 0, Math.PI * 2);
+      ctx.moveTo(x + 9 * s, y - (12 + hop) * s);
+      ctx.lineTo(x + 14 * s, y - (13 + hop) * s);
+      ctx.lineTo(x + 9 * s, y - (10.5 + hop) * s);
+      break;
+    }
+    default: {
+      ctx.ellipse(x, y - 7 * s, 7 * s, 6 * s, 0, 0, Math.PI * 2);
+    }
+  }
+  ctx.fill();
+};
+
 /**
- * Foreground frame: two inked arcs of hillside that slide faster than the
- * world and hide the bottom corners of the stage. Cheap, and it is what gives
- * a scrolling level a sense of speed.
+ * Background wildlife: dark, semi-transparent silhouettes that hop, peck and
+ * idle on the far ground line. They exist to make the world feel inhabited,
+ * so they sit behind the haze, keep roughly 18 % opacity and never come
+ * closer than the middle distance - a background animal must never be
+ * mistaken for an enemy the cat has to dodge.
  */
-export const drawForeground = (
+export const drawBackgroundCritters = (
   ctx: CanvasRenderingContext2D,
   o: BackdropOptions,
+  seatY: number,
 ) => {
-  const { width, height, pal } = o;
-  const span = 700;
-  const off = ((o.scrollX * 0.42) % span + span) % span;
+  const pal = o.pal;
+  const fam = familyForTheme(o.theme);
+  const kinds = CRITTERS_BY_FAMILY[fam] || CRITTERS_BY_FAMILY.meadow;
+  const span = 300;
+  const off = ((o.scrollX * 0.085) % span + span) % span;
+  const baseY = seatY;
+  const count = Math.ceil(o.width / span) + 2;
+
   ctx.save();
-  ctx.globalAlpha = 0.92;
-  ctx.fillStyle = blend(pal.near, pal.ink, 0.55);
-  const count = Math.ceil(width / span) + 3;
+  ctx.fillStyle = withAlpha(pal.ink, pal.night ? 0.44 : 0.3);
   for (let i = -1; i < count; i++) {
-    const r = h1(i * 5.3 + 2);
-    const w = 380 + r * 220;
-    const h = 40 + r * 52;
-    const x = i * span - off;
-    ctx.beginPath();
-    ctx.moveTo(x - 60, height + 20);
-    ctx.bezierCurveTo(x + w * 0.16, height - h, x + w * 0.84, height - h, x + w + 60, height + 20);
-    ctx.closePath();
-    ctx.fill();
+    const seed = h1(i * 3.7 + 11);
+    const kind = kinds[Math.floor(seed * kinds.length) % kinds.length];
+    const x = i * span - off + seed * 190;
+    const s = 1.05 + h1(i * 8.1 + 5) * 0.35;
+    // A slow idle cycle: rabbits hop twice, then sit still. Motion is scaled
+    // by o.motion so reduced-motion players get a still scene.
+    const t = o.time * 0.9 + seed * 12;
+    const bob = Math.max(0, Math.sin(t * 2.2)) * o.motion;
+    const drift = Math.sin(t * 0.35) * 6 * o.motion;
+    const grounded = !(kind === 'bat' || kind === 'bird' || kind === 'owl');
+    drawCritter(
+      ctx,
+      kind,
+      x + drift,
+      grounded ? baseY : baseY - 130 - seed * 40,
+      s,
+      bob,
+    );
   }
   ctx.restore();
 };

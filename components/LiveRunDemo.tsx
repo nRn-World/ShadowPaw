@@ -598,14 +598,11 @@ const LiveRunDemo: React.FC = () => {
     const reduceMotion = isReducedMotion(motionSetting);
 
     if (reduceMotion) {
-      // Paint one frame as soon as the atlas can be shown, so the still hero is
-      // the 3D cat rather than the vector fallback from the very first tick.
-      let painted = false;
-      const paint = () => {
-        if (disposed || painted) return;
-        painted = true;
-        render(3.0);
-      };
+      // Still image instead of an animation loop. This used to define `paint`
+      // and return without ever calling it, which left the whole hero panel
+      // blank for anyone with "reduce motion" on - the one group that gets the
+      // least feedback when a decorative loop is broken.
+      render(3.0);
       return;
     }
 
