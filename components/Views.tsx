@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry, RunMode } from '../types';
 import LiveRunDemo from './LiveRunDemo';
 import { drawCatSprite } from './catSprite';
+import { drawCatAtlasSprite } from './catAtlasSprite';
 
 import CatPreview from './CatPreview';
 import { drawAtmosphere, drawBloom } from './worldArt';
@@ -5601,7 +5602,7 @@ export const PlayingView: React.FC<{
           drawGroundSlab(ctx, {
             x: platX, y: platY, width: plat.width, height: plat.height,
             pal: worldPal, grass: true, cap: capStyle, time: timeSec,
-            seed: platIndex * 17.3, motion: reduceNow ? 0.2 : 1,
+            seed: platIndex * 17.3,
           });
         } else {
           // Floating ledges, bridges, moving lifts and boss walkways.
@@ -6812,6 +6813,19 @@ export const PlayingView: React.FC<{
       // linger under the cat mid-jump.
       if (game.player.onGround) {
         ctx.save();
+        // A lit patch of ground behind the paws. The baked hero is a dark cat on
+        // a dark slab; this soft light pool is what stops it reading as a hole in
+        // the floor, and unlike a glow around the body it never washes out the
+        // artwork itself.
+        const halo = ctx.createRadialGradient(px + pw / 2, py + ph, 4, px + pw / 2, py + ph, 62);
+        halo.addColorStop(0, 'rgba(255,252,238,0.26)');
+        halo.addColorStop(0.5, 'rgba(226,246,255,0.11)');
+        halo.addColorStop(1, 'rgba(226,246,255,0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.ellipse(px + pw / 2, py + ph, 62, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.fillStyle = 'rgba(0,0,0,0.26)';
         ctx.beginPath();
         // Sized to the atlas cat's drawn width (66 px) rather than the hitbox.
@@ -6824,22 +6838,16 @@ export const PlayingView: React.FC<{
       const shifted = game.shadowActive > 0;
       if (shifted) ctx.globalAlpha = 0.84;
       else if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Date.now() / 55);
-      // One hero cat everywhere: the same articulated cartoon drawing as the
-      // menus, the shop and the attract loop. The origin is the paw line
-      // (py + ph), so the cat stands on the exact top of the platform.
-      //
-      // The baked 3D render that used to be drawn here was dark, low-contrast
-      // and nearly the same value as the new ground, so the hero read as a
-      // smudge at the bottom of the screen. The vector cat is the deliberate
-      // art direction: thick outlines, big eyes, bright fur - it pops against
-      // every biome.
+      // The hero cat is the baked atlas sprite again - the same drawing the
+      // game shipped with. The origin is the paw line (py + ph), so the cat
+      // stands on the exact top of the platform instead of hovering above it.
       const catFacing: 1 | -1 = game.player.facing === -1 ? -1 : 1;
       const catGrounded = !!game.player.onGround;
       const catSpeed = game.player.velocityX || 0;
-      const catScale = 1.42;
-      drawCatSprite(ctx, px + pw / 2, py + ph, {
-        color: shifted ? '#8b5cf6' : game.player.color,
-        accent: shifted ? '#f3e8ff' : game.player.accent,
+      const atlasDrawn = drawCatAtlasSprite(ctx, px + pw / 2, py + ph, {
+        color: shifted ? '#7c3aed' : game.player.color,
+        accent: shifted ? '#e9d5ff' : game.player.accent,
+        original: game.player.original && !shifted,
         t: Date.now() / 1000,
         running: Math.abs(catSpeed) > 0.4 && catGrounded,
         jumping: !catGrounded,
@@ -6848,16 +6856,34 @@ export const PlayingView: React.FC<{
         vy: game.player.velocityY || 0,
         phase: game.player.runCycle || 0,
         dashing: (game.player.dashing || 0) > 0,
-        blinking: !!game.player.isBlinking,
         // The blaster flashes for a few frames after each shot.
         shooting: (game.shootCooldown || 0) > 6,
         facing: catFacing,
-        // The drawing is about 46 x 46 at scale 1 (paws at y = 0, ear tips at
-        // y = -46). Scale it up so the hero has real presence inside the same
-        // 50 x 70 hitbox - the collision code is untouched.
-        sx: catScale,
-        sy: catScale * 1.04,
+        // The tight art is roughly 1.56:1; 66 px wide puts it at about the
+        // same presence as the old 50 x 56 vector cat inside the 50 x 70
+        // hitbox.
+        w: 66,
       });
+      // Vector cat only until the atlas PNG has decoded.
+      if (!atlasDrawn) {
+        drawCatSprite(ctx, px + pw / 2, py + ph, {
+          color: shifted ? '#7c3aed' : game.player.color,
+          accent: shifted ? '#e9d5ff' : game.player.accent,
+          t: Date.now() / 1000,
+          running: Math.abs(catSpeed) > 0.4 && catGrounded,
+          jumping: !catGrounded,
+          grounded: catGrounded,
+          speed: catSpeed,
+          vy: game.player.velocityY || 0,
+          phase: game.player.runCycle || 0,
+          dashing: (game.player.dashing || 0) > 0,
+          blinking: !!game.player.isBlinking,
+          shooting: (game.shootCooldown || 0) > 6,
+          facing: catFacing,
+          sx: pw / 46,
+          sy: ph / 62,
+        });
+      }
       ctx.restore();
 
       // Shadow Shift reads as a different character, not just a HUD number:

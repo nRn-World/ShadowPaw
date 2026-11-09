@@ -4,6 +4,7 @@
  * drawing rules can be changed without touching the simulation.
  */
 import { drawCatSprite } from './catSprite';
+import { drawCatAtlasSprite } from './catAtlasSprite';
 import type { GameState } from '../game/types';
 
 /** Checkpoint beacons: unreached ones are dim, a reached one burns cyan so the
@@ -47,12 +48,24 @@ export const drawGhost = (ctx: CanvasRenderingContext2D, game: GameState) => {
   ctx.save();
   ctx.globalAlpha = 0.32;
   ctx.globalCompositeOperation = 'lighter';
-  drawCatSprite(ctx, gf[0] + 25 - game.scrollX, gf[1] + 70, {
+  // The ghost is the same hero, just translucent - drawing the vector cat here
+  // would put two different cats in the same level.
+  const gx = gf[0] + 25 - game.scrollX;
+  const gy = gf[1] + 70;
+  const ghostDrawn = drawCatAtlasSprite(ctx, gx, gy, {
     color: '#a855f7', accent: '#e9d5ff', t: Date.now() / 1000,
     running: false, jumping: false, grounded: true, speed: 0, vy: 0,
-    phase: 0, dashing: false, blinking: false, shooting: false,
-    facing: gf[2] === -1 ? -1 : 1, sx: 0.9, sy: 1.1,
+    phase: 0, dashing: false, shooting: false,
+    facing: gf[2] === -1 ? -1 : 1, w: 59,
   });
+  if (!ghostDrawn) {
+    drawCatSprite(ctx, gx, gy, {
+      color: '#a855f7', accent: '#e9d5ff', t: Date.now() / 1000,
+      running: false, jumping: false, grounded: true, speed: 0, vy: 0,
+      phase: 0, dashing: false, blinking: false, shooting: false,
+      facing: gf[2] === -1 ? -1 : 1, sx: 0.9, sy: 1.1,
+    });
+  }
   ctx.restore();
 };
 

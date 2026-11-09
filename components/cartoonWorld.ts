@@ -520,7 +520,11 @@ const drawTreeLine = (
     const wBase = (36 + r2 * 26) * scale;
     const x = i * span - off + r1 * 70 + wBase * 0.5;
     if (x + wBase < -60 || x - wBase > o.width + 60) continue;
-    const sway = Math.sin(o.time * 0.9 + i * 1.3) * 2.2 * o.motion;
+    // Trees used to sway on a per-index sine. In a parallax layer that is real
+    // scrolling, a whole tree line leaning back and forth reads as the screen
+    // wobbling, so the trunks are anchored now. A fixed lean per tree still
+    // keeps the line from looking ruler-straight.
+    const sway = (r1 - 0.5) * 3.2;
 
     // Trunk.
     ctx.lineWidth = 7 * scale;
@@ -983,30 +987,41 @@ export interface GroundOpts {
   width: number;
   height: number;
   pal: Pal;
-  /** Swaying grass on the top edge. */
+  /** Grass fringe on the top edge (static - see drawGrassCap). */
   grass: boolean;
   /** Snow / sand cap instead of grass. */
   cap: 'grass' | 'snow' | 'sand' | 'stone' | 'metal' | 'lava';
   time: number;
   /** Deterministic seed so decoration never moves between frames. */
   seed: number;
-  motion: number;
+  /** Kept for the moving-platform and boss-call sites; the ground itself is still. */
+  motion?: number;
   /** Neon edge accent for boss walkways and city routes. */
   neon?: string;
 }
 
 const INK_W = 3;
 
-/** Grass blades along a top edge. Deterministic per pixel position. */
+/**
+ * Grass blades along a top edge. Deliberately still.
+ *
+ * These blades used to sway in a continuous sine wave whose phase advanced
+ * with world X, which made the whole ground ripple in a travelling wave right
+ * under the player's feet. Combined with the camera panning, that was the one
+ * thing in the frame the eye could not lock onto - reported as the grass
+ * "moving when the cat runs" and hurting to look at.
+ *
+ * A parallax layer already gives the world motion. The ground is what the
+ * player reads to judge jumps, so it stays put: fixed blades, with only the
+ * wildflowers keeping a shape that suggests wind. No clock, no phase.
+ */
 const drawGrassCap = (
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,
   pal: Pal,
-  time: number,
   seed: number,
-  motion: number,
 ) => {
   const start = Math.max(0, x - 6);
   const end = Math.min(x + width + 6, x + width + 10);
@@ -1014,18 +1029,20 @@ const drawGrassCap = (
   for (let gx = start; gx < end; gx += 7) {
     const hh = h1(gx * 0.37 + seed);
     const blade = 7 + hh * 13;
-    const sway = Math.sin(time * 1.6 + gx * 0.05) * 3 * motion;
+    // A fixed lean derived from the position hash - the meadow looks wind-combed
+    // without a single pixel of it changing between frames.
+    const lean = (hh - 0.5) * 2.4;
     ctx.strokeStyle = hh > 0.62 ? pal.grass : pal.grassDark;
     ctx.lineWidth = 3.4;
     ctx.beginPath();
     ctx.moveTo(gx, y + 3);
-    ctx.quadraticCurveTo(gx + sway * 0.5, y - blade * 0.55, gx + sway, y - blade);
+    ctx.quadraticCurveTo(gx + lean * 0.5, y - blade * 0.55, gx + lean, y - blade);
     ctx.stroke();
-    if (hh > 0.86) {
-      // Occasional wildflower bobbing on the same sway.
-      ctx.fillStyle = hh > 0.94 ? pal.accent : pal.accent2;
+    if (hh > 0.9) {
+      // Occasional wildflower, leaning with its blade.
+      ctx.fillStyle = hh > 0.95 ? pal.accent : pal.accent2;
       ctx.beginPath();
-      ctx.arc(gx + sway, y - blade - 2, 3, 0, Math.PI * 2);
+      ctx.arc(gx + lean, y - blade - 2, 3, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -1037,7 +1054,7 @@ const drawGrassCap = (
  * instead of a rectangle.
  */
 export const drawGroundSlab = (ctx: CanvasRenderingContext2D, g: GroundOpts) => {
-  const { x, y, width, height, pal, cap, time, seed, motion } = g;
+  const { x, y, width, height, pal, cap, time, seed } = g;
   if (width <= 2) return;
   const bodyH = Math.max(height, 26);
 
@@ -1080,7 +1097,7 @@ export const drawGroundSlab = (ctx: CanvasRenderingContext2D, g: GroundOpts) => 
   }
 
   if (cap === 'grass') {
-    drawGrassCap(ctx, x, y, width, pal, time, seed, motion);
+    drawGrassCap(ctx, x, y, width, pal, seed);
   } else if (cap === 'snow') {
     // Soft snow mounds along the top.
     for (let sx = x + 10; sx < x + width - 10; sx += 34) {

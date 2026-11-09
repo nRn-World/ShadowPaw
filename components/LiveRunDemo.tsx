@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isReducedMotion, useProgress } from '../context/ProgressContext';
 import { drawCatSprite } from './catSprite';
+import { drawCatAtlasSprite, catAtlasReady, loadCatAtlas, whenCatAtlasReady } from './catAtlasSprite';
 import { useT, tr } from '../i18n';
 
 /**
@@ -337,10 +338,10 @@ const drawCat = (
   ctx.ellipse(x + 2, GROUND_Y + 2, 19 * shadowScale, 3.6 * shadowScale, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.translate(x, y);
-  // Same cartoon hero as the game stage: thick outlines and bright fur, so the
-  // menu preview and the real level never look like two different games.
-  ctx.scale(1.5, 1.5);
-  drawCatSprite(ctx, 0, 0, {
+  // The same baked hero sprite the stage draws - the menu preview must show
+  // the cat the player is actually going to control. The vector cat only
+  // stands in for the frames before the PNG has decoded.
+  const atlasDrawn = drawCatAtlasSprite(ctx, 0, 0, {
     color: '#4169E1',
     accent: '#2bee79',
     t,
@@ -353,7 +354,24 @@ const drawCat = (
     phase: t * 13,
     shooting,
     facing: 1,
+    w: 78,
   });
+  if (!atlasDrawn) {
+    ctx.scale(1.5, 1.5);
+    drawCatSprite(ctx, 0, 0, {
+      color: '#4169E1',
+      accent: '#2bee79',
+      t,
+      running: !jumping,
+      jumping,
+      grounded: !jumping,
+      speed: jumping ? 0 : 5.4,
+      vy: jumping ? (jumpDelta < 0 ? -6 : 6) : 0,
+      phase: t * 13,
+      shooting,
+      facing: 1,
+    });
+  }
   ctx.restore();
 };
 
@@ -605,6 +623,12 @@ const LiveRunDemo: React.FC = () => {
       render(3.0);
       return;
     }
+
+    // The demo can mount before anything else has asked for the atlas, so it
+    // has to start the decode itself; otherwise it would sit on the vector
+    // fallback forever on the home screen.
+    loadCatAtlas();
+    if (!catAtlasReady()) void whenCatAtlasReady().then(() => { if (!disposed) render(3.0); });
 
     const tick = (now: number) => {
       if (disposed) return;
