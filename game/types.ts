@@ -21,6 +21,7 @@ export interface Platform extends Rect {
   bossArena?: boolean;
   bossWalkway?: boolean;
   shadowBridge?: boolean;
+  neonPhase?: number;
   chasm?: boolean;
   mover?: { axis: 'h' | 'v'; range: number; speed: number; phase: number; originX?: number; originY?: number };
 }

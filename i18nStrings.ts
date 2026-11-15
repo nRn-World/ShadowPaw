@@ -15,6 +15,17 @@ export const STRINGS: Row[] = [
   ['+5 % fart', '+5% speed', '%5 hız', '+5 % de velocidad', '+5٪ سرعة'],
   ['+10 % poäng', '+10% score', '%10 puan', '+10 % de puntos', '+10٪ نقاط'],
   ['Klassisk', 'Classic', 'Klasik', 'Clásico', 'كلاسيكي'],
+  // Neon route and rescued-cat missions
+  ['NEONBONUS! +15 MYNT', 'NEON BONUS! +15 COINS', 'NEON BONUSU! +15 PARA', '¡BONO NEÓN! +15 MONEDAS', 'مكافأة نيون! +15 عملة'],
+  ['Hitta 3 skuggfragment åt Miso.', 'Find 3 shadow fragments for Miso.', 'Miso için 3 gölge parçası bul.', 'Encuentra 3 fragmentos de sombra para Miso.', 'اعثر على 3 شظايا ظل لميسو.'],
+  ['Hitta 5 skuggfragment åt Luna.', 'Find 5 shadow fragments for Luna.', 'Luna için 5 gölge parçası bul.', 'Encuentra 5 fragmentos de sombra para Luna.', 'اعثر على 5 شظايا ظل للونا.'],
+  ['Belöning hämtad', 'Reward claimed', 'Ödül alındı', 'Recompensa recogida', 'تم استلام المكافأة'],
+  ['Hämta belöning', 'Claim reward', 'Ödülü al', 'Recoger recompensa', 'استلم المكافأة'],
+  ['Berättelser', 'Stories', 'Hikâyeler', 'Historias', 'قصص'],
+  ['Stormörnen vaktade neonskyltarna. När himlen klarnade vågade stadens katter hitta hem igen.', 'The Storm Eagle guarded the neon signs. When the skies cleared, the city cats dared to find their way home again.', 'Fırtına Kartalı neon tabelaları koruyordu. Gökyüzü açılınca şehir kedileri yeniden eve dönmeye cesaret etti.', 'El Águila Tormenta vigilaba los letreros de neón. Cuando el cielo se despejó, los gatos de la ciudad se atrevieron a volver a casa.', 'كان نسر العاصفة يحرس لافتات النيون. عندما صفت السماء تجرأت قطط المدينة على العودة إلى المنزل.'],
+  ['Klara kapitel 3 för att upptäcka en berättelse om neonkvarteren.', 'Clear chapter 3 to discover a story about the neon district.', 'Neon bölgesiyle ilgili bir hikâye keşfetmek için 3. bölümü tamamla.', 'Completa el capítulo 3 para descubrir una historia del barrio de neón.', 'أكمل الفصل الثالث لاكتشاف قصة عن حي النيون.'],
+  ['Övre vägen: neonskyltar blinkar – samla bonusen om du vågar.', 'Upper route: neon signs blink – collect the bonus if you dare.', 'Üst yol: neon tabelalar yanıp söner – cesaretin varsa bonusu topla.', 'Ruta superior: los letreros de neón parpadean; recoge el bono si te atreves.', 'الطريق العلوي: تومض لافتات النيون، اجمع المكافأة إن تجرأت.'],
+
   // Rescue and hideout
   ['{n} är räddad!', '{n} is rescued!', '{n} kurtarıldı!', '¡{n} ha sido rescatado!', 'تم إنقاذ {n}!'],
   ['Räddade katter: {a}/8', 'Cats rescued: {a}/8', 'Kurtarılan kediler: {a}/8', 'Gatos rescatados: {a}/8', 'القطط المنقذة: {a}/8'],

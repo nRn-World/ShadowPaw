@@ -1,3 +1,4 @@
+import { hasNeonRoute, isNeonSignActive } from '../game/neonRoute';
 import { RESCUE_CATS } from '../game/rescue';
 import { secretLocation } from '../game/shadowSecrets';
 
@@ -2990,6 +2991,7 @@ export const PlayingView: React.FC<{
       shadowPasses: 0,
       shadowShifts: 0,
       shadowSecret: null as null | { x: number; y: number; collected: boolean },
+      neonPrize: null as null | { x: number; y: number; phase: number; collected: boolean },
       rescueCat: null as null | { x: number; y: number; name: string; color: string; rescued: boolean },
       // --- Power-up layer ---
       pickups: [] as any[],
@@ -3670,6 +3672,19 @@ export const PlayingView: React.FC<{
       // Begränsa antalet fiender till max 2
       if (game.enemies.length > 2) {
         game.enemies = game.enemies.slice(0, 2);
+      }
+    }
+
+    // Neon district: a timed upper route sits above the normal path. It is
+    // never used for required fish, enemies, checkpoints or the exit.
+    if (hasNeonRoute(level)) {
+      const point = secretLocation(game.platforms, [...game.holes, ...game.hazards, ...game.enemies], levelLength, false);
+      if (point) {
+        const start = point.x - 120;
+        for (let i = 0; i < 3; i++) {
+          game.platforms.push({ x: start + i * 130, y: groundY - 120, width: 110, height: 16, neonPhase: i * 25 } as any);
+        }
+        game.neonPrize = { x: start + 2 * 130 + 55, y: groundY - 160, phase: 50, collected: false };
       }
     }
 
@@ -4935,6 +4950,7 @@ export const PlayingView: React.FC<{
       if (!isOverHole && game.player.velocityY >= 0) {
         for (const plat of game.platforms) {
           if (plat.shadowBridge && game.shadowActive <= 0) continue;
+          if (plat.neonPhase !== undefined && !isNeonSignActive(game.frame, plat.neonPhase)) continue;
           const playerBottom = game.player.y + game.player.height;
           const playerRight = game.player.x + game.player.width;
           const playerLeft = game.player.x;
@@ -5510,6 +5526,18 @@ export const PlayingView: React.FC<{
         haptic('collect', progress.settings.haptics);
       }
 
+      const neonPrize = game.neonPrize;
+      if (neonPrize && !neonPrize.collected && isNeonSignActive(game.frame, neonPrize.phase) &&
+          Math.abs(game.player.x + game.player.width / 2 - neonPrize.x) < 35 &&
+          Math.abs(game.player.y + game.player.height / 2 - neonPrize.y) < 45) {
+        neonPrize.collected = true;
+        awardCoins(game, 15);
+        grantXp(game, 25);
+        pushToast(game, tr('NEONBONUS! +15 MYNT'), '#ff82e5');
+        AudioEngine.playCoin(0);
+        haptic('collect', progress.settings.haptics);
+      }
+
       // Auto-quality: drop the oldest particles rather than paying to draw a
       // thousand sparks on a phone that is already struggling.
       const q = game.quality || FULL_QUALITY;
@@ -5647,7 +5675,16 @@ export const PlayingView: React.FC<{
         if (platX + plat.width < -40 || platX > canvas.width + 40) return;
         const platY = plat.y;
 
-        if (plat.shadowBridge) {
+        if (plat.neonPhase !== undefined) {
+          const active = isNeonSignActive(game.frame, plat.neonPhase);
+          const warning = active && (game.frame + plat.neonPhase) % 240 >= 150;
+          ctx.save(); ctx.fillStyle = warning ? '#ffb347' : active ? '#f34ad4' : '#403154';
+          ctx.strokeStyle = active ? '#ffd1f5' : '#a885b4'; ctx.lineWidth = 3;
+          if (!active) ctx.setLineDash([8, 6]);
+          ctx.globalAlpha = active ? 0.95 : 0.45;
+          ctx.fillRect(platX, platY, plat.width, plat.height);
+          ctx.strokeRect(platX, platY, plat.width, plat.height); ctx.restore();
+        } else if (plat.shadowBridge) {
           ctx.save();
           ctx.globalAlpha = game.shadowActive > 0 ? 0.9 : 0.3;
           ctx.fillStyle = '#ab73f5'; ctx.strokeStyle = '#e8caff'; ctx.lineWidth = 2;
@@ -6423,6 +6460,16 @@ export const PlayingView: React.FC<{
           ctx.fillStyle = '#32234d'; ctx.beginPath(); ctx.arc(x - 6, y, 2, 0, Math.PI * 2); ctx.arc(x + 6, y, 2, 0, Math.PI * 2); ctx.fill();
           ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
           ctx.fillText(friend.name + ' ♥', x, y - 33); ctx.restore();
+        }
+      }
+
+      if (game.neonPrize && !game.neonPrize.collected) {
+        const prize = game.neonPrize, x = prize.x - game.scrollX;
+        if (x > -40 && x < canvas.width + 40) {
+          ctx.save(); ctx.fillStyle = '#ffdc78'; ctx.strokeStyle = '#b1468b'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(x, prize.y, 13, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#63345a'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('+', x, prize.y + 5); ctx.restore();
         }
       }
 

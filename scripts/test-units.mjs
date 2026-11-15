@@ -222,3 +222,27 @@ test('long stair and bridge layouts provide safe mid-course checkpoints', () => 
     }
   }
 });
+
+test('neon route timing is deterministic and optional to the district', async () => {
+  const { hasNeonRoute, isNeonSignActive } = await import('../game/neonRoute.ts');
+  assert.equal(hasNeonRoute(10), false);
+  for (const n of [11, 12, 13, 14]) assert.equal(hasNeonRoute(n), true);
+  assert.equal(hasNeonRoute(15), false);
+  assert.equal(isNeonSignActive(0, 0), true);
+  assert.equal(isNeonSignActive(179, 0), true);
+  assert.equal(isNeonSignActive(180, 0), false);
+  assert.equal(isNeonSignActive(240, 0), true);
+  assert.equal(isNeonSignActive(155, 25), false);
+});
+
+test('cat missions can be claimed once only after rescue and required fragments', async () => {
+  const { claimCatQuest, cleanCatQuestClaims } = await import('../game/sideQuests.ts');
+  const base = { rescuedCats: [], shadowSecrets: [1, 2, 3], claimedCatQuests: [], coins: 12, totalCoinsEarned: 12 };
+  assert.equal(claimCatQuest(base, 'miso_fragments'), base);
+  assert.equal(claimCatQuest({ ...base, rescuedCats: [2], shadowSecrets: [1] }, 'miso_fragments').coins, 12);
+  const earned = claimCatQuest({ ...base, rescuedCats: [2] }, 'miso_fragments');
+  assert.equal(earned.coins, 112); assert.equal(earned.totalCoinsEarned, 112);
+  assert.equal(claimCatQuest(earned, 'miso_fragments'), earned);
+  assert.equal(claimCatQuest(earned, 'unknown'), earned);
+  assert.deepEqual(cleanCatQuestClaims(['miso_fragments', 'miso_fragments', 'unknown', null]), ['miso_fragments']);
+});
