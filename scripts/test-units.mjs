@@ -188,3 +188,37 @@ test('card synergies require both cards and stack only once', async () => {
   assert.ok(Math.abs(combinePerkEffects(['shadow_battery', 'time_lord']).shadowChargeMult - 1.4 * 1.2 * 1.15) < 1e-9);
   assert.equal(activeSynergies(['greedy_paws', 'long_line', 'quick_step', 'steady_paws']).length, 2);
 });
+
+test('longer stages preserve a gentle tutorial and shorter boss approaches', () => {
+  for (let level = 1; level <= 40; level++) {
+    const t = Math.min(1, Math.max(0, (level - 1) / 49));
+    const ramp = Math.pow(t, 1.25);
+    const oldLength = Math.floor(2600 + level * 150 + ramp * 1900 + [300, 800, 1400, 500, 1000, 1800][(level - 1) % 6]);
+    const profile = getDifficultyProfile(level, 1);
+    const expected = level === 1 ? 1.35 : level % 5 === 0 ? 1.25 : 1.5;
+    assert.ok(profile.levelLength >= oldLength * expected - 2, `level ${level} should be longer`);
+  }
+});
+
+test('long ground slabs provide distinct safe checkpoints without invented anchors', () => {
+  const cps = getCheckpoints(8000, [{ x: 0, width: 8000, isGround: true }], [{x: 2800, width: 200}]);
+  assert.equal(cps.length, 2);
+  assert.ok(cps[1] - cps[0] >= 200);
+  assert.ok(cps.every(x => x <= 2770 || x >= 3030));
+  assert.deepEqual(getCheckpoints(8000, [], []), []);
+});
+
+
+test('long stair and bridge layouts provide safe mid-course checkpoints', () => {
+  for (const level of [2, 13, 18, 21, 26, 29, 34, 37]) {
+    const profile = getDifficultyProfile(level, 1);
+    const { platforms, holes } = buildLevelLayout({ level, layout: getLevelLayout(level), levelLength: profile.levelLength, groundY: 624, profile, bossLevel: false });
+    const anchors = getCheckpoints(profile.levelLength, platforms, holes);
+    assert.equal(anchors.length, 2, `level ${level}`);
+    for (const [i, x] of anchors.entries()) {
+      assert.ok(Math.abs(x / profile.levelLength - [0.36, 0.7][i]) < 0.05, `level ${level}, checkpoint ${i}`);
+      assert.ok(platforms.some(p => p.isGround && x >= p.x + 30 && x <= p.x + p.width - 60));
+      assert.ok(!holes.some(h => x > h.x - 30 && x < h.x + h.width + 30));
+    }
+  }
+});

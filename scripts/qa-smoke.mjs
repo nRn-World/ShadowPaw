@@ -176,6 +176,24 @@ try {
   await waitFor(page, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).rescuedCats.includes(2), 'saved cat rescue');
   check('level 2 rescue is saved immediately', () => assert.equal(catName, 'Miso'));
 
+  // Crossing a mid-course island then falling must respawn at that island.
+  const firstAnchor = await page.evaluate(() => {
+    const g = window.__SP;
+    g.checkpointIndex = 0;
+    g.player.x = g.checkpoints[0];
+    g.player.y = g.groundY - g.player.height - 20;
+    g.player.velocityX = 0; g.player.velocityY = 0;
+    return g.checkpoints[0];
+  });
+  await page.clock.runFor(50);
+  await page.evaluate(() => { window.__SP.player.y = 900; });
+  await page.clock.runFor(50);
+  const respawn = await page.evaluate(() => ({ x: window.__SP.player.x, anchor: window.__SP.checkpointX }));
+  check('falling returns to the mid-course checkpoint', () => {
+    assert.equal(respawn.anchor, firstAnchor);
+    assert.ok(Math.abs(respawn.x - firstAnchor) < 80);
+  });
+
   // --- Life refill --------------------------------------------------------
   await page.evaluate(() => {
     const g = window.__SP;
