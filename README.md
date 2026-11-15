@@ -27,9 +27,9 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🃏 **Build synergies** - Three named card pairs add a bonus when combined, while keeping the cards’ original costs.
 - 💎 **Shadow exploration** - Find optional purple traces in campaign levels and collect fragments during Shadow Shift. Five unique fragments unlock the Eclipse skin; optional shadow bridges are only solid while shifted. The chapter map includes a small hideout and tracks discoveries. Fragments are saved locally and included in progress exports.
 - 🌑 **Shadow Shift** - Charge the meter with fish, kills and near misses, then press `E` (or tap the meter): four seconds of invulnerability, +30 % speed, a fish magnet, +75 % score and enemies dissolve when you run through them
-- 🧠 **Learnable Levels** - Every stage is generated from a fixed seed, so a retry replays the exact same course instead of a fresh dice roll
+- 🧠 **Longer, Learnable Levels** - Standard stages are 50% longer; the tutorial and boss approaches are extended more gently. Each stage uses a fixed seed, so a retry replays the same course. Speed Run budgets scale with the new length.
 - 📅 **Daily Run & Ghost** - One shared date seed for everyone, a local top-10 per day, a play streak and a translucent ghost of your best run on that exact seed
-- 🚩 **Checkpoints** - Two cyan beacons on long stages send a fallen cat back to safe ground while keeping collected fish and score; no free lives
+- 🚩 **Checkpoints** - Cyan beacons send a fallen cat back to safe ground while keeping collected fish and score; long stair and bridge layouts include rest islands for mid-course checkpoints. No free lives.
 - 🎚️ **Difficulty** - Avslappnat / Normal / Utmaning scales pits, enemies, hazards, the fish quota and the Speed Run clock, never rewards
 - 👾 **Distinct Enemies** - Hounds chase, skittish foes feint and retreat, hoppers keep a vertical rhythm; shadow wraiths can only be dissolved by a Shadow Shift pass
 - 👑 **Boss Depth** - A miniboss on every third chapter, an exposed glowing core after each attack (double damage), double damage on a Shadow Shift pass, and longer-telegraphed phase-3 crossfire and spiral patterns

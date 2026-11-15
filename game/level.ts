@@ -150,9 +150,14 @@ export const getDifficultyProfile = (
   const variant = (level - 1) % 6;
   const variantLengthBonus = [300, 800, 1400, 500, 1000, 1800][variant];
   const tune = DIFFICULTY_TUNING[difficulty] ?? DIFFICULTY_TUNING.normal;
+  // Keep the tutorial approachable and boss run-ups shorter than ordinary
+  // stages; the fight itself already extends those levels substantially.
+  const lengthScale = level === 1 ? 1.35 : level % 5 === 0 ? 1.25 : 1.5;
+  const contentScale = level === 1 ? 1.1 : level % 5 === 0 ? 1.1 : 1.25;
+  const baseLength = 2600 + level * 150 + effectiveRamp * 1900 + variantLengthBonus;
 
   return {
-    levelLength: Math.floor(2600 + level * 150 + effectiveRamp * 1900 + variantLengthBonus),
+    levelLength: Math.floor(baseLength * lengthScale),
     // Base width of one ground segment; the generator varies this per segment.
     segmentWidth: Math.max(120, 200 - effectiveRamp * 62),
     // How much harder the level gets between its start and its goal.
@@ -162,10 +167,10 @@ export const getDifficultyProfile = (
     holeChance: level <= 2 ? 0 : Math.min(0.36, 0.04 + effectiveRamp * 0.34) * tune.holes,
     holeSize: Math.min(0.42, 0.1 + effectiveRamp * 0.3) * tune.holeSize,
     platformCount: Math.floor(8 + level * 0.55 + effectiveRamp * 8),
-    enemyCount: Math.max(1, Math.floor((1 + Math.max(0, level - 1) * 0.6 + effectiveRamp * 4) * tune.enemies)),
+    enemyCount: Math.max(1, Math.floor((1 + Math.max(0, level - 1) * 0.6 + effectiveRamp * 4) * tune.enemies * contentScale)),
     enemySpeed: (1.1 + Math.max(0, level - 1) * 0.07 + effectiveRamp * 0.8) * tune.speed,
-    fishCount: Math.max(8, Math.floor((10 + level * 0.55 + effectiveRamp * 3) * tune.fish)),
-    hazardCount: level <= 3 ? 0 : Math.floor(((level - 3) * 0.4 + effectiveRamp * 4) * tune.hazards),
+    fishCount: Math.max(8, Math.floor((10 + level * 0.55 + effectiveRamp * 3) * tune.fish * contentScale)),
+    hazardCount: level <= 3 ? 0 : Math.floor(((level - 3) * 0.4 + effectiveRamp * 4) * tune.hazards * contentScale),
     variant,
     timerScale: tune.timer,
     quotaScale: tune.quota,
@@ -275,6 +280,27 @@ export const buildLevelLayout = ({ level, layout, levelLength, groundY, profile,
   // lets the renderer draw depth and a warning lip, instead of a hard black band
   // where the floor simply stops.
   const finish = () => {
+    // Stair and bridge layouts can have no ground between the two ends. On
+    // longer stages, provide two small solid rest islands so checkpoints can
+    // actually respawn the player in the middle, not at the starting line.
+    if (layout === 'stairs' || layout === 'bridges') {
+      for (const fraction of [0.36, 0.7]) {
+        const left = Math.round(levelLength * fraction) - 110;
+        const right = left + 220;
+        ground(left, right - left);
+        // Explicit designer pits may overlap an island; trim those pits so the
+        // physics and the visible solid ground agree at the checkpoint.
+        const trimmed = holes.flatMap((hole) => {
+          const end = hole.x + hole.width;
+          if (end <= left || hole.x >= right) return [hole];
+          const parts = [];
+          if (hole.x < left) parts.push({ ...hole, width: left - hole.x });
+          if (end > right) parts.push({ ...hole, x: right, width: end - right });
+          return parts;
+        });
+        holes.splice(0, holes.length, ...trimmed);
+      }
+    }
     const groundGaps = () => {
       const covered = platforms
         .filter((pl) => pl.isGround)
@@ -516,28 +542,39 @@ export const getWeatherForLevel = (level: number) => {
 };
 
 
-/** Two respawn anchors on solid ground, never inside a pit. Long levels used
-    to send a fallen cat back to the nearest slab, which could be hundreds of
-    pixels behind the last checkpoint. */
+/** Respawn anchors must be on real ground, away from holes. A wide slab may
+    hold more than one anchor: use the point nearest each target instead of the
+    slab's centre. Sparse layouts may yield fewer anchors, never fake ones. */
 export const getCheckpoints = (
   levelLength: number,
   platforms: Array<{ x: number; width: number; isGround?: boolean }>,
   holes: Array<{ x: number; width: number }>,
 ): number[] => {
   const targets = [0.36, 0.7].map((t) => levelLength * t);
-  const safe = platforms.filter((p) => p.isGround && p.width >= 90);
-  let previous = -Infinity;
-  return targets.map((target) => {
+  const safe = platforms.filter((p) => p.isGround && p.width >= 100);
+  const result: number[] = [];
+  for (const target of targets) {
     let best: number | null = null;
+    const minimum = result.length ? result[result.length - 1] + 200 : 160;
     for (const p of safe) {
-      const x = p.x + Math.min(p.width - 40, Math.max(20, p.width / 2));
-      // Never stack two beacons on the same slab.
-      if (x <= previous + 200) continue;
-      if (holes.some((h) => x > h.x - 30 && x < h.x + h.width + 30)) continue;
-      if (best === null || Math.abs(x - target) < Math.abs(best - target)) best = x;
+      let intervals: Array<[number, number]> = [[Math.max(minimum, p.x + 30), p.x + p.width - 60]];
+      for (const hole of holes) {
+        const left = hole.x - 30, right = hole.x + hole.width + 30;
+        intervals = intervals.flatMap(([a, b]) => {
+          if (b <= left || a >= right) return [[a, b] as [number, number]];
+          const parts: Array<[number, number]> = [];
+          if (a <= left) parts.push([a, left]);
+          if (b >= right) parts.push([right, b]);
+          return parts;
+        });
+      }
+      for (const [a, b] of intervals) {
+        if (a > b) continue;
+        const x = Math.max(a, Math.min(b, target));
+        if (best === null || Math.abs(x - target) < Math.abs(best - target)) best = x;
+      }
     }
-    const chosen = best ?? Math.max(160, previous + 240);
-    previous = chosen;
-    return chosen;
-  });
+    if (best !== null) result.push(best);
+  }
+  return result;
 };
