@@ -91,6 +91,7 @@ export const STRINGS: Row[] = [
   ['Mynt', 'Coins', 'Madeni para', 'Monedas', 'عملات'],
   ['Bästa combo', 'Best combo', 'En iyi kombo', 'Mejor combo', 'أفضل كومبو'],
   ['Bossar', 'Bosses', 'Patronlar', 'Jefes', 'الزعماء'],
+  ['Var femte nivå. Tre faser, nya attacker och unik design. Slut på skott? Hoppa på bossen – då blir den argare, rör sig och attackerar snabbare.', 'Every fifth level. Three phases, new attacks and a unique design. Out of shots? Jump on the boss – it gets angrier, moves and attacks faster.', 'Her beşinci seviye. Üç aşama, yeni saldırılar ve benzersiz tasarım. Mermin mi bitti? Patronun üzerine atla – daha da öfkelenir, hareket eder ve daha hızlı saldırır.', 'Cada quinto nivel. Tres fases, nuevos ataques y un diseño único. ¿Sin disparos? Salta sobre el jefe: se enfadará, se moverá y atacará más rápido.', 'كل مستوى خامس. ثلاث مراحل وهجمات جديدة وتصميم فريد. نفدت الطلقات؟ اقفز على الزعيم، فسيغضب ويتحرك ويهاجم أسرع.'],
   ['Fiskar', 'Fish', 'Balık', 'Peces', 'أسماك'],
   ['Fiender', 'Enemies', 'Düşmanlar', 'Enemigos', 'الأعداء'],
   ['Perfekta', 'Perfect', 'Kusursuz', 'Perfectos', 'مثالي'],
@@ -111,7 +112,14 @@ export const STRINGS: Row[] = [
   ['REGZONEN', 'RAIN ZONE', 'YAĞMUR BÖLGESİ', 'ZONA DE LLUVIA', 'منطقة المطر'],
   ['BOSSFIGHT', 'BOSS FIGHT', 'PATRON SAVAŞI', 'COMBATE CON JEFE', 'معركة الزعيم'],
   ['BOSS BESEGRAD', 'BOSS DEFEATED', 'PATRON YENİLDİ', 'JEFE DERROTADO', 'هُزم الزعيم'],
+  ['BOSS TRAMPAD · -{n} HP', 'BOSS STOMPED · -{n} HP', 'PATRONA BASILDI · -{n} HP', 'JEFE PISADO · -{n} PV', 'دِيس الزعيم · -{n} نقاط حياة'],
+  ['ARG!', 'ANGRY!', 'ÖFKELİ!', '¡ENFADADO!', 'غاضب!'],
+  ['BOSSEN BLEV ARG! FLYGER RUNT OCH ATTACKERAR', 'THE BOSS IS ANGRY! IT IS MOVING AND ATTACKING', 'PATRON ÖFKELENDİ! HAREKET EDİP SALDIRIYOR', '¡EL JEFE ESTÁ ENFADADO! SE MUEVE Y ATACA', 'الزعيم غاضب! إنه يتحرك ويهاجم'],
+  ['BOSSENS RASERI ÖKAR · NIVÅ {n}', 'THE BOSS RAGE RISES · LEVEL {n}', 'PATRONUN ÖFKESİ ARTIYOR · SEVİYE {n}', 'LA RABIA DEL JEFE AUMENTA · NIVEL {n}', 'غضب الزعيم يزداد · المستوى {n}'],
+  ['{name} är arg!', '{name} is angry!', '{name} öfkeli!', '¡{name} está enfadado!', '{name} غاضب!'],
+  ['{name} är arg! – FAS {n}', '{name} is angry! – PHASE {n}', '{name} öfkeli! – AŞAMA {n}', '¡{name} está enfadado! – FASE {n}', '{name} غاضب! – المرحلة {n}'],
   ['BOSS · SKUGGHUNDEN', 'BOSS · SHADOW HOUND', 'PATRON · GÖLGE KÖPEĞİ', 'JEFE · SABUESO SOMBRA', 'الزعيم · كلب الظل'],
+
 
   // ---- settings
   ['System', 'System', 'Sistem', 'Sistema', 'النظام'],

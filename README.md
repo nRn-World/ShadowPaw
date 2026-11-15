@@ -34,7 +34,7 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🚩 **Checkpoints** - Cyan beacons send a fallen cat back to safe ground while keeping collected fish and score; long stair and bridge layouts include rest islands for mid-course checkpoints. No free lives.
 - 🎚️ **Difficulty** - Avslappnat / Normal / Utmaning scales pits, enemies, hazards, the fish quota and the Speed Run clock, never rewards
 - 👾 **Distinct Enemies** - Hounds chase, skittish foes feint and retreat, hoppers keep a vertical rhythm; shadow wraiths can only be dissolved by a Shadow Shift pass
-- 👑 **Boss Depth** - A miniboss on every third chapter, an exposed glowing core after each attack (double damage), double damage on a Shadow Shift pass, and longer-telegraphed phase-3 crossfire and spiral patterns
+- 👑 **Boss Depth** - A miniboss on every third chapter, an exposed glowing core after each attack (double damage), double damage on a Shadow Shift pass, and longer-telegraphed phase-3 crossfire and spiral patterns. If the gun is empty, stomp the boss to deal damage; each stomp enrages it, making it move and attack faster.
 - 🃏 **Risk/Reward Cards** - Choose 1 of 3 seeded cards between levels; every card has both an upside and a cost, and restarting never rerolls the offer
 - 🎧 **Adaptive Audio & Haptics** - Combo-driven music layers, ducking under boss warnings, enemy-position stereo panning and a distinct vibration signature per event
 - ⚡ **Auto Quality** - Measures real frame time, trims particles and weather, caches the static skyline offscreen and makes bloom/atmosphere optional

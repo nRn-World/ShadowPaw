@@ -15,6 +15,12 @@ import {
 import { PERKS, offerPerks, combinePerkEffects } from '../game/perks.ts';
 import { createQualityMonitor } from '../game/quality.ts';
 import { updateEnemyMotion } from '../game/enemies.ts';
+import {
+  getBossAttackCooldown,
+  getBossAngerSpeedMultiplier,
+  getBossStompDamage,
+  getNextBossAnger,
+} from '../game/boss.ts';
 
 const fakeGame = (playerX = 400) => ({ player: { x: playerX, width: 50, y: 500, height: 70 } });
 
@@ -111,6 +117,16 @@ test('enemy archetypes 0-2 behave differently', () => {
   assert.ok(hound.x > 300, 'hound should close the distance');
   assert.ok(skittish.feintTimer > 0, 'skittish enemy should be freezing');
   assert.notEqual(hopper.y, hopper.baseY, 'hopper should leave the ground');
+});
+
+test('boss stomps provide an ammo-free route but raise the difficulty', () => {
+  assert.equal(getBossStompDamage({ maxHp: 14 }), 3);
+  assert.equal(getBossStompDamage({ maxHp: 6, isMini: true }), 3);
+  assert.equal(getNextBossAnger(0), 1);
+  assert.equal(getNextBossAnger(3), 3, 'anger is capped');
+  assert.ok(getBossAngerSpeedMultiplier(2) > getBossAngerSpeedMultiplier(1));
+  assert.ok(getBossAttackCooldown(116, 1, 1, 2) < getBossAttackCooldown(116, 1, 1, 0));
+  assert.ok(getBossAttackCooldown(40, 2, 8, 3) >= 30, 'telegraph loop keeps a readable floor');
 });
 
 test('auto-quality steps down under sustained slow frames and recovers', () => {

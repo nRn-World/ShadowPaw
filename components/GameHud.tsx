@@ -60,7 +60,9 @@ export const ObjectivePill: React.FC<{ stats: HudStats }> = ({ stats }) => {
         </span>
         <span className="max-w-[60vw] truncate text-[10px] font-black uppercase tracking-[0.14em] text-white/80">
           {stats.bossHp > 0
-            ? t('Besegra {name}', { name: stats.bossName || t('bossen') })
+            ? stats.bossAngry
+              ? t('{name} är arg!', { name: stats.bossName || t('bossen') })
+              : t('Besegra {name}', { name: stats.bossName || t('bossen') })
             : stats.collectedCount >= stats.fishGoal
               ? t('Spring till Jerry · {n} m', { n: stats.goalDist })
               : t('Samla {n} fiskar till', { n: Math.max(0, stats.fishGoal - stats.collectedCount) })}

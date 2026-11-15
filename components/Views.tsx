@@ -27,6 +27,12 @@ import {
 import { getTopDeathCause, getMostDangerousLevel, type DeathCause } from '../game/telemetry';
 import { PERK_BY_ID, combinePerkEffects, offerPerks, activeSynergies, type PerkDef } from '../game/perks';
 import { SHADOW_ENEMY_TYPE, updateEnemyMotion, drawShadowWraith } from '../game/enemies';
+import {
+  getBossAttackCooldown,
+  getBossAngerSpeedMultiplier,
+  getBossStompDamage,
+  getNextBossAnger,
+} from '../game/boss';
 import { haptic } from '../game/haptics';
 import {
   getLevelTwist, twistPhysics, pickEvent, EVENTS, TWISTS,
@@ -960,7 +966,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     { icon: 'cyclone', name: 'Sågdrönare', color: 'text-red-300', desc: 'Roterande taggar – håll avstånd.' },
     { icon: 'smart_toy', name: 'Sentry-torn', color: 'text-amber-300', desc: 'Står still och skjuter långsamma projektiler. Rör dig i sidled.' },
     { icon: 'bug_report', name: 'Laddare', color: 'text-violet-300', desc: 'Lyser rött innan de rusar. Hoppa över eller dasha undan.' },
-    { icon: 'military_tech', name: 'Bossar', color: 'text-pink-300', desc: 'Var femte nivå. Tre faser, nya attacker och unik design.' },
+    { icon: 'military_tech', name: 'Bossar', color: 'text-pink-300', desc: 'Var femte nivå. Tre faser, nya attacker och unik design. Slut på skott? Hoppa på bossen – då blir den argare, rör sig och attackerar snabbare.' },
   ];
 
   return (
@@ -2778,7 +2784,7 @@ export const PlayingView: React.FC<{
     };
   }, []);
 
-  const [stats, setStats] = useState<HudStats>({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
+  const [stats, setStats] = useState<HudStats>({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossAngry: false, bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -3303,6 +3309,11 @@ export const PlayingView: React.FC<{
           isMini: false,
           coreExposed: 0,
           coreFlash: 0,
+          angry: false,
+          angerLevel: 0,
+          stompCount: 0,
+          stompCooldown: 0,
+          defeatRegistered: false,
         };
       }
     }
@@ -3357,6 +3368,8 @@ export const PlayingView: React.FC<{
           isJumping: false, jumpTimer: 0, stunTimer: 0,
           auraAngle: 0, dashTimer: 0, encountered: false,
           isMini: true, coreExposed: 0, coreFlash: 0,
+          angry: false, angerLevel: 0, stompCount: 0, stompCooldown: 0,
+          defeatRegistered: false,
         };
       }
     }
@@ -3906,6 +3919,35 @@ export const PlayingView: React.FC<{
   const awardCoins = (game: any, amount: number) => {
     game.coinsThisLevel = (game.coinsThisLevel || 0) + amount;
     addCoins(amount);
+  };
+
+  /** One reward path for every way of defeating a boss: bullets, Shadow Shift
+      and the new ammo-free stomp route all pay the same clear reward. */
+  const finishBoss = (game: any, boss: any) => {
+    if (boss.defeatRegistered) return;
+    boss.defeatRegistered = true;
+    const rewardCoins = 50 + (boss.phase || 0) * 20;
+    registerCombo(game, 900 + (boss.phase || 0) * 300, boss.x, boss.y);
+    grantXp(game, 200 + (boss.phase || 0) * 100);
+    awardCoins(game, rewardCoins);
+    game.bossDefeatedInRun = true;
+    boss.projectiles = [];
+    game.screenShake = 30;
+    game.slowMo = 45;
+    for (let pi = 0; pi < 40; pi++) {
+      game.particles.push({
+        x: boss.x + Math.random() * boss.width,
+        y: boss.y + Math.random() * boss.height,
+        vx: (Math.random() - 0.5) * 18,
+        vy: (Math.random() - 0.5) * 18,
+        life: 50,
+        color: ['#ff6b35', '#ffcc00', '#ff2222', '#ffffff'][Math.floor(Math.random() * 4)],
+        size: Math.random() * 8 + 3,
+      });
+    }
+    pushToast(game, tr('{name} BESEGRAD! +{n} MYNT', { name: boss.name, n: rewardCoins }), '#ff9f43');
+    AudioEngine.playExplosion();
+    AudioEngine.playLevelUp();
   };
 
   /* ---------------------------- SHADOW SHIFT ------------------------------
@@ -4488,6 +4530,11 @@ export const PlayingView: React.FC<{
 
       // Player Logic
       const p = game.player;
+      // Keep the pre-physics feet position: platform landing snaps the player to
+      // the floor before the boss collision runs, so without this swept sample a
+      // falling cat would look like it touched the boss from the side.
+      const previousPlayerBottom = p.y + p.height;
+      const previousPlayerVelocityY = p.velocityY;
       // Moving platforms step first, so a rider is carried along before physics
       // recomputes its velocity. The lift re-derives its rectangle from the
       // sine phase, which is why `baseX`/`baseY` store the resting centre.
@@ -4717,27 +4764,7 @@ export const PlayingView: React.FC<{
               life: 30, color: coreHit ? '#ffd166' : '#ff6b6b',
             });
             if (coreHit) AudioEngine.playCombo(3);
-            if (boss.hp <= 0) {
-              registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
-              grantXp(game, 200 + boss.phase * 100);
-              awardCoins(game, 50 + boss.phase * 20);
-              game.bossDefeatedInRun = true;
-              game.screenShake = 30;
-              game.slowMo = 45;
-              // Stor explosion
-              for (let pi = 0; pi < 40; pi++) {
-                game.particles.push({
-                  x: boss.x + Math.random()*boss.width,
-                  y: boss.y + Math.random()*boss.height,
-                  vx: (Math.random()-0.5)*18, vy: (Math.random()-0.5)*18,
-                  life: 50, color: ['#ff6b35','#ffcc00','#ff2222','#ffffff'][Math.floor(Math.random()*4)],
-                  size: Math.random()*8+3
-                });
-              }
-              pushToast(game, tr('{name} BESEGRAD! +{n} MYNT', { name: boss.name, n: 50 + boss.phase * 20 }), '#ff9f43');
-              AudioEngine.playExplosion();
-              AudioEngine.playLevelUp();
-            }
+            if (boss.hp <= 0) finishBoss(game, boss);
           }
         }
       });
@@ -5183,7 +5210,8 @@ export const PlayingView: React.FC<{
           game.zoomPunch = 16;
           AudioEngine.playBossRoar();
         }
-        boss.auraAngle = (boss.auraAngle || 0) + 0.05;
+        boss.auraAngle = (boss.auraAngle || 0) + (boss.angry ? 0.075 : 0.05);
+        if (boss.stompCooldown > 0) boss.stompCooldown--;
         if (boss.coreExposed > 0) boss.coreExposed--;
         if (boss.coreFlash > 0) boss.coreFlash--;
         
@@ -5198,31 +5226,52 @@ export const PlayingView: React.FC<{
           AudioEngine.playBossRoar();
           game.zoomPunch = 12;
           boss.attackTimer = 30; // Kortare cooldown i högre faser
-          boss.attackCooldown = Math.max(48, attackProfile.cooldown - boss.phase * 24);
+          boss.attackCooldown = getBossAttackCooldown(
+            attackProfile.cooldown,
+            boss.phase,
+            boss.tier || 1,
+            boss.angerLevel || 0,
+            !!boss.isMini,
+          );
         }
         
         // Stun-hantering
         if (boss.stunTimer > 0) {
           boss.stunTimer--;
         } else {
-          // Rörelselogik
-          const baseSpeed = boss.velocityX + boss.phase * 0.8;
-          const nextBossX = boss.x + (boss.phase === 2 ? baseSpeed * 1.5 : baseSpeed);
+          // Rörelselogik. In the normal phase the boss patrols. After a stomp
+          // it becomes angry: it tracks the cat in short bursts, moves faster
+          // and rises off the floor so the follow-up jumps are less predictable.
+          const angerLevel = boss.angerLevel || 0;
+          const baseSpeed = (boss.isMini ? 1.35 : 1.8 + (boss.tier || 1) * 0.26) + boss.phase * 0.8;
+          const angryMultiplier = boss.angry ? getBossAngerSpeedMultiplier(angerLevel) : 1;
+          let travelDirection = Math.sign(boss.velocityX) || 1;
+          if (boss.angry && game.frame % 24 === 0) {
+            const playerDelta = (game.player.x + game.player.width / 2) - (boss.x + boss.width / 2);
+            if (Math.abs(playerDelta) > 55) travelDirection = Math.sign(playerDelta);
+          }
+          const travelSpeed = baseSpeed * angryMultiplier * (boss.phase === 2 ? 1.5 : 1);
+          const nextBossX = boss.x + travelDirection * travelSpeed;
           if (nextBossX < boss.platformX) {
             boss.x = boss.platformX;
-            boss.velocityX = Math.abs(boss.velocityX);
+            boss.velocityX = Math.abs(travelSpeed);
           } else if (nextBossX + boss.width > boss.platformX + boss.platformW) {
             boss.x = boss.platformX + boss.platformW - boss.width;
-            boss.velocityX = -Math.abs(boss.velocityX);
+            boss.velocityX = -Math.abs(travelSpeed);
           } else {
             boss.x = nextBossX;
+            boss.velocityX = travelDirection * travelSpeed;
           }
-          
-          // Vertikal oscillation (extra i fas 1+)
-          if (boss.phase > 0) {
-            boss.y = boss.groundY + Math.sin(boss.auraAngle) * (8 + boss.phase * 6);
+
+          // Vertical oscillation is part of phase 2+, and becomes a real
+          // movement pattern as soon as the boss is angry.
+          const hoverAmplitude = boss.angry
+            ? 12 + angerLevel * 7 + boss.phase * 4
+            : boss.phase > 0 ? 8 + boss.phase * 6 : 0;
+          if (hoverAmplitude > 0) {
+            boss.y = boss.groundY + Math.sin(boss.auraAngle) * hoverAmplitude;
+            boss.velocityY = Math.cos(boss.auraAngle) * hoverAmplitude * 0.08;
           }
-          
           // Attack logic. Every signature move is telegraphed for a beat first,
           // so a charge-up reads clearly and can be dodged instead of guessed.
           if (boss.telegraph > 0) {
@@ -5235,7 +5284,13 @@ export const PlayingView: React.FC<{
               // Shots in this window deal double, which rewards aggression.
               boss.coreExposed = boss.isMini ? 52 : 72;
               boss.coreFlash = 12;
-              boss.attackCooldown = Math.max(42, attackProfile.cooldown - boss.phase * 22 - (boss.tier || 1) * 3);
+              boss.attackCooldown = getBossAttackCooldown(
+                attackProfile.cooldown,
+                boss.phase,
+                boss.tier || 1,
+                boss.angerLevel || 0,
+                !!boss.isMini,
+              );
               boss.attackTimer = boss.attackCooldown;
             }
           } else {
@@ -5245,10 +5300,13 @@ export const PlayingView: React.FC<{
               const move = moves[(boss.moveIndex || 0) % moves.length] as BossPattern;
               boss.moveIndex = (boss.moveIndex || 0) + 1;
               boss.pendingMove = move;
-              // Later tiers wind up faster, which is what makes the same boss
-              // genuinely harder without changing its silhouette.
-              // Phase 3 winds up much longer, so its new patterns read clearly.
-              boss.telegraph = Math.max(12, 26 - (boss.tier || 1) * 2 + (boss.phase === 2 ? 16 : 0));
+              // Later tiers and anger wind up faster, which makes the same
+              // boss genuinely harder without changing its silhouette. The
+              // minimum keeps the warning readable even at maximum rage.
+              boss.telegraph = Math.max(
+                10,
+                26 - (boss.tier || 1) * 2 - (boss.angerLevel || 0) * 2 + (boss.phase === 2 ? 16 : 0),
+              );
               boss.telegraphTotal = boss.telegraph;
               AudioEngine.playBossWarning();
               haptic('bossWarning', progress.settings.haptics);
@@ -5270,6 +5328,94 @@ export const PlayingView: React.FC<{
             }
           }
         });
+
+        // Ammo-free boss damage: a falling cat can land on the boss's head.
+        // Use a swept top-edge test because the platform solver below may snap
+        // the cat to the arena floor in the same frame.
+        let bossStomped = false;
+        const playerBottom = game.player.y + game.player.height;
+        const stompOverlapX = game.player.x + game.player.width > boss.x + 8 &&
+          game.player.x < boss.x + boss.width - 8;
+        const crossedBossTop = previousPlayerBottom <= boss.y + 18 && playerBottom >= boss.y;
+        if (
+          !boss.stompCooldown &&
+          !game.player.invincible &&
+          previousPlayerVelocityY > 0 &&
+          stompOverlapX &&
+          crossedBossTop
+        ) {
+          bossStomped = true;
+          const damage = getBossStompDamage({ maxHp: boss.maxHp, isMini: !!boss.isMini });
+          boss.hp = Math.max(0, boss.hp - damage);
+          boss.stompCount = (boss.stompCount || 0) + 1;
+          boss.stompCooldown = 24;
+          boss.stunTimer = 22;
+          boss.coreFlash = 18;
+          game.player.y = boss.y - game.player.height;
+          game.player.velocityY = -Math.max(10, game.player.jumpPower * 0.9);
+          game.player.velocityX *= 0.72;
+          game.player.isJumping = true;
+          game.player.onGround = false;
+          game.player.hasDoubleJumped = false;
+          game.player.ridingRef = null;
+          // A short bounce shield prevents the same body from hitting the cat
+          // again before the jump has visibly cleared the boss.
+          game.player.invincible = true;
+          game.player.invincibleTimer = Math.max(game.player.invincibleTimer || 0, 26);
+          game.hitStop = 4;
+          game.screenShake = Math.max(game.screenShake, 12);
+          game.zoomPunch = Math.max(game.zoomPunch, 9);
+          registerCombo(game, 320, boss.x + boss.width / 2, boss.y);
+          grantXp(game, 35);
+          awardCoins(game, 4);
+          gainShadowCharge(game, 8);
+          game.floatingTexts.push({
+            x: boss.x + boss.width / 2,
+            y: boss.y - 10,
+            text: tr('BOSS TRAMPAD · -{n} HP', { n: damage }),
+            life: 48,
+            color: '#ffd166',
+          });
+          for (let pi = 0; pi < 18; pi++) {
+            const angle = (pi / 18) * Math.PI * 2;
+            game.particles.push({
+              x: boss.x + boss.width / 2,
+              y: boss.y,
+              vx: Math.cos(angle) * (2 + Math.random() * 5),
+              vy: Math.sin(angle) * (2 + Math.random() * 4) - 2,
+              life: 30,
+              color: pi % 2 ? '#ffd166' : '#ff6b35',
+              size: Math.random() * 4 + 2,
+            });
+          }
+          haptic('enemyKill', progress.settings.haptics);
+
+          // The first stomp is the trade-off: it works with an empty gun, but
+          // wakes the boss up. Anger persists and stacks up to three levels.
+          const previousAnger = boss.angerLevel || 0;
+          boss.angerLevel = getNextBossAnger(previousAnger);
+          boss.angry = true;
+          boss.phase = Math.max(boss.phase, 1);
+          boss.attackCooldown = getBossAttackCooldown(
+            attackProfile.cooldown,
+            boss.phase,
+            boss.tier || 1,
+            boss.angerLevel,
+            !!boss.isMini,
+          );
+          boss.attackTimer = Math.min(boss.attackTimer || boss.attackCooldown, 18);
+          boss.telegraph = 0;
+          boss.pendingMove = null;
+          if (previousAnger === 0) {
+            pushToast(game, tr('BOSSEN BLEV ARG! FLYGER RUNT OCH ATTACKERAR'), '#ff5470');
+            AudioEngine.playBossRoar();
+          } else {
+            pushToast(game, tr('BOSSENS RASERI ÖKAR · NIVÅ {n}', { n: boss.angerLevel }), '#ff00ff');
+            AudioEngine.playBossWarning();
+          }
+
+          if (boss.hp <= 0) finishBoss(game, boss);
+        }
         
         // Shadow Shift pass: the dissolved cat can strike the boss's core for
         // double damage once per transformation, without taking a hit back.
@@ -5278,7 +5424,7 @@ export const PlayingView: React.FC<{
           const passY = game.player.y + game.player.height > boss.y && game.player.y < boss.y + boss.height;
           if (passX && passY) {
             boss.shadowHitShift = game.shadowShiftId;
-            boss.hp -= 2;
+            boss.hp = Math.max(0, boss.hp - 2);
             boss.stunTimer = 18;
             boss.coreFlash = 16;
             game.hitStop = 4;
@@ -5288,17 +5434,13 @@ export const PlayingView: React.FC<{
               text: tr('SKUGGPASS -2 HP'), life: 45, color: '#c084fc',
             });
             gainShadowCharge(game, 14);
-            if (boss.hp <= 0) {
-              registerCombo(game, 900 + boss.phase * 300, boss.x, boss.y);
-              game.bossDefeatedInRun = true;
-              pushToast(game, tr('{name} BESEGRAD!', { name: boss.name }), '#ff9f43');
-              AudioEngine.playExplosion();
-            }
+            if (boss.hp <= 0) finishBoss(game, boss);
           }
         }
 
-        // Kollision med spelaren (direktkontakt)
-        if (!game.player.invincible) {
+        // Kollision med spelaren (direktkontakt). A successful stomp owns
+        // this frame, so it cannot also be treated as a body-check hit.
+        if (!bossStomped && !game.player.invincible && boss.hp > 0) {
           const overlapX = game.player.x + game.player.width > boss.x && game.player.x < boss.x + boss.width;
           const overlapY = game.player.y + game.player.height > boss.y && game.player.y < boss.y + boss.height;
           if (overlapX && overlapY) {
@@ -5938,6 +6080,7 @@ export const PlayingView: React.FC<{
         const hpPct = boss.hp / boss.maxHp;
         const phaseColors = ['#ff6b35', '#ff2222', '#ff00ff'];
         const phaseColor = phaseColors[boss.phase] || '#ff6b35';
+        const angryColor = boss.angry ? '#ff5470' : phaseColor;
         
         // Rita boss-projektiler
         if (boss.projectiles) {
@@ -5961,15 +6104,30 @@ export const PlayingView: React.FC<{
         
         // Aura-effekt
         ctx.save();
-        ctx.globalAlpha = 0.3 + 0.1 * Math.sin(boss.auraAngle || 0);
+        ctx.globalAlpha = (boss.angry ? 0.4 : 0.3) + 0.1 * Math.sin(boss.auraAngle || 0);
         const auraGrad = ctx.createRadialGradient(bx + bw/2, by + bh/2, 0, bx + bw/2, by + bh/2, bw * 0.8);
-        auraGrad.addColorStop(0, phaseColor);
+        auraGrad.addColorStop(0, angryColor);
         auraGrad.addColorStop(1, 'transparent');
         ctx.fillStyle = auraGrad;
         ctx.beginPath();
         ctx.ellipse(bx + bw/2, by + bh/2, bw * 0.8, bh * 0.8, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+
+        if (boss.angry) {
+          // A pulsing red crown makes the new stomp trade-off obvious even
+          // before the first angry projectile reaches the player.
+          ctx.save();
+          ctx.globalAlpha = 0.55 + Math.sin((boss.auraAngle || 0) * 2) * 0.18;
+          ctx.strokeStyle = angryColor;
+          ctx.lineWidth = 3;
+          ctx.shadowColor = angryColor;
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.ellipse(bx + bw / 2, by + bh / 2, bw * 0.63, bh * 0.58, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         
         // Telegraph: an expanding warning ring tells the player a signature move
         // is about to fire, so damage always feels earned.
@@ -6419,10 +6577,14 @@ export const PlayingView: React.FC<{
         // Boss name, on its own line above the bar.
         ctx.font = 'bold 12px Outfit, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = phaseColor;
-        ctx.shadowColor = phaseColor;
+        ctx.fillStyle = boss.angry ? angryColor : phaseColor;
+        ctx.shadowColor = boss.angry ? angryColor : phaseColor;
         ctx.shadowBlur = 8;
-        ctx.fillText(boss.name, bx + bw / 2, hpBarY - 8);
+        ctx.fillText(
+          boss.angry ? `${boss.name} · ${tr('ARG!')}` : boss.name,
+          bx + bw / 2,
+          hpBarY - 8,
+        );
         ctx.shadowBlur = 0;
 
         // HP-bar background
@@ -7352,6 +7514,7 @@ export const PlayingView: React.FC<{
           bossMaxHp: game.boss?.maxHp || 0,
           bossVisible: !!game.boss && game.boss.hp > 0 && Math.abs(game.boss.x - game.player.x) < canvas.width * 0.8,
           bossName: game.boss?.name || '',
+          bossAngry: !!game.boss?.angry,
           bossPhase: game.boss?.phase || 0,
           xpIntoLevel: game.xpIntoLevel || 0,
           shield: !!game.shield,
@@ -7879,9 +8042,11 @@ export const PlayingView: React.FC<{
               style={{ boxShadow: '0 0 24px rgba(255,50,30,0.4)' }}
             >
               <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
-                stats.bossPhase >= 2 ? 'text-pink-400' : stats.bossPhase === 1 ? 'text-red-400' : 'text-orange-400'
+                stats.bossAngry ? 'text-rose-300' : stats.bossPhase >= 2 ? 'text-pink-400' : stats.bossPhase === 1 ? 'text-red-400' : 'text-orange-400'
               }`}>
-                ⚔️ {t('{name} – FAS {n}', { name: stats.bossName || t('BOSS'), n: (stats.bossPhase || 0) + 1 })}
+                {stats.bossAngry ? '😡' : '⚔️'} {stats.bossAngry
+                  ? t('{name} är arg! – FAS {n}', { name: stats.bossName || t('BOSS'), n: (stats.bossPhase || 0) + 1 })
+                  : t('{name} – FAS {n}', { name: stats.bossName || t('BOSS'), n: (stats.bossPhase || 0) + 1 })}
               </p>
               <div className="h-3 w-full rounded-full bg-black/50 overflow-hidden border border-white/10">
                 <div
