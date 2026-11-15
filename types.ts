@@ -40,6 +40,8 @@ export interface PlayerProgress {
   campaignLevel: number;
   /** Campaign levels whose optional shadow fragment has been found. */
   shadowSecrets: number[];
+  rescuedCats: number[];
+  hideoutDecor: 'classic' | 'garden' | 'neon';
   unlockedSkins: string[];
   equippedSkin: string;
   upgrades: {

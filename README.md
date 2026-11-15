@@ -23,6 +23,8 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 ### Features
 
 - 🎯 **40 Action-Packed Levels** - Eight five-level chapters, each ending in a boss
+- 🐈 **Cat rescue & hideout** - Find one cat on the second level of each chapter. Rescues persist across runs and unlock optional hideout themes; the shadow journal tracks cats, fragments and cleared finales.
+- 🃏 **Build synergies** - Three named card pairs add a bonus when combined, while keeping the cards’ original costs.
 - 💎 **Shadow exploration** - Find optional purple traces in campaign levels and collect fragments during Shadow Shift. Five unique fragments unlock the Eclipse skin; optional shadow bridges are only solid while shifted. The chapter map includes a small hideout and tracks discoveries. Fragments are saved locally and included in progress exports.
 - 🌑 **Shadow Shift** - Charge the meter with fish, kills and near misses, then press `E` (or tap the meter): four seconds of invulnerability, +30 % speed, a fish magnet, +75 % score and enemies dissolve when you run through them
 - 🧠 **Learnable Levels** - Every stage is generated from a fixed seed, so a retry replays the exact same course instead of a fresh dice roll

@@ -2,6 +2,7 @@ import React from 'react';
 import { useProgress } from '../context/ProgressContext';
 import { useT } from '../i18n';
 import { getLevelDesign } from '../game/level';
+import { RESCUE_CATS, type HideoutDecor } from '../game/rescue';
 
 /**
  * Chapter map for the campaign.
@@ -94,7 +95,7 @@ const LevelSelectView: React.FC<{
   onBack: () => void;
   onStart: (level: number) => void;
 }> = ({ onBack, onStart }) => {
-  const { progress } = useProgress();
+  const { progress, setHideoutDecor } = useProgress();
   const t = useT();
 
   // Beyond the last chapter the campaign is simply complete; never show a
@@ -144,7 +145,8 @@ const LevelSelectView: React.FC<{
         </div>
       </div>
 
-      <section aria-label={t('Katttillhållet')} className="mt-6 rounded-3xl border border-violet-300/30 bg-gradient-to-br from-[#201337] via-[#111a35] to-[#0c2530] p-5 text-white shadow-xl">
+      <section aria-label={t('Katttillhållet')} className={`mt-6 rounded-3xl border border-violet-300/30 bg-gradient-to-br p-5 text-white shadow-xl ${progress.hideoutDecor === 'garden' ? 'from-[#123b2b] via-[#18332e] to-[#102735]' : progress.hideoutDecor === 'neon' ? 'from-[#49104d] via-[#24174b] to-[#06344a]' : 'from-[#201337] via-[#111a35] to-[#0c2530]'}`}>
+        <div aria-hidden="true" className="float-right text-2xl">{progress.hideoutDecor === 'garden' ? '🌿 🪴' : progress.hideoutDecor === 'neon' ? '💡 ✨' : '🌙 🐾'}</div>
         <p className="text-xs font-black uppercase tracking-widest text-violet-300">{t('Katttillhållet')}</p>
         <h2 className="mt-1 text-xl font-black">{t('Ett ljus i neonstaden')}</h2>
         <p className="mt-2 text-sm text-white/75">{t('Leta efter lila spår på kampanjbanor. Aktivera skuggskiftet för att samla skuggfragment och låsa upp Eclipse-dräkten.')}</p>
@@ -154,7 +156,37 @@ const LevelSelectView: React.FC<{
           <div className="rounded-xl bg-white/10 p-3"><b>🐁 Jerry</b><p className="mt-1 text-xs text-white/75">{t(clearedThrough >= 5 ? 'Du klarade bossen! Stadens ljus känns redan varmare.' : 'Vi hittar en väg genom staden, en bana i taget.')}</p></div>
           <div className="rounded-xl bg-white/10 p-3"><b>🐾 Pixel</b><p className="mt-1 text-xs text-white/75">{t(progress.shadowSecrets.length >= 5 ? 'Eclipse väntar på dig i butiken!' : 'Fem fragment räcker för en alldeles särskild dräkt.')}</p></div>
         </div>
+        <div className="mt-5 border-t border-white/15 pt-4">
+          <h3 className="font-black">{t('Räddade katter: {a}/8', { a: progress.rescuedCats.length })}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-white/75">{t('Hitta en katt på nivå 2 i varje kapitel och spring fram för att rädda den. Varje räddning sparas direkt.')}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {RESCUE_CATS.map(cat => {
+              const found = progress.rescuedCats.includes(cat.level);
+              return <span key={cat.level} className={`rounded-full border px-3 py-1 text-xs font-bold ${found ? 'border-emerald-300/60 bg-emerald-400/20' : 'border-white/15 bg-white/5 text-white/60'}`}>{found ? `🐈 ${cat.name}` : t('Katt · nivå {n}', { n: cat.level })}</span>;
+            })}
+          </div>
+          <p className="mt-3 text-xs text-white/75">{t(progress.rescuedCats.length >= 5 ? 'Vilket hem vi har skapat tillsammans!' : progress.rescuedCats.length >= 2 ? 'Nya vänner gör tillhållet grönare.' : 'Vi håller utkik efter fler vänner.')}</p>
+          <h3 className="mt-4 text-xs font-black uppercase tracking-wider">{t('Inred tillhållet')}</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {([['classic', 'Klassisk', 0], ['garden', 'Trädgård', 2], ['neon', 'Neon', 5]] as [HideoutDecor, string, number][]).map(([id, label, needed]) => (
+              <button key={id} type="button" aria-pressed={progress.hideoutDecor === id} disabled={progress.rescuedCats.length < needed}
+                onClick={() => setHideoutDecor(id)} className="rounded-lg border border-white/30 px-3 py-2 text-xs font-bold enabled:hover:bg-white/20 disabled:opacity-50 aria-pressed:bg-white aria-pressed:text-[#201337]">
+                {t(label)}{needed > progress.rescuedCats.length ? ` · ${t('Rädda {n}', { n: needed })}` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
+
+      <details className="mt-4 rounded-2xl border border-white/15 bg-[#101a2c] p-4 text-white">
+        <summary className="cursor-pointer font-black">{t('Skuggdagboken')}</summary>
+        <p className="mt-2 text-sm text-white/70">{t('Din resa genom neonstaden, samlad på ett ställe.')}</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-xl bg-white/10 p-3"><b>{t('Katter')}</b><p className="mt-1 text-xs text-white/70">{t('{a} av {b} hittade', { a: progress.rescuedCats.length, b: RESCUE_CATS.length })}</p></div>
+          <div className="rounded-xl bg-white/10 p-3"><b>{t('Skuggfragment')}</b><p className="mt-1 text-xs text-white/70">{t('{a} av {b} hittade', { a: progress.shadowSecrets.length, b: 40 })}</p></div>
+          <div className="rounded-xl bg-white/10 p-3"><b>{t('Kapitelfinaler')}</b><p className="mt-1 text-xs text-white/70">{t('{a} av {b} klara', { a: Math.floor(clearedThrough / 5), b: 8 })}</p></div>
+        </div>
+      </details>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
         {CHAPTERS.map((chapter, chapterIndex) => {
