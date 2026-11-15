@@ -1,3 +1,4 @@
+import { secretLocation } from '../game/shadowSecrets';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -144,6 +145,7 @@ const SKINS: Record<string, { name: string; color: string; accent: string; unloc
   frost: { name: 'Frost', color: '#62b7ff', accent: '#9df3ff', unlockHint: 'Samla 300 fiskar' },
   shadow: { name: 'Shadow', color: '#4f5d75', accent: '#b07cff', unlockHint: 'Nå combo x10' },
   umbra: { name: 'Umbra', color: '#6d28d9', accent: '#d8b4fe', unlockHint: 'Använd skuggskifte' },
+  eclipse: { name: 'Eclipse', color: '#38245f', accent: '#ffcb70', unlockHint: 'Hitta 5 skuggfragment' },
   aurora: { name: 'Aurora', color: '#29b88f', accent: '#5ffbd0', unlockHint: 'Besegra 3 bossar' },
 };
 
@@ -1033,6 +1035,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-[#12182b]/60">
               {renderRich(t('Fiskar, besegrade fiender och <b>nästan-träffar</b> laddar mätaren. Vid 100 % trycker du <b>E</b> eller på mätaren: i fyra sekunder är katten osårbar, snabbare, drar till sig fiskar, ger 75 % extra poäng och <b>löser upp fiender</b> bara genom att springa igenom dem.'), 'font-black text-[#3c1a63]')}
             </p>
+            <p className="mt-2 text-xs font-bold text-[#3c1a63]">{t('Leta efter lila spår på kampanjbanor. Aktivera skuggskiftet för att samla skuggfragment och låsa upp Eclipse-dräkten.')} {t('Lila broar bär dig bara under skuggskiftet.')}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {[t('Osårbar'), t('+30 % fart'), t('Fiskmagnet'), t('+75 % poäng'), t('Skuggpass +300')].map((chip) => (
                 <span key={chip} className="rounded-md border-2 border-[#3c1a63]/30 bg-white px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#3c1a63]">
@@ -2780,7 +2783,7 @@ export const PlayingView: React.FC<{
   const [isPortrait, setIsPortrait] = useState(true);
   const [combo, setCombo] = useState(0);
   const [seasonTheme] = useState(getSeasonTheme());
-  const { progress, addCoins, toggleMuted, advanceCampaign } = useProgress();
+  const { progress, addCoins, toggleMuted, advanceCampaign, collectShadowSecret } = useProgress();
   const t = useT();
   const isMuted = progress.settings.muted;
 
@@ -2985,6 +2988,7 @@ export const PlayingView: React.FC<{
       shadowActive: 0,
       shadowPasses: 0,
       shadowShifts: 0,
+      shadowSecret: null as null | { x: number; y: number; collected: boolean },
       // --- Power-up layer ---
       pickups: [] as any[],
       enemyBullets: [] as any[],
@@ -3667,6 +3671,17 @@ export const PlayingView: React.FC<{
       }
     }
 
+    // Optional shadow bridges sit above existing gaps. The normal route and
+    // quota are untouched; the bridge is solid only while Shift is active.
+    if (runMode === 'campaign') {
+      const gap = game.holes.find((h: any) => h.x > 600 && h.x < levelLength - 1800 && h.width <= 250);
+      if (gap) game.platforms.push({ x: gap.x - 30, y: groundY - 65, width: gap.width + 60, height: 14, shadowBridge: true } as any);
+    }
+    // This is optional and never part of the fish quota or the daily run.
+    if (runMode === 'campaign' && level <= 40 && !progress.shadowSecrets.includes(level)) {
+      const point = secretLocation(game.platforms, [...game.holes, ...game.hazards, ...game.enemies], levelLength, level % 5 === 0);
+      if (point) game.shadowSecret = { ...point, collected: false };
+    }
     return game;
   };
 
@@ -4910,6 +4925,7 @@ export const PlayingView: React.FC<{
       game.player.onGround = false;
       if (!isOverHole && game.player.velocityY >= 0) {
         for (const plat of game.platforms) {
+          if (plat.shadowBridge && game.shadowActive <= 0) continue;
           const playerBottom = game.player.y + game.player.height;
           const playerRight = game.player.x + game.player.width;
           const playerLeft = game.player.x;
@@ -5462,6 +5478,18 @@ export const PlayingView: React.FC<{
         }
       });
 
+      // The trace is visible in both worlds; only Shadow Shift can collect it.
+      const secret = game.shadowSecret;
+      if (secret && !secret.collected && game.shadowActive > 0 &&
+          Math.abs(game.player.x + game.player.width / 2 - secret.x) < 38 &&
+          Math.abs(game.player.y + game.player.height / 2 - secret.y) < 55) {
+        secret.collected = true;
+        collectShadowSecret(game.level);
+        pushToast(game, tr('Skuggfragment hittat!'), '#d8b4fe');
+        AudioEngine.playCoin(0);
+        haptic('collect', progress.settings.haptics);
+      }
+
       // Auto-quality: drop the oldest particles rather than paying to draw a
       // thousand sparks on a phone that is already struggling.
       const q = game.quality || FULL_QUALITY;
@@ -5599,7 +5627,15 @@ export const PlayingView: React.FC<{
         if (platX + plat.width < -40 || platX > canvas.width + 40) return;
         const platY = plat.y;
 
-        if (plat.bossArena) {
+        if (plat.shadowBridge) {
+          ctx.save();
+          ctx.globalAlpha = game.shadowActive > 0 ? 0.9 : 0.3;
+          ctx.fillStyle = '#ab73f5'; ctx.strokeStyle = '#e8caff'; ctx.lineWidth = 2;
+          ctx.setLineDash(game.shadowActive > 0 ? [] : [7, 6]);
+          if (game.shadowActive > 0) ctx.fillRect(platX, platY, plat.width, plat.height);
+          ctx.strokeRect(platX, platY, plat.width, plat.height);
+          ctx.restore();
+        } else if (plat.bossArena) {
           drawGroundSlab(ctx, {
             x: platX, y: platY, width: plat.width, height: plat.height,
             pal: {
@@ -6351,6 +6387,20 @@ export const PlayingView: React.FC<{
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.restore();
+      }
+
+      // A faint trace invites exploration; the fragment becomes bright in Shift.
+      if (game.shadowSecret && !game.shadowSecret.collected) {
+        const sx = game.shadowSecret.x - game.scrollX, sy = game.shadowSecret.y;
+        if (sx > -40 && sx < canvas.width + 40) {
+          ctx.save();
+          ctx.globalAlpha = game.shadowActive > 0 ? 1 : 0.38;
+          ctx.strokeStyle = '#dfb6ff'; ctx.fillStyle = '#a65fff'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(sx, sy - 17); ctx.lineTo(sx + 13, sy);
+          ctx.lineTo(sx, sy + 17); ctx.lineTo(sx - 13, sy); ctx.closePath();
+          if (game.shadowActive > 0) ctx.fill();
+          ctx.stroke(); ctx.restore();
+        }
       }
 
       // Draw Fishes (Yellow/Gold Fish) - Now drawn after background and platforms

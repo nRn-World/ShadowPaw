@@ -149,3 +149,21 @@ test('telemetry picks the dominant death cause with a stable tie-break', async (
   assert.equal(recordDailyScore('2026-11-04', 5000, 12), 1);
   assert.equal(loadDailyScores('2026-11-04')[0].score, 5000);
 });
+
+test('shadow fragments are unique, validated and placed deterministically away from hazards', async () => {
+  const { cleanSecrets, secretLocation, SECRET_REWARD_COUNT } = await import('../game/shadowSecrets.ts');
+  assert.deepEqual(cleanSecrets([3, 1, 3, 0, 41, '2', null]), [1, 3]);
+  assert.deepEqual(cleanSecrets(null), []);
+  assert.equal(SECRET_REWARD_COUNT, 5);
+  const platforms = [{x: 0, y: 600, width: 2000, isGround: true}];
+  const obstacles = [{x: 1000, width: 100}];
+  const location = secretLocation(platforms, obstacles, 2000, false);
+  assert.deepEqual(location, secretLocation(platforms, obstacles, 2000, false));
+  assert.ok(location.x <= 900 || location.x >= 1200);
+  assert.equal(secretLocation([], [], 2000, false), null);
+  for (let level = 1; level <= 40; level++) {
+    const profile = getDifficultyProfile(level, 1);
+    const { platforms, holes } = buildLevelLayout({level, layout: getLevelLayout(level), levelLength: profile.levelLength, groundY: 600, profile, bossLevel: level % 5 === 0});
+    assert.ok(secretLocation(platforms, holes, profile.levelLength, level % 5 === 0), `level ${level} should have a fragment location`);
+  }
+});
