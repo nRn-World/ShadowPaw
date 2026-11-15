@@ -135,6 +135,24 @@ try {
     assert.deepEqual(replay, first);
   });
 
+  // Fragments require Shift and are persisted independently of level completion.
+  await page.keyboard.press('KeyA');
+  await page.evaluate(() => {
+    const g = window.__SP;
+    assertSecret(g.shadowSecret);
+    function assertSecret(secret) { if (!secret) throw new Error('missing level 1 shadow fragment'); }
+    g.player.x = g.shadowSecret.x - g.player.width / 2;
+    g.player.y = g.shadowSecret.y - g.player.height / 2;
+    g.player.velocityX = 0; g.player.velocityY = 0;
+  });
+  await page.clock.runFor(50);
+  const collectedWithoutShift = await page.evaluate(() => window.__SP.shadowSecret.collected);
+  check('a shadow fragment cannot be collected without Shift', () => { assert.equal(collectedWithoutShift, false); });
+  await page.evaluate(() => { window.__SP.shadowActive = 120; });
+  await page.clock.runFor(50);
+  await waitFor(page, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).shadowSecrets.includes(1), 'saved shadow fragment');
+  check('Shadow Shift collects and saves a fragment', () => {});
+
   // A different level must not be a copy of the first one.
   await page.evaluate(() => window.__SP_NEXT());
   await waitFor(page, () => window.__SP?.level === 2, 'level 2');

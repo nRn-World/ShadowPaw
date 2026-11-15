@@ -38,6 +38,8 @@ export interface PlayerProgress {
   /** Highest story level unlocked; lives in the save file so export/import and
       backups carry the campaign with them. */
   campaignLevel: number;
+  /** Campaign levels whose optional shadow fragment has been found. */
+  shadowSecrets: number[];
   unlockedSkins: string[];
   equippedSkin: string;
   upgrades: {

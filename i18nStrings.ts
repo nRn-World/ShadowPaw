@@ -6,6 +6,20 @@
 export type Row = [string, string, string, string, string];
 
 export const STRINGS: Row[] = [
+  ['Lila broar bär dig bara under skuggskiftet.', 'Purple bridges are solid only during Shadow Shift.', 'Mor köprüler yalnızca Gölge Değişimi sırasında sağlamdır.', 'Los puentes morados solo son sólidos durante el Cambio de Sombra.', 'الجسور البنفسجية صلبة فقط أثناء التحول الظلي.'],
+  // Shadow exploration and hideout
+  ['Hitta 5 skuggfragment', 'Find 5 shadow fragments', '5 gölge parçası bul', 'Encuentra 5 fragmentos de sombra', 'اعثر على 5 شظايا ظل'],
+  ['Skuggfragment hittat!', 'Shadow fragment found!', 'Gölge parçası bulundu!', '¡Fragmento de sombra encontrado!', 'عُثر على شظية ظل!'],
+  ['Katttillhållet', 'The cat hideout', 'Kedi sığınağı', 'El refugio de gatos', 'مخبأ القطط'],
+  ['Ett ljus i neonstaden', 'A light in Neon City', 'Neon Şehirde bir ışık', 'Una luz en Ciudad Neón', 'ضوء في مدينة النيون'],
+  ['Leta efter lila spår på kampanjbanor. Aktivera skuggskiftet för att samla skuggfragment och låsa upp Eclipse-dräkten.', 'Look for purple traces in campaign levels. Activate Shadow Shift to collect shadow fragments and unlock the Eclipse skin.', 'Hikâye seviyelerinde mor izler ara. Gölge parçalarını toplamak ve Eclipse görünümünü açmak için Gölge Değişimini etkinleştir.', 'Busca rastros morados en la campaña. Activa el Cambio de Sombra para recoger fragmentos y desbloquear el aspecto Eclipse.', 'ابحث عن الآثار البنفسجية في مراحل القصة. فعّل التحول الظلي لجمع الشظايا وفتح مظهر Eclipse.'],
+  ['Skuggfragment: {a}/40 · Eclipse låses upp vid 5', 'Shadow fragments: {a}/40 · Eclipse unlocks at 5', 'Gölge parçaları: {a}/40 · Eclipse 5 parçada açılır', 'Fragmentos de sombra: {a}/40 · Eclipse se desbloquea con 5', 'شظايا الظل: {a}/40 · يُفتح Eclipse عند 5'],
+  ['Lila spår syns även innan du skiftar. Spara kraften tills du är nära!', 'Purple traces are visible even before you shift. Save your power until you are close!', 'Mor izler dönüşmeden önce de görünür. Yaklaşana kadar gücünü sakla!', 'Los rastros morados se ven incluso antes del cambio. ¡Guarda tu poder hasta estar cerca!', 'تظهر الآثار البنفسجية حتى قبل التحول. احتفظ بقوتك حتى تقترب!'],
+  ['Du klarade bossen! Stadens ljus känns redan varmare.', 'You beat the boss! The city lights already feel warmer.', 'Patronu yendin! Şehrin ışıkları şimdiden daha sıcak.', '¡Venciste al jefe! Las luces de la ciudad ya parecen más cálidas.', 'هزمت الزعيم! تبدو أضواء المدينة أكثر دفئاً بالفعل.'],
+  ['Vi hittar en väg genom staden, en bana i taget.', 'We will find a way through the city, one level at a time.', 'Şehirde yolumuzu bulacağız, seviye seviye.', 'Encontraremos un camino por la ciudad, nivel a nivel.', 'سنجد طريقاً عبر المدينة، مرحلة تلو الأخرى.'],
+  ['Eclipse väntar på dig i butiken!', 'Eclipse is waiting for you in the shop!', 'Eclipse mağazada seni bekliyor!', '¡Eclipse te espera en la tienda!', 'مظهر Eclipse ينتظرك في المتجر!'],
+  ['Fem fragment räcker för en alldeles särskild dräkt.', 'Five fragments unlock a very special skin.', 'Beş parça çok özel bir görünüm açar.', 'Cinco fragmentos desbloquean un aspecto muy especial.', 'خمس شظايا تفتح مظهراً مميزاً للغاية.'],
+
   // ---- navigation / shell
   ['Hem', 'Home', 'Ana sayfa', 'Inicio', 'الرئيسية'],
   ['Butik', 'Shop', 'Mağaza', 'Tienda', 'المتجر'],

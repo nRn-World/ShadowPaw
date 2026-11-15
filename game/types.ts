@@ -20,6 +20,7 @@ export interface Platform extends Rect {
   solid?: boolean;
   bossArena?: boolean;
   bossWalkway?: boolean;
+  shadowBridge?: boolean;
   chasm?: boolean;
   mover?: { axis: 'h' | 'v'; range: number; speed: number; phase: number; originX?: number; originY?: number };
 }

@@ -144,6 +144,18 @@ const LevelSelectView: React.FC<{
         </div>
       </div>
 
+      <section aria-label={t('Katttillhållet')} className="mt-6 rounded-3xl border border-violet-300/30 bg-gradient-to-br from-[#201337] via-[#111a35] to-[#0c2530] p-5 text-white shadow-xl">
+        <p className="text-xs font-black uppercase tracking-widest text-violet-300">{t('Katttillhållet')}</p>
+        <h2 className="mt-1 text-xl font-black">{t('Ett ljus i neonstaden')}</h2>
+        <p className="mt-2 text-sm text-white/75">{t('Leta efter lila spår på kampanjbanor. Aktivera skuggskiftet för att samla skuggfragment och låsa upp Eclipse-dräkten.')}</p>
+        <p className="mt-3 text-sm font-black text-violet-200">{t('Skuggfragment: {a}/40 · Eclipse låses upp vid 5', { a: progress.shadowSecrets.length })}</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-xl bg-white/10 p-3"><b>🐈 Nova</b><p className="mt-1 text-xs text-white/75">{t('Lila spår syns även innan du skiftar. Spara kraften tills du är nära!')}</p></div>
+          <div className="rounded-xl bg-white/10 p-3"><b>🐁 Jerry</b><p className="mt-1 text-xs text-white/75">{t(clearedThrough >= 5 ? 'Du klarade bossen! Stadens ljus känns redan varmare.' : 'Vi hittar en väg genom staden, en bana i taget.')}</p></div>
+          <div className="rounded-xl bg-white/10 p-3"><b>🐾 Pixel</b><p className="mt-1 text-xs text-white/75">{t(progress.shadowSecrets.length >= 5 ? 'Eclipse väntar på dig i butiken!' : 'Fem fragment räcker för en alldeles särskild dräkt.')}</p></div>
+        </div>
+      </section>
+
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
         {CHAPTERS.map((chapter, chapterIndex) => {
           const firstLevel = chapterIndex * LEVELS_PER_CHAPTER + 1;
@@ -209,6 +221,7 @@ const LevelSelectView: React.FC<{
                   const next = level === nextLevel && !allCleared;
                   const locked = !cleared && !next;
                   const isBoss = level % LEVELS_PER_CHAPTER === 0;
+                  const secretFound = progress.shadowSecrets.includes(level);
 
                   return (
                     <button
@@ -239,7 +252,7 @@ const LevelSelectView: React.FC<{
                           aria-hidden="true"
                         />
                       )}
-                      <span className="tabular leading-none">{level}</span>
+                      <span className="tabular leading-none">{level}{secretFound && <span className="text-violet-600" aria-label={t('Skuggfragment hittat!')}> ✦</span>}</span>
                       <span className="flex h-3.5 items-center gap-0.5 opacity-80">
                         {locked ? (
                           <span className="material-symbols-outlined text-[11px]" aria-hidden="true">

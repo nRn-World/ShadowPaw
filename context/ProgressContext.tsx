@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { PlayerProgress } from '../types';
+import { cleanSecrets, SECRET_REWARD_COUNT } from '../game/shadowSecrets';
 
 const STORAGE_KEY = 'shadow_paw_progress_v2';
 const STORAGE_BACKUP_KEY = 'shadow_paw_progress_backup_v2';
@@ -47,6 +48,7 @@ const defaultProgress: PlayerProgress = {
   xp: 0,
   level: 1,
   campaignLevel: 1,
+  shadowSecrets: [],
   unlockedSkins: ['default'],
   equippedSkin: 'default',
   upgrades: {
@@ -106,6 +108,7 @@ interface ProgressContextType {
   advanceCampaign: (reachedLevel: number, runStartLevel: number) => void;
   unlockAchievement: (achievementId: string) => void;
   unlockSkin: (skinId: string) => void;
+  collectShadowSecret: (level: number) => void;
   applyRunResults: (results: {
     fishesCollected: number;
     enemiesDefeated: number;
@@ -200,6 +203,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
             campaignLevel: parsed.campaignLevel === undefined
               ? readLegacyCheckpoint()
               : clampCampaignLevel(parsed.campaignLevel),
+            shadowSecrets: cleanSecrets(parsed.shadowSecrets),
             upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
             settings: cleanGameSettings(cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }))),
             stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
@@ -241,6 +245,16 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       };
     });
   }, []);
+
+  const collectShadowSecret = (level: number) => {
+    setProgress(p => {
+      const shadowSecrets = cleanSecrets([...p.shadowSecrets, level]);
+      if (shadowSecrets.length === p.shadowSecrets.length) return p;
+      const unlockedSkins = shadowSecrets.length >= SECRET_REWARD_COUNT && !p.unlockedSkins.includes('eclipse')
+        ? [...p.unlockedSkins, 'eclipse'] : p.unlockedSkins;
+      return { ...p, shadowSecrets, unlockedSkins };
+    });
+  };
 
   const addCoins = (amount: number) => {
     setProgress(p => ({
@@ -452,6 +466,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
         ...defaultProgress,
         ...parsed,
         campaignLevel: clampCampaignLevel(parsed.campaignLevel),
+        shadowSecrets: cleanSecrets(parsed.shadowSecrets),
         upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
         settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
         stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
@@ -482,6 +497,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       advanceCampaign,
       unlockAchievement,
       unlockSkin,
+      collectShadowSecret,
       applyRunResults,
       exportProgressCode,
       importProgressCode,
