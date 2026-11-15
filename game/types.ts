@@ -92,6 +92,12 @@ export interface BossState extends Rect {
   coreFlash?: number;
   shadowHitShift?: number;
   summonCooldown?: number;
+  /** The alternate, ammo-free boss route: stomp to raise anger and damage. */
+  angry?: boolean;
+  angerLevel?: number;
+  stompCount?: number;
+  stompCooldown?: number;
+  defeatRegistered?: boolean;
 }
 
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
@@ -218,6 +224,7 @@ export interface HudStats {
   bossHp: number;
   bossMaxHp: number;
   bossName: string;
+  bossAngry?: boolean;
   bossVisible: boolean;
   collectedCount: number;
   fishGoal: number;

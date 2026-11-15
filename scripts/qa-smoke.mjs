@@ -219,6 +219,60 @@ try {
     assert.equal(mini.exposed, 0);
   });
 
+  // The boss route must still work when every shot is gone. Put the cat just
+  // above the miniboss and let the real fixed-step collision code resolve the
+  // landing; this guards the swept top-edge check against future physics edits.
+  const stompBefore = await page.evaluate(() => {
+    const g = window.__SP;
+    const b = g.boss;
+    g.enemies.length = 0;
+    g.enemyBullets.length = 0;
+    b.projectiles.length = 0;
+    g.introTimer = 0;
+    g.ammo = 0;
+    g.player.invincible = false;
+    g.player.invincibleTimer = 0;
+    g.player.x = b.x + b.width / 2 - g.player.width / 2;
+    g.player.y = b.y - g.player.height - 4;
+    g.player.velocityY = 8;
+    g.player.velocityX = 0;
+    g.player.onGround = false;
+    g.player.isJumping = true;
+    return { hp: b.hp, ammo: g.ammo };
+  });
+  await page.clock.runFor(100);
+  const stompAfter = await page.evaluate(() => {
+    const g = window.__SP;
+    return {
+      hp: g.boss.hp,
+      angry: g.boss.angry,
+      angerLevel: g.boss.angerLevel,
+      stompCount: g.boss.stompCount,
+      ammo: g.ammo,
+    };
+  });
+  check('an empty gun can damage a boss by jumping on it, which enrages it', () => {
+    assert.ok(stompAfter.hp < stompBefore.hp, 'the stomp should reduce boss HP');
+    assert.equal(stompAfter.angry, true);
+    assert.ok(stompAfter.angerLevel >= 1);
+    assert.ok(stompAfter.stompCount >= 1);
+    assert.equal(stompAfter.ammo, 0);
+  });
+  // Return the smoke player to the spawn platform before the following
+  // Shadow Shift checks; the boss arena deliberately sits far from platform 0.
+  await page.evaluate(() => {
+    const g = window.__SP;
+    g.boss = null;
+    g.enemies.length = 0;
+    g.enemyBullets.length = 0;
+    g.player.x = 100;
+    g.player.y = g.groundY - g.player.height;
+    g.player.velocityX = 0;
+    g.player.velocityY = 0;
+    g.player.invincible = false;
+    g.player.invincibleTimer = 0;
+  });
+
   // --- Shadow Shift -------------------------------------------------------
   await page.evaluate(() => { window.__SP.shadowCharge = 100; });
   await page.keyboard.press('KeyE');
