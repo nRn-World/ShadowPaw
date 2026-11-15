@@ -314,6 +314,39 @@ try {
     assert.ok(wraith.lives >= 1);
   });
 
+  // The neon upper route must exist on every district level and pay its
+  // optional bonus without changing the mandatory fish quota.
+  for (let level = 4; level <= 14; level++) {
+    await page.evaluate(() => window.__SP_NEXT());
+    await page.waitForFunction(n => window.__SP?.level === n, level, { polling: 50 });
+    if (level >= 11) {
+      const data = await page.evaluate(() => ({
+        signs: window.__SP.platforms.filter(p => p.neonPhase !== undefined).length,
+        prize: !!window.__SP.neonPrize,
+        goal: window.__SP.fishGoal,
+        fish: window.__SP.fishes.length,
+      }));
+      check(`neon route exists on level ${level}`, () => {
+        assert.equal(data.signs, 3); assert.equal(data.prize, true);
+        assert.ok(data.goal <= data.fish);
+      });
+    }
+  }
+  await page.keyboard.press('KeyA');
+  const beforeBonus = await page.evaluate(() => {
+    const g = window.__SP;
+    g.frame = 0; g.enemies.length = 0; g.hazards.length = 0; g.boss = null;
+    g.player.x = g.neonPrize.x - g.player.width / 2;
+    g.player.y = g.neonPrize.y - g.player.height / 2;
+    g.player.velocityX = 0; g.player.velocityY = 0;
+    return g.coinsThisLevel;
+  });
+  await page.clock.runFor(80);
+  const bonus = await page.evaluate(() => ({ collected: window.__SP.neonPrize.collected, coins: window.__SP.coinsThisLevel }));
+  check('the optional neon bonus can be collected', () => {
+    assert.equal(bonus.collected, true); assert.ok(bonus.coins >= beforeBonus + 15);
+  });
+
   check('no runtime errors', () => {
     assert.deepEqual(errors, []);
   });

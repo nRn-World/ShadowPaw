@@ -111,6 +111,7 @@ try {
   await hideoutPage.evaluate(() => {
     const p = JSON.parse(localStorage.getItem('shadow_paw_progress_v2'));
     p.rescuedCats = [2, 7];
+    p.shadowSecrets = [1, 2, 3];
     localStorage.setItem('shadow_paw_progress_v2', JSON.stringify(p));
   });
   await hideoutPage.reload({ waitUntil: 'domcontentloaded' });
@@ -118,6 +119,12 @@ try {
   await waitFor(hideoutPage, () => document.body.innerText.includes('Cats rescued: 2/8'), 'rescued cats');
   await hideoutPage.getByRole('button', { name: 'Garden', exact: true }).click();
   await waitFor(hideoutPage, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).hideoutDecor === 'garden', 'saved hideout theme');
+  await hideoutPage.getByRole('button', { name: 'Claim reward', exact: true }).first().click();
+  await waitFor(hideoutPage, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).claimedCatQuests.includes('miso_fragments'), 'saved cat mission');
+  const questSave = await hideoutPage.evaluate(() => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')));
+  check('cat mission rewards are saved and paid once', () => {
+    assert.equal(questSave.coins, 100); assert.deepEqual(questSave.claimedCatQuests, ['miso_fragments']);
+  });
   await hideoutPage.getByText('Shadow journal', { exact: true }).click();
   const hideoutText = await hideoutPage.locator('body').innerText();
   check('hideout shows rescued cats, journal and unlocked decorations', () => {

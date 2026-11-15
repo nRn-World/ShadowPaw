@@ -3,6 +3,7 @@ import { useProgress } from '../context/ProgressContext';
 import { useT } from '../i18n';
 import { getLevelDesign } from '../game/level';
 import { RESCUE_CATS, type HideoutDecor } from '../game/rescue';
+import { CAT_QUESTS } from '../game/sideQuests';
 
 /**
  * Chapter map for the campaign.
@@ -95,7 +96,7 @@ const LevelSelectView: React.FC<{
   onBack: () => void;
   onStart: (level: number) => void;
 }> = ({ onBack, onStart }) => {
-  const { progress, setHideoutDecor } = useProgress();
+  const { progress, setHideoutDecor, claimCatQuest } = useProgress();
   const t = useT();
 
   // Beyond the last chapter the campaign is simply complete; never show a
@@ -166,6 +167,15 @@ const LevelSelectView: React.FC<{
             })}
           </div>
           <p className="mt-3 text-xs text-white/75">{t(progress.rescuedCats.length >= 5 ? 'Vilket hem vi har skapat tillsammans!' : progress.rescuedCats.length >= 2 ? 'Nya vänner gör tillhållet grönare.' : 'Vi håller utkik efter fler vänner.')}</p>
+          {CAT_QUESTS.filter(q => progress.rescuedCats.includes(q.catLevel)).map(quest => {
+            const claimed = progress.claimedCatQuests.includes(quest.id);
+            const ready = progress.shadowSecrets.length >= quest.target;
+            return <div key={quest.id} className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/10 p-3">
+              <div><b>🐈 {quest.name}</b><p className="text-xs text-white/80">{t(quest.description)}</p>
+                <p className="mt-1 text-xs text-violet-200">{Math.min(progress.shadowSecrets.length, quest.target)}/{quest.target} · {quest.reward} {t('Mynt')}</p></div>
+              <button type="button" disabled={!ready || claimed} onClick={() => claimCatQuest(quest.id)} className="rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs font-bold enabled:hover:bg-white/20 disabled:opacity-50">{t(claimed ? 'Belöning hämtad' : 'Hämta belöning')}</button>
+            </div>;
+          })}
           <h3 className="mt-4 text-xs font-black uppercase tracking-wider">{t('Inred tillhållet')}</h3>
           <div className="mt-2 flex flex-wrap gap-2">
             {([['classic', 'Klassisk', 0], ['garden', 'Trädgård', 2], ['neon', 'Neon', 5]] as [HideoutDecor, string, number][]).map(([id, label, needed]) => (
@@ -185,6 +195,10 @@ const LevelSelectView: React.FC<{
           <div className="rounded-xl bg-white/10 p-3"><b>{t('Katter')}</b><p className="mt-1 text-xs text-white/70">{t('{a} av {b} hittade', { a: progress.rescuedCats.length, b: RESCUE_CATS.length })}</p></div>
           <div className="rounded-xl bg-white/10 p-3"><b>{t('Skuggfragment')}</b><p className="mt-1 text-xs text-white/70">{t('{a} av {b} hittade', { a: progress.shadowSecrets.length, b: 40 })}</p></div>
           <div className="rounded-xl bg-white/10 p-3"><b>{t('Kapitelfinaler')}</b><p className="mt-1 text-xs text-white/70">{t('{a} av {b} klara', { a: Math.floor(clearedThrough / 5), b: 8 })}</p></div>
+        </div>
+        <div className="mt-3 rounded-xl bg-white/10 p-3 text-sm">
+          <b>{t('Berättelser')}</b>
+          <p className="mt-1 text-xs leading-relaxed text-white/70">{t(clearedThrough >= 15 ? 'Stormörnen vaktade neonskyltarna. När himlen klarnade vågade stadens katter hitta hem igen.' : 'Klara kapitel 3 för att upptäcka en berättelse om neonkvarteren.')}</p>
         </div>
       </details>
 
@@ -227,6 +241,7 @@ const LevelSelectView: React.FC<{
                     <p className="truncate text-[10px] font-bold text-[#12182b]/55">
                       {t(chapter.tagline)}
                     </p>
+                    {chapterIndex === 2 && <p className="mt-1 text-[10px] font-bold text-violet-700">{t('Övre vägen: neonskyltar blinkar – samla bonusen om du vågar.')}</p>}
                     <p className="truncate text-[9px] font-black uppercase tracking-wider text-[#12182b]/35">
                       {t('{a}/{b} klart', { a: chapterCleared, b: LEVELS_PER_CHAPTER })}
                     </p>
