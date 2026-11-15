@@ -162,6 +162,20 @@ try {
     assert.notDeepEqual(second.fish, first.fish);
   });
 
+  // Optional rescue on level 2 must be saved as soon as the cat is reached.
+  await page.keyboard.press('KeyA');
+  const catName = await page.evaluate(() => {
+    const g = window.__SP;
+    if (!g.rescueCat) throw new Error('missing level 2 rescue cat');
+    g.player.x = g.rescueCat.x - g.player.width / 2;
+    g.player.y = g.rescueCat.y - g.player.height / 2;
+    g.player.velocityX = 0; g.player.velocityY = 0;
+    return g.rescueCat.name;
+  });
+  await page.clock.runFor(80);
+  await waitFor(page, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).rescuedCats.includes(2), 'saved cat rescue');
+  check('level 2 rescue is saved immediately', () => assert.equal(catName, 'Miso'));
+
   // --- Life refill --------------------------------------------------------
   await page.evaluate(() => {
     const g = window.__SP;

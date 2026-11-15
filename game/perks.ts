@@ -40,6 +40,14 @@ export const PERKS: PerkDef[] = [
 
 export const PERK_BY_ID: Record<string, PerkDef> = Object.fromEntries(PERKS.map((p) => [p.id, p]));
 
+/** Pair bonuses reward a coherent build without removing either card's cost. */
+export const SYNERGIES = [
+  { ids: ['shadow_battery', 'time_lord'], name: 'Skuggjägare', desc: '+15 % skuggladdning', effect: { shadowChargeMult: 1.15 } },
+  { ids: ['quick_step', 'steady_paws'], name: 'Akrobat', desc: '+5 % fart', effect: { speedMult: 1.05 } },
+  { ids: ['greedy_paws', 'long_line'], name: 'Skattjägare', desc: '+10 % poäng', effect: { scoreMult: 1.1 } },
+] as const;
+export const activeSynergies = (ids: string[]) => SYNERGIES.filter(s => s.ids.every(id => ids.includes(id)));
+
 /** Combine the effects of all chosen cards. Multipliers stack multiplicatively,
     additive deltas sum, so a full run of eight cards stays bounded. */
 export const combinePerkEffects = (ids: string[]): Required<PerkEffect> => {
@@ -56,6 +64,11 @@ export const combinePerkEffects = (ids: string[]): Required<PerkEffect> => {
     if (e.shadowChargeMult) out.shadowChargeMult *= e.shadowChargeMult;
     if (e.timerMult) out.timerMult *= e.timerMult;
     if (e.invincibleBonus) out.invincibleBonus += e.invincibleBonus;
+  }
+  for (const synergy of activeSynergies(ids)) {
+    if ('scoreMult' in synergy.effect) out.scoreMult *= synergy.effect.scoreMult;
+    if ('speedMult' in synergy.effect) out.speedMult *= synergy.effect.speedMult;
+    if ('shadowChargeMult' in synergy.effect) out.shadowChargeMult *= synergy.effect.shadowChargeMult;
   }
   out.scoreMult = Math.max(0.6, Math.min(2, out.scoreMult));
   out.speedMult = Math.max(0.75, Math.min(1.4, out.speedMult));

@@ -7,6 +7,33 @@ export type Row = [string, string, string, string, string];
 
 export const STRINGS: Row[] = [
   ['Lila broar bär dig bara under skuggskiftet.', 'Purple bridges are solid only during Shadow Shift.', 'Mor köprüler yalnızca Gölge Değişimi sırasında sağlamdır.', 'Los puentes morados solo son sólidos durante el Cambio de Sombra.', 'الجسور البنفسجية صلبة فقط أثناء التحول الظلي.'],
+  ['Synergi', 'Synergy', 'Sinerji', 'Sinergia', 'تآزر'],
+  ['Skuggjägare', 'Shadow hunter', 'Gölge avcısı', 'Cazador de sombras', 'صياد الظلال'],
+  ['Akrobat', 'Acrobat', 'Akrobat', 'Acróbata', 'بهلوان'],
+  ['Skattjägare', 'Treasure hunter', 'Hazine avcısı', 'Cazador de tesoros', 'صائد الكنوز'],
+  ['+15 % skuggladdning', '+15% shadow charge', '%15 gölge yükü', '+15 % de carga de sombra', '+15٪ شحن الظل'],
+  ['+5 % fart', '+5% speed', '%5 hız', '+5 % de velocidad', '+5٪ سرعة'],
+  ['+10 % poäng', '+10% score', '%10 puan', '+10 % de puntos', '+10٪ نقاط'],
+  ['Klassisk', 'Classic', 'Klasik', 'Clásico', 'كلاسيكي'],
+  // Rescue and hideout
+  ['{n} är räddad!', '{n} is rescued!', '{n} kurtarıldı!', '¡{n} ha sido rescatado!', 'تم إنقاذ {n}!'],
+  ['Räddade katter: {a}/8', 'Cats rescued: {a}/8', 'Kurtarılan kediler: {a}/8', 'Gatos rescatados: {a}/8', 'القطط المنقذة: {a}/8'],
+  ['Hitta en katt på nivå 2 i varje kapitel och spring fram för att rädda den. Varje räddning sparas direkt.', 'Find a cat on the second level of each chapter and run up to rescue it. Every rescue is saved immediately.', 'Her bölümün ikinci seviyesinde bir kedi bul ve kurtarmak için yanına koş. Her kurtarma hemen kaydedilir.', 'Encuentra un gato en el segundo nivel de cada capítulo y acércate para rescatarlo. Cada rescate se guarda al instante.', 'اعثر على قطة في المستوى الثاني من كل فصل واقترب لإنقاذها. يُحفظ كل إنقاذ فوراً.'],
+  ['Katt · nivå {n}', 'Cat · level {n}', 'Kedi · seviye {n}', 'Gato · nivel {n}', 'قطة · المستوى {n}'],
+  ['Vilket hem vi har skapat tillsammans!', 'What a home we have made together!', 'Birlikte ne güzel bir yuva kurduk!', '¡Qué hogar hemos creado juntos!', 'يا له من منزل صنعناه معاً!'],
+  ['Nya vänner gör tillhållet grönare.', 'New friends make the hideout greener.', 'Yeni dostlar sığınağı yeşillendiriyor.', 'Los nuevos amigos hacen el refugio más verde.', 'الأصدقاء الجدد يجعلون المخبأ أكثر اخضراراً.'],
+  ['Vi håller utkik efter fler vänner.', 'We are looking out for more friends.', 'Daha fazla dost arıyoruz.', 'Estamos buscando más amigos.', 'نبحث عن المزيد من الأصدقاء.'],
+  ['Inred tillhållet', 'Decorate the hideout', 'Sığınağı dekore et', 'Decora el refugio', 'زيّن المخبأ'],
+  ['Trädgård', 'Garden', 'Bahçe', 'Jardín', 'حديقة'],
+  ['Neon', 'Neon', 'Neon', 'Neón', 'نيون'],
+  ['Rädda {n}', 'Rescue {n}', '{n} kurtar', 'Rescata {n}', 'أنقذ {n}'],
+  ['Skuggdagboken', 'Shadow journal', 'Gölge günlüğü', 'Diario de sombras', 'مذكرة الظلال'],
+  ['Din resa genom neonstaden, samlad på ett ställe.', 'Your journey through Neon City, all in one place.', 'Neon Şehirdeki yolculuğun tek bir yerde.', 'Tu viaje por Ciudad Neón, reunido en un solo lugar.', 'رحلتك عبر مدينة النيون في مكان واحد.'],
+  ['Katter', 'Cats', 'Kediler', 'Gatos', 'القطط'],
+  ['Skuggfragment', 'Shadow fragments', 'Gölge parçaları', 'Fragmentos de sombra', 'شظايا الظل'],
+  ['Kapitelfinaler', 'Chapter finales', 'Bölüm finalleri', 'Finales de capítulo', 'نهايات الفصول'],
+  ['{a} av {b} hittade', '{a} of {b} found', '{b} içinden {a} bulundu', '{a} de {b} encontrados', 'عُثر على {a} من {b}'],
+
   // Shadow exploration and hideout
   ['Hitta 5 skuggfragment', 'Find 5 shadow fragments', '5 gölge parçası bul', 'Encuentra 5 fragmentos de sombra', 'اعثر على 5 شظايا ظل'],
   ['Skuggfragment hittat!', 'Shadow fragment found!', 'Gölge parçası bulundu!', '¡Fragmento de sombra encontrado!', 'عُثر على شظية ظل!'],
@@ -561,7 +588,6 @@ export const STRINGS: Row[] = [
   ['Filmiska effekter', 'Cinematic effects', 'Sinematik efektler', 'Efectos cinematográficos', 'تأثيرات سينمائية'],
   ['Bloom och atmosfäriskt ljus – stäng av för maximal bildfrekvens', 'Bloom and atmospheric light – turn off for maximum frame rate', 'Bloom ve atmosferik ışık – en yüksek kare hızı için kapat', 'Bloom y luz atmosférica – desactívalo para máximos fotogramas', 'التوهج والإضاءة الجوية – أوقفهما لأعلى معدل إطارات'],
   // --- Twists, surprise events and the level-rule HUD ---
-  ['Klassisk', 'Classic', 'Klasik', 'Clásico', 'كلاسيكي'],
   ['Ishalka', 'Slippery ice', 'Kaygan buz', 'Hielo resbaladizo', 'جليد زلق'],
   ['Låg gravitation', 'Low gravity', 'Düşük yerçekimi', 'Baja gravedad', 'جاذبية منخفضة'],
   ['Medvind', 'Tailwind', 'Arka rüzgâr', 'Viento a favor', 'ريح خلفية'],

@@ -167,3 +167,24 @@ test('shadow fragments are unique, validated and placed deterministically away f
     assert.ok(secretLocation(platforms, holes, profile.levelLength, level % 5 === 0), `level ${level} should have a fragment location`);
   }
 });
+
+test('rescues and decorations validate old, duplicate and imported save data', async () => {
+  const { RESCUE_CATS, cleanRescues, cleanDecor } = await import('../game/rescue.ts');
+  assert.equal(RESCUE_CATS.length, 8);
+  assert.deepEqual(RESCUE_CATS.map(c => c.level), [2, 7, 12, 17, 22, 27, 32, 37]);
+  assert.deepEqual(cleanRescues([7, 2, 2, 99, '12', null]), [2, 7]);
+  assert.deepEqual(cleanRescues(undefined), []);
+  assert.equal(cleanDecor('garden', 1), 'classic');
+  assert.equal(cleanDecor('garden', 2), 'garden');
+  assert.equal(cleanDecor('neon', 4), 'classic');
+  assert.equal(cleanDecor('neon', 5), 'neon');
+  assert.equal(cleanDecor('other', 8), 'classic');
+});
+
+test('card synergies require both cards and stack only once', async () => {
+  const { activeSynergies, combinePerkEffects } = await import('../game/perks.ts');
+  assert.equal(activeSynergies(['shadow_battery']).length, 0);
+  assert.equal(activeSynergies(['shadow_battery', 'time_lord']).length, 1);
+  assert.ok(Math.abs(combinePerkEffects(['shadow_battery', 'time_lord']).shadowChargeMult - 1.4 * 1.2 * 1.15) < 1e-9);
+  assert.equal(activeSynergies(['greedy_paws', 'long_line', 'quick_step', 'steady_paws']).length, 2);
+});

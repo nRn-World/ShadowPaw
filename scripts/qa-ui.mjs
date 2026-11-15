@@ -101,6 +101,34 @@ try {
   await page.getByRole('button', { name: 'English' }).first().click();
   await waitFor(page, () => document.documentElement.lang === 'en', 'English');
 
+  // --- Hideout, journal and unlock persistence -----------------------------
+  const hideoutPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  hideoutPage.on('pageerror', e => errors.push(`hideout pageerror: ${e.message}`));
+  await hideoutPage.addInitScript(noCanvasPainting);
+  await hideoutPage.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await waitFor(hideoutPage, () => !!localStorage.getItem('shadow_paw_progress_v2'), 'initial save');
+  await new Promise(r => setTimeout(r, 300));
+  await hideoutPage.evaluate(() => {
+    const p = JSON.parse(localStorage.getItem('shadow_paw_progress_v2'));
+    p.rescuedCats = [2, 7];
+    localStorage.setItem('shadow_paw_progress_v2', JSON.stringify(p));
+  });
+  await hideoutPage.reload({ waitUntil: 'domcontentloaded' });
+  await hideoutPage.getByRole('button', { name: /^map\s*chapters$/i }).first().click();
+  await waitFor(hideoutPage, () => document.body.innerText.includes('Cats rescued: 2/8'), 'rescued cats');
+  await hideoutPage.getByRole('button', { name: 'Garden', exact: true }).click();
+  await waitFor(hideoutPage, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).hideoutDecor === 'garden', 'saved hideout theme');
+  await hideoutPage.getByText('Shadow journal', { exact: true }).click();
+  const hideoutText = await hideoutPage.locator('body').innerText();
+  check('hideout shows rescued cats, journal and unlocked decorations', () => {
+    assert.match(hideoutText, /Miso/); assert.match(hideoutText, /Luna/);
+    assert.match(hideoutText, /Cats rescued: 2\/8/); assert.match(hideoutText, /2 of 8 found/);
+  });
+  await hideoutPage.reload({ waitUntil: 'domcontentloaded' });
+  await hideoutPage.getByRole('button', { name: /^map\s*chapters$/i }).first().click();
+  const pressed = await hideoutPage.getByRole('button', { name: 'Garden', exact: true }).getAttribute('aria-pressed');
+  check('hideout decoration survives reload', () => assert.equal(pressed, 'true'));
+
   // --- Shop ---------------------------------------------------------------
   await page.getByRole('button', { name: /shop|butik/i }).first().click();
   await waitFor(page, () => /shop|skins|butik/i.test(document.body.innerText), 'the shop view');

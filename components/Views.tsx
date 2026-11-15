@@ -1,3 +1,4 @@
+import { RESCUE_CATS } from '../game/rescue';
 import { secretLocation } from '../game/shadowSecrets';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -23,7 +24,7 @@ import {
   readDailyStreak, touchDailyStreak,
 } from '../game/daily';
 import { getTopDeathCause, getMostDangerousLevel, type DeathCause } from '../game/telemetry';
-import { PERK_BY_ID, combinePerkEffects, offerPerks, type PerkDef } from '../game/perks';
+import { PERK_BY_ID, combinePerkEffects, offerPerks, activeSynergies, type PerkDef } from '../game/perks';
 import { SHADOW_ENEMY_TYPE, updateEnemyMotion, drawShadowWraith } from '../game/enemies';
 import { haptic } from '../game/haptics';
 import {
@@ -2783,7 +2784,7 @@ export const PlayingView: React.FC<{
   const [isPortrait, setIsPortrait] = useState(true);
   const [combo, setCombo] = useState(0);
   const [seasonTheme] = useState(getSeasonTheme());
-  const { progress, addCoins, toggleMuted, advanceCampaign, collectShadowSecret } = useProgress();
+  const { progress, addCoins, toggleMuted, advanceCampaign, collectShadowSecret, rescueCat } = useProgress();
   const t = useT();
   const isMuted = progress.settings.muted;
 
@@ -2989,6 +2990,7 @@ export const PlayingView: React.FC<{
       shadowPasses: 0,
       shadowShifts: 0,
       shadowSecret: null as null | { x: number; y: number; collected: boolean },
+      rescueCat: null as null | { x: number; y: number; name: string; color: string; rescued: boolean },
       // --- Power-up layer ---
       pickups: [] as any[],
       enemyBullets: [] as any[],
@@ -3681,6 +3683,13 @@ export const PlayingView: React.FC<{
     if (runMode === 'campaign' && level <= 40 && !progress.shadowSecrets.includes(level)) {
       const point = secretLocation(game.platforms, [...game.holes, ...game.hazards, ...game.enemies], levelLength, level % 5 === 0);
       if (point) game.shadowSecret = { ...point, collected: false };
+    }
+    const cat = RESCUE_CATS.find(c => c.level === level);
+    if (runMode === 'campaign' && cat && !progress.rescuedCats.includes(level)) {
+      const obstacles = [...game.holes, ...game.hazards, ...game.enemies,
+        ...(game.shadowSecret ? [{ x: game.shadowSecret.x - 90, width: 180 }] : [])];
+      const point = secretLocation(game.platforms, obstacles, levelLength, level % 5 === 0);
+      if (point) game.rescueCat = { ...point, name: cat.name, color: cat.color, rescued: false };
     }
     return game;
   };
@@ -5490,6 +5499,17 @@ export const PlayingView: React.FC<{
         haptic('collect', progress.settings.haptics);
       }
 
+      const friend = game.rescueCat;
+      if (friend && !friend.rescued &&
+          Math.abs(game.player.x + game.player.width / 2 - friend.x) < 42 &&
+          Math.abs(game.player.y + game.player.height / 2 - friend.y) < 58) {
+        friend.rescued = true;
+        rescueCat(game.level);
+        pushToast(game, tr('{n} är räddad!', { n: friend.name }), '#9df3ff');
+        AudioEngine.playCoin(0);
+        haptic('collect', progress.settings.haptics);
+      }
+
       // Auto-quality: drop the oldest particles rather than paying to draw a
       // thousand sparks on a phone that is already struggling.
       const q = game.quality || FULL_QUALITY;
@@ -6387,6 +6407,23 @@ export const PlayingView: React.FC<{
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.restore();
+      }
+
+      if (game.rescueCat && !game.rescueCat.rescued) {
+        const friend = game.rescueCat;
+        const x = friend.x - game.scrollX, y = friend.y;
+        if (x > -50 && x < canvas.width + 50) {
+          ctx.save();
+          ctx.fillStyle = friend.color; ctx.strokeStyle = '#32234d'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(x - 17, y - 4); ctx.lineTo(x - 15, y - 25);
+          ctx.lineTo(x - 4, y - 17); ctx.lineTo(x + 4, y - 17);
+          ctx.lineTo(x + 15, y - 25); ctx.lineTo(x + 17, y - 4);
+          ctx.quadraticCurveTo(x + 20, y + 17, x, y + 18);
+          ctx.quadraticCurveTo(x - 20, y + 17, x - 17, y - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#32234d'; ctx.beginPath(); ctx.arc(x - 6, y, 2, 0, Math.PI * 2); ctx.arc(x + 6, y, 2, 0, Math.PI * 2); ctx.fill();
+          ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+          ctx.fillText(friend.name + ' ♥', x, y - 33); ctx.restore();
+        }
       }
 
       // A faint trace invites exploration; the fragment becomes bright in Shift.
@@ -7958,6 +7995,9 @@ export const PlayingView: React.FC<{
                             <span className="material-symbols-outlined text-lg" style={{ color: perk.color }}>{perk.icon}</span>
                             <span className="text-[11px] font-black uppercase tracking-wide text-[#12182b]">{t(perk.name)}</span>
                             <span className="text-[10px] leading-snug text-[#12182b]/55">{t(perk.desc)}</span>
+                            {activeSynergies([...runPerksRef.current, perk.id]).filter(s => !activeSynergies(runPerksRef.current).includes(s)).map(s => (
+                              <span key={s.name} className="text-[10px] font-black text-violet-700">{t('Synergi')}: {t(s.name)} · {t(s.desc)}</span>
+                            ))}
                           </button>
                         );
                       })}
@@ -7966,6 +8006,7 @@ export const PlayingView: React.FC<{
                       <p className="mt-2 truncate text-[9px] uppercase tracking-wider text-[#12182b]/40">
                         {t('Aktiva kort: {n}', { n: runPerksRef.current.length })}
                         {' · '}{runPerksRef.current.map((id) => t(PERK_BY_ID[id]?.name || id)).join(' · ')}
+                        {activeSynergies(runPerksRef.current).map(s => ` · ${t('Synergi')}: ${t(s.name)} (${t(s.desc)})`).join('')}
                       </p>
                     )}
                   </div>
