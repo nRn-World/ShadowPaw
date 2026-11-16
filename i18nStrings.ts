@@ -83,6 +83,7 @@ export const STRINGS: Row[] = [
   ['Starta direkt på nivå {n}', 'Jump straight into level {n}', 'Doğrudan {n}. seviyeye başla', 'Empezar directamente en el nivel {n}', 'ابدأ مباشرة من المستوى {n}'],
   ['Dagens runda · nivå {n}', "Today's run · level {n}", 'Günün turu · seviye {n}', 'Partida de hoy · nivel {n}', 'جولة اليوم · المستوى {n}'],
   ['Live run', 'Live run', 'Canlı oyun', 'Partida en vivo', 'لقطة مباشرة'],
+  ['Ny neonstad', 'New neon city', 'Yeni neon şehir', 'Nueva ciudad de neón', 'مدينة نيون جديدة'],
   ['Spela själv', 'Play yourself', 'Kendin oyna', 'Juega tú', 'العب بنفسك'],
   ['Spela Shadow Paw', 'Play Shadow Paw', 'Shadow Paw oyna', 'Jugar a Shadow Paw', 'العب Shadow Paw'],
   ['Nästa mål', 'Next goal', 'Sıradaki hedef', 'Próximo objetivo', 'الهدف التالي'],

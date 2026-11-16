@@ -38,6 +38,7 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🃏 **Risk/Reward Cards** - Choose 1 of 3 seeded cards between levels; every card has both an upside and a cost, and restarting never rerolls the offer
 - 🎧 **Adaptive Audio & Haptics** - Combo-driven music layers, ducking under boss warnings, enemy-position stereo panning and a distinct vibration signature per event
 - ⚡ **Auto Quality** - Measures real frame time, trims particles and weather, caches the static skyline offscreen and makes bloom/atmosphere optional
+- 🏙️ **CC0 3D Neon Kit** - A Kenney cat, future car, street lights, road and modular towers are composed into the menu studio and city vignette; the assets are recoloured, lit and arranged at runtime without touching the Canvas 2D gameplay fallback
 - ❤️ **Fair Campaigns** - Clearing a level restores a life (two for a flawless or boss clear), and the intro card can be skipped with any key or tap
 - 🗺️ **Chapter Map** - See your progress, jump back into any cleared level
 - 💾 **Campaign Checkpoint** - Continue from the highest chapter you have unlocked
@@ -52,6 +53,14 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - ♿ **Comfort Options** - Reduced motion, colour-blind mode, text and UI scaling
 
 ---
+
+## 🧩 Third-party assets
+
+The modern 3D city presentation uses selected Kenney models under CC0. They can
+be copied, modified and used commercially; Shadow Paw composes and recolours
+them at runtime. The pinned source commit, local files and license evidence are
+listed in [`ASSET_LICENSES.md`](ASSET_LICENSES.md), with the archive license
+notice in [`public/models/kenney/LICENSE.txt`](public/models/kenney/LICENSE.txt).
 
 ## 🧪 Quality checks
 

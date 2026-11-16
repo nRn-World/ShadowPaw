@@ -6,10 +6,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry, RunMode } from '../types';
 import LiveRunDemo from './LiveRunDemo';
+import NeonCityStage from './NeonCityStage';
 import { drawCatSprite } from './catSprite';
 import { drawCatAtlasSprite } from './catAtlasSprite';
 
 import CatPreview from './CatPreview';
+import Cat3DPreview from './Cat3DPreview';
 import { drawAtmosphere, drawBloom } from './worldArt';
 import {
   drawBackdrop, drawGroundSlab, drawLedge, drawChasm, drawEarth,
@@ -287,7 +289,7 @@ const InjuredCatVisual: React.FC = () => (
 /** The attract-mode card on the start screen: a live slice of play, the next
     story goal and the player's rank. It renders once in the mobile flow and
     once in the desktop hero column, so both share this single definition. */
-const HeroShowcase: React.FC<{ storyLevel: number; rank: number }> = ({ storyLevel, rank }) => {
+const HeroShowcase: React.FC<{ storyLevel: number; rank: number; withCity?: boolean }> = ({ storyLevel, rank, withCity = true }) => {
   const t = useT();
   return (
     <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
@@ -302,6 +304,18 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number }> = ({ storyLev
               direction instead of a recording of an older build. */}
           <LiveRunDemo />
         </div>
+        {withCity && (
+          /* A compact 3D city inset makes the new CC0 kit visible before the
+             player even opens the shop. It is decorative and disappears on
+             narrow screens so the live run remains readable. */
+          <div className="absolute bottom-3 right-3 z-20 hidden w-40 overflow-hidden rounded-2xl border border-cyan-200/20 bg-[#071322]/80 shadow-[0_14px_40px_-20px_rgba(43,238,255,0.75)] backdrop-blur-sm sm:block md:w-44">
+            <NeonCityStage height={104} />
+            <div className="border-t border-white/10 px-2.5 py-1.5">
+              <p className="text-[8px] font-black uppercase tracking-[0.18em] text-cyan-100/70">CC0 city kit</p>
+              <p className="mt-0.5 text-[9px] font-semibold text-white/45">{t('Ny neonstad')}</p>
+            </div>
+          </div>
+        )}
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
           <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
           <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
@@ -364,7 +378,7 @@ export const StartMenuView: React.FC<{
           </h1>
 
           <div className="mt-5 lg:hidden">
-            <HeroShowcase storyLevel={storyLevel} rank={progress.level} />
+            <HeroShowcase storyLevel={storyLevel} rank={progress.level} withCity={false} />
           </div>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
@@ -8337,6 +8351,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [tab, setTab] = useState<ShopTab>('upgrades');
   const [preview, setPreview] = useState<string>(progress.equippedSkin);
+  const [cat3DReady, setCat3DReady] = useState(false);
 
   const flash = (text: string, ok: boolean) => {
     setMessage({ text, ok });
@@ -8397,11 +8412,23 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="mt-5 grid gap-4 lg:grid-cols-[300px_1fr]">
         {/* Studio: the cat as it will look in the game */}
         <aside className="toon-card-dark overflow-hidden lg:sticky lg:top-20 lg:self-start">
-          <div className="relative flex h-56 items-center justify-center overflow-hidden bg-[linear-gradient(180deg,#8fd8ff_0%,#c6efff_52%,#eafaf0_72%,#d6f3c4_100%)] lg:h-64">
-            {/* A tiny meadow so the preview reads as a stage, not a black box. */}
-            <div className="absolute -bottom-6 left-1/2 h-24 w-[130%] -translate-x-1/2 rounded-[50%] bg-[#7ed957] shadow-[0_-3px_0_0_#3d8b2f]" aria-hidden="true" />
-            <div className="absolute left-3 top-3 size-7 rounded-full bg-[#ffe98a] shadow-[0_0_0_3px_#f6c94a]" aria-hidden="true" />
-            <CatPreview color={shown.color} accent={shown.accent} original={shown.original} width={220} height={150} scale={2.2} animated className="max-w-full" />
+          <div className="relative flex h-56 items-center justify-center overflow-hidden bg-[#071322] lg:h-64">
+            {/* Holographic studio floor: the same cyan/magenta language as the
+                city kit, with the 2D cat kept underneath as a guaranteed
+                fallback for devices without WebGL. */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(43,238,255,0.18),transparent_38%),linear-gradient(180deg,#0b1930_0%,#071322_60%,#050b18_100%)]" aria-hidden="true" />
+            <div className="absolute inset-x-0 bottom-0 h-24 bg-[linear-gradient(rgba(43,238,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(43,238,255,0.12)_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:linear-gradient(to_top,black,transparent)]" aria-hidden="true" />
+            <div className={`relative z-[1] transition-opacity duration-500 ${cat3DReady ? 'opacity-0' : 'opacity-100'}`}>
+              <CatPreview color={shown.color} accent={shown.accent} original={shown.original} width={220} height={150} scale={2.2} animated className="max-w-full" />
+            </div>
+            <Cat3DPreview
+              size={240}
+              className="absolute left-1/2 top-1/2 z-[2] -translate-x-1/2 -translate-y-1/2"
+              onReady={() => setCat3DReady(true)}
+            />
+            <span className="pointer-events-none absolute right-3 top-3 z-10 rounded-full border border-cyan-200/20 bg-[#071322]/70 px-2 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-cyan-100/70">
+              CC0 model
+            </span>
           </div>
           <div className="space-y-3 p-4">
             <div className="flex items-center justify-between gap-2">
