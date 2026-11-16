@@ -1,15 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
- * Photo booth for the toon cat, used by the shop's studio panel.
+ * Photo booth for the CC0 Kenney cat, used by the shop's studio panel.
  *
- * The rig's only clip is a walk loop, so instead of walking on the spot it
- * stands on a slow turntable. The whole 3D stack is
- * loaded on demand: the chunk with three.js only arrives when this component is
- * first shown, so the menu and the game never pay for it.
- *
- * Attribution is required by the model's licence (CC BY 4.0) and is rendered by
- * the parent, always, whether or not the model finished loading.
+ * The model has an idle animation, so it stands on a slow turntable instead of
+ * showing a frozen bind pose. The whole 3D stack is loaded on demand: the
+ * chunk with three.js only arrives when this component is first shown, so the
+ * menu and the game never pay for it.
  */
 
 type Props = {
@@ -20,7 +17,8 @@ type Props = {
   onReady?: () => void;
 };
 
-const MODEL_URL = 'models/toon_cat_free.glb';
+// Kenney's Cube Pets cat is CC0; see ASSET_LICENSES.md for the pinned source.
+const MODEL_URL = 'models/kenney/cube-pets/animal-cat.glb';
 
 const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -72,6 +70,31 @@ const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
         fill.position.set(0, -0.6, 1.2);
         scene.add(fill);
 
+        // A small holographic plinth keeps the CC0 model grounded in the shop
+        // instead of leaving it floating on the page background.
+        const floor = new THREE.Mesh(
+          new THREE.CircleGeometry(0.72, 48),
+          new THREE.MeshStandardMaterial({
+            color: 0x071322,
+            emissive: 0x062a3e,
+            emissiveIntensity: 0.85,
+            roughness: 0.64,
+            metalness: 0.38,
+            transparent: true,
+            opacity: 0.88,
+          }),
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.51;
+        scene.add(floor);
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.64, 0.67, 48),
+          new THREE.MeshBasicMaterial({ color: 0x2beeff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = -0.5;
+        scene.add(ring);
+
         const loader = new GLTFLoader();
         const gltf = await loader.loadAsync(MODEL_URL);
         if (disposed) return;
@@ -93,9 +116,9 @@ const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
         turntable.scale.setScalar(1 / sphere.radius);
         scene.add(turntable);
 
-        // The rig's only clip is a walk loop; playing it keeps the sculpt in a
-        // natural stance instead of whatever pose it was bound in.
-        const clip = gltf.animations[0];
+        // Prefer the supplied idle loop; the first clip in the pack is a
+        // deliberately static pose used as a fallback.
+        const clip = gltf.animations.find((candidate) => candidate.name === 'idle') ?? gltf.animations[0];
         const mixer = clip ? new THREE.AnimationMixer(model) : null;
         if (clip && mixer) {
           mixer.clipAction(clip).play();
