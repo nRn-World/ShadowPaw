@@ -117,6 +117,8 @@ export interface GameState {
   /* Score & progression ------------------------------------------------- */
   score: number;
   lives: number;
+  /** Fixed at three for every stage; lives never become a run-wide pool. */
+  maxLives: number;
   startLives?: number;
   ammo: number;
   xp: number;

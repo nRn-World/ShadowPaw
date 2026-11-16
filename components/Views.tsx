@@ -38,6 +38,7 @@ import {
   getNextBossAnger,
 } from '../game/boss';
 import { haptic } from '../game/haptics';
+import { MAX_PLAYER_LIVES } from '../game/constants';
 import {
   getLevelTwist, twistPhysics, pickEvent, EVENTS, TWISTS,
   type ActiveEvent, type EventId,
@@ -982,7 +983,7 @@ export const HowToPlayView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     { icon: 'shield', name: 'Sköld', color: 'text-cyan-300', ring: 'border-cyan-300/30 bg-cyan-300/10', desc: 'Tar emot nästa smäll åt dig.' },
     { icon: 'attractions', name: 'Fiskmagnet', color: 'text-yellow-300', ring: 'border-yellow-300/30 bg-yellow-300/10', desc: 'Drar fiskar till dig i 10 sekunder.' },
     { icon: 'local_fire_department', name: 'Rapid fire', color: 'text-orange-300', ring: 'border-orange-300/30 bg-orange-300/10', desc: 'Tredubbel eld utan ammokostnad i 9 sekunder.' },
-    { icon: 'favorite', name: 'Hjärta', color: 'text-rose-300', ring: 'border-rose-300/30 bg-rose-300/10', desc: 'Ger ett extra liv, upp till sex.' },
+    { icon: 'favorite', name: 'Hjärta', color: 'text-rose-300', ring: 'border-rose-300/30 bg-rose-300/10', desc: 'Återställer ett liv, men aldrig över tre.' },
     { icon: 'bolt', name: 'Ammolåda', color: 'text-indigo-300', ring: 'border-indigo-300/30 bg-indigo-300/10', desc: 'Sex skott. Dyker upp igen i bossarenan.' },
   ];
 
@@ -2746,7 +2747,7 @@ export const PlayingView: React.FC<{
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentLevel, setCurrentLevel] = useState(() => Math.max(1, startLevel));
   const [totalScore, setTotalScore] = useState(0);
-  const [lives, setLives] = useState(9);
+  const [lives, setLives] = useState(MAX_PLAYER_LIVES);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
   const [perkOffer, setPerkOffer] = useState<PerkDef[]>([]);
@@ -2926,7 +2927,7 @@ export const PlayingView: React.FC<{
     };
   }, []);
 
-  const setupLevel = (level: number, existingScore: number, existingLives: number) => {
+  const setupLevel = (level: number, existingScore: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
@@ -2956,7 +2957,9 @@ export const PlayingView: React.FC<{
     const theme = baseLevelDesign.theme;
     const companion = getActiveCompanion(progress.rescuedCats, progress.equippedCompanion);
     const districtRule = getDistrictRule(theme, level);
-    const lifeBlessing = getLifeBlessing(existingLives, level);
+    // Lives belong to the current stage, never to the whole campaign run.
+    // Every retry and every new level starts from the same readable three-heart cap.
+    const lifeBlessing = getLifeBlessing(MAX_PLAYER_LIVES, level);
     const dailyContracts = runMode === 'daily' ? getDailyContracts(dailySeed, level) : [];
     // District identity is mechanical as well as visual: frozen stages slide,
     // cosmic stages bend gravity, industrial stages have a firmer ground feel,
@@ -2999,8 +3002,8 @@ export const PlayingView: React.FC<{
       perkEffects,
       perkOffer: offerPerks(level * 31.7 + seedOffset, runPerksRef.current),
       score: existingScore,
-      lives: Math.min(9, existingLives),
-      maxLives: 9,
+      lives: MAX_PLAYER_LIVES,
+      maxLives: MAX_PLAYER_LIVES,
       lifeBlessing,
       lifeEchoes: [] as any[],
       lastStandUsed: false,
@@ -3069,7 +3072,7 @@ export const PlayingView: React.FC<{
       nearMisses: 0,
       coinsThisLevel: 0,
       fishedThisLevel: 0,
-      startLives: existingLives,
+      startLives: MAX_PLAYER_LIVES,
       // --- Shadow Shift: the cat's signature ability -----------------------
       // Charge comes from clean, aggressive play (fish, kills, near misses).
       // At 100 the player can dissolve into shadow for four seconds: immune to
@@ -4413,7 +4416,7 @@ export const PlayingView: React.FC<{
         color = '#ff8f6b';
         break;
       case 'heart':
-        game.lives = Math.min(9, game.lives + 1);
+        game.lives = Math.min(MAX_PLAYER_LIVES, game.lives + 1);
         label = tr('+1 LIV');
         color = '#ff5f8a';
         break;
@@ -4458,15 +4461,10 @@ export const PlayingView: React.FC<{
     return points >= 4 ? 'S' : points === 3 ? 'A' : points === 2 ? 'B' : 'C';
   };
 
-  /** Clearing a stage restores a life. A 40-level campaign on a single pool of
-      five lives meant one bad level 3 quietly doomed the whole run, so the
-      "Continue" button was really a restart. Flawless and boss clears restore
-      one extra, which makes mastery matter without removing the challenge. */
-  const levelLifeBonus = (game: any) => (game?.noHit || game?.bossDefeatedInRun ? 2 : 1);
-
+  /** A level clear never carries lives forward. The next stage is a fresh
+      three-heart attempt, while the current stage remains capped at three. */
   const startNextLevel = () => {
-    const finished = gameRef.current;
-    setLives(Math.min(9, (finished?.lives ?? lives) + levelLifeBonus(finished)));
+    setLives(MAX_PLAYER_LIVES);
     setShowLevelComplete(false);
     setLevelSummary(null);
     setPerkOffer([]);
@@ -4584,7 +4582,7 @@ export const PlayingView: React.FC<{
     canvas.style.maxHeight = '100vh';
     canvas.style.objectFit = 'contain';
 
-    const game = setupLevel(currentLevel, totalScore, lives);
+    const game = setupLevel(currentLevel, totalScore);
     if (!game) return;
     gameRef.current = game;
     // Debug handles the automated play-test uses to inspect live state and jump
@@ -5858,7 +5856,7 @@ export const PlayingView: React.FC<{
       });
 
       // A fallen life leaves a recoverable echo. Choosing to turn back for it
-      // is the strategic upside of the nine-lives system.
+      // is the strategic upside of the three-lives-per-stage system.
       game.lifeEchoes = (game.lifeEchoes || []).filter((echo: any) => {
         echo.life--;
         const dx = (game.player.x + game.player.width / 2) - echo.x;
@@ -7364,7 +7362,6 @@ export const PlayingView: React.FC<{
             kills: game.killsThisLevel || 0,
             time: Math.round((game.levelSeconds || 0)),
             levelType: game.levelType,
-            lifeBonus: levelLifeBonus(game),
             dailyContracts: game.dailyContracts || [],
             dailyContractProgress: game.dailyContractProgress || null,
             dailyContractBonus: game.dailyContractBonus || 0,
@@ -8140,7 +8137,7 @@ export const PlayingView: React.FC<{
                     <span className="tabular text-xs font-black text-[#ff8fa3]">{Math.max(0, lives)}</span>
                   </span>
                   <span className="hidden items-center gap-[1px] sm:flex">
-                    {Array.from({ length: Math.min(9, Math.max(lives, 0)) }).map((_, i) => (
+                    {Array.from({ length: Math.min(MAX_PLAYER_LIVES, Math.max(lives, 0)) }).map((_, i) => (
                       <span
                         key={i}
                         className="material-symbols-outlined text-[15px] text-[#ff5f7a]"
@@ -8150,7 +8147,6 @@ export const PlayingView: React.FC<{
                       </span>
                     ))}
                     {lives <= 0 && <span className="text-[10px] font-black text-primary-red">{t('TOMT')}</span>}
-                    {lives > 9 && <span className="ml-1 text-[10px] font-black text-[#ff9db0]">+{lives - 9}</span>}
                   </span>
                 </div>
                 {stats.shield && (
@@ -8740,12 +8736,6 @@ export const PlayingView: React.FC<{
                   </span>
                 </div>
 
-                {levelSummary.lifeBonus > 0 && (
-                  <p className="relative mt-2 flex items-center justify-center gap-1 text-center text-[10px] font-black uppercase tracking-widest text-[#7ef7c2]">
-                    <span className="material-symbols-outlined text-[13px]">favorite</span>
-                    {t('+{n} liv inför nästa nivå', { n: levelSummary.lifeBonus })}
-                  </p>
-                )}
                 {runMode === 'daily' && levelSummary.dailyContracts?.length > 0 && (
                   <div className="relative mt-3 rounded-2xl border-2 border-yellow-500/25 bg-yellow-300/10 p-3">
                     <div className="flex items-center justify-between gap-2">

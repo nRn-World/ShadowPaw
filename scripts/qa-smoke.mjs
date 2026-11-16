@@ -4,7 +4,7 @@
  * Drives the real game in headless Chromium (see ./browser.mjs) and asserts the
  * rules that are easy to break: deterministic levels, a reachable fish quota,
  * checkpoints, seeded perk offers, Shadow Shift, wraith immunity, boss depth,
- * spawn protection and the life refill between levels.
+ * spawn protection and the fixed three-life budget on every level.
  *
  * Usage:  npm run dev   (or set BASE_URL) ; npm run test:smoke
  * `page.clock` drives requestAnimationFrame at 60 Hz without waiting in real
@@ -82,6 +82,8 @@ try {
       checkpoints: g.checkpoints,
       perkOffer: g.perkOffer.map((p) => p.id),
       qualityTier: g.quality?.tier,
+      lives: g.lives,
+      maxLives: g.maxLives,
     };
   });
 
@@ -92,6 +94,8 @@ try {
     assert.ok(runSystems.checkpoints[0] < runSystems.checkpoints[1]);
     assert.equal(runSystems.perkOffer.length, 3, 'three seeded risk/reward cards');
     assert.equal(runSystems.qualityTier, 0, 'quality starts at the full budget');
+    assert.equal(runSystems.lives, 3, 'a stage starts with three lives');
+    assert.equal(runSystems.maxLives, 3, 'the stage cap is three lives');
   });
 
   check('level 1 has a reachable fish quota', () => {
@@ -194,18 +198,20 @@ try {
     assert.ok(Math.abs(respawn.x - firstAnchor) < 80);
   });
 
-  // --- Life refill --------------------------------------------------------
+  // --- Three lives per level ---------------------------------------------
   await page.evaluate(() => {
     const g = window.__SP;
-    g.lives = 2;
+    // Even if the previous level ended with fewer lives, the next stage gets
+    // its own fresh three-life budget rather than inheriting a run-wide pool.
+    g.lives = 1;
     g.noHit = true;
     g.bossDefeatedInRun = false;
     window.__SP_NEXT();
   });
   await waitFor(page, () => window.__SP?.level === 3, 'level 3');
   const livesAfter = await page.evaluate(() => window.__SP.lives);
-  check('a flawless clear restores two lives for the next level', () => {
-    assert.equal(livesAfter, 4);
+  check('every new level starts with exactly three lives', () => {
+    assert.equal(livesAfter, 3);
   });
 
   const mini = await page.evaluate(() => ({
