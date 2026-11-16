@@ -36,7 +36,7 @@ export const getDailySeed = (date = new Date()): string => {
 export const dailyLevelFromSeed = (seed: string): number =>
   3 + (hashSeed(seed) % 28);
 
-// LEVEL DESIGN SYSTEM - 50 unique levels with progressive difficulty
+// LEVEL DESIGN SYSTEM - 40 shipped campaign levels plus reserved expansion templates
 export const getLevelDesign = (level: number) => {
   const designs = [
     // Levels 1-10: Tutorial & Easy

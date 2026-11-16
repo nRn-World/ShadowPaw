@@ -1,15 +1,16 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Header from './components/Header';
-import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverView, ShopView, QuestsView, PlayingView } from './components/Views';
+import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverView, CampaignCompleteView, ShopView, QuestsView, PlayingView } from './components/Views';
 import LevelSelectView from './components/LevelSelectView';
 import { AppView, RunMode } from './types';
 import { ProgressProvider, useProgress } from './context/ProgressContext';
 import { InstallProvider } from './context/InstallContext';
+import { CAMPAIGN_LEVEL_COUNT } from './game/constants';
 import { AudioEngine } from './services/AudioEngine';
 import { useT } from './i18n';
 
-const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppView.LEADERBOARD, AppView.SHOP, AppView.QUESTS, AppView.LEVELS, AppView.GAME_OVER];
+const MENU_VIEWS = [AppView.START, AppView.SETTINGS, AppView.HOW_TO_PLAY, AppView.LEADERBOARD, AppView.SHOP, AppView.QUESTS, AppView.LEVELS, AppView.GAME_OVER, AppView.CAMPAIGN_COMPLETE];
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.START);
@@ -26,6 +27,7 @@ const App: React.FC = () => {
   const [startMode, setStartMode] = useState<RunMode>('campaign');
   const [lastScore, setLastScore] = useState(0);
   const [lastFishesCollected, setLastFishesCollected] = useState(0);
+  const [campaignResult, setCampaignResult] = useState({ score: 0, fishesCollected: 0 });
   const menuMusicRef = useRef<HTMLAudioElement | null>(null);
   const { progress } = useProgress();
   const t = useT();
@@ -136,6 +138,11 @@ const App: React.FC = () => {
     setCurrentView(AppView.GAME_OVER);
   }, []);
 
+  const handleCampaignComplete = useCallback((score: number, fishesCollected: number) => {
+    setCampaignResult({ score, fishesCollected });
+    setCurrentView(AppView.CAMPAIGN_COMPLETE);
+  }, []);
+
   const renderView = () => {
     switch (currentView) {
       case AppView.START:
@@ -147,9 +154,19 @@ const App: React.FC = () => {
       case AppView.LEADERBOARD:
         return <LeaderboardView onBack={() => handleNavigate(AppView.START)} onPlay={() => handleNavigate(AppView.PLAYING)} />;
       case AppView.PLAYING:
-        return <PlayingView key={`${startLevel}-${startMode}`} startLevel={startLevel} runMode={startMode} onEnd={handleGameEnd} />;
+        return <PlayingView key={`${startLevel}-${startMode}`} startLevel={startLevel} runMode={startMode} onEnd={handleGameEnd} onCampaignComplete={handleCampaignComplete} />;
       case AppView.GAME_OVER:
         return <GameOverView score={lastScore} fishesCollected={lastFishesCollected} onRestart={() => handleNavigate(AppView.PLAYING)} onMenu={() => handleNavigate(AppView.START)} />;
+      case AppView.CAMPAIGN_COMPLETE:
+        return (
+          <CampaignCompleteView
+            score={campaignResult.score}
+            fishesCollected={campaignResult.fishesCollected}
+            onReplay={() => handleStart(CAMPAIGN_LEVEL_COUNT, 'campaign')}
+            onLevels={() => handleNavigate(AppView.LEVELS)}
+            onMenu={() => handleNavigate(AppView.START)}
+          />
+        );
       case AppView.SHOP:
         return <ShopView onBack={() => handleNavigate(AppView.START)} />;
       case AppView.QUESTS:

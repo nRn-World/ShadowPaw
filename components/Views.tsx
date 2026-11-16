@@ -38,7 +38,8 @@ import {
   getNextBossAnger,
 } from '../game/boss';
 import { haptic } from '../game/haptics';
-import { MAX_PLAYER_LIVES } from '../game/constants';
+import { CAMPAIGN_LEVEL_COUNT, MAX_PLAYER_LIVES } from '../game/constants';
+import { recordLevelMastery } from '../game/mastery';
 import {
   getLevelTwist, twistPhysics, pickEvent, EVENTS, TWISTS,
   type ActiveEvent, type EventId,
@@ -363,8 +364,8 @@ export const StartMenuView: React.FC<{
   const questsDone = progress.dailyQuests.filter((q) => q.completed).length;
   // Campaign progress, not account rank: these are different things, and the
   // card used to promise chapter 1 forever even after clearing a dozen levels.
-  const storyLevel = progress.campaignLevel;
-  const clearedLevels = Math.min(40, Math.max(0, storyLevel - 1));
+  const storyLevel = Math.min(CAMPAIGN_LEVEL_COUNT, progress.campaignLevel);
+  const clearedLevels = Math.min(CAMPAIGN_LEVEL_COUNT, Math.max(0, storyLevel - 1));
   // A first visit deserves a way in, not six zeroes.
   const hasPlayed =
     clearedLevels > 0 ||
@@ -394,7 +395,7 @@ export const StartMenuView: React.FC<{
           </div>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
-            {t('Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40+ handbyggda kapitel – bygg streaken, besegra bossarna och ta tillbaka natten.')}
+            {t('Neonstaden har tagit Jerry. Spring, hoppa och skjut dig genom 40 handbyggda nivåer – bygg streaken, besegra bossarna och ta tillbaka natten.')}
           </p>
 
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
@@ -1189,7 +1190,7 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
     // Avatars are generated locally from initials instead of loading remote
     // images, so the page makes no third-party requests.
     const mockScores: ScoreEntry[] = [
-      { rank: 1, name: 'ShadowNinja', score: 50400, level: 'Nivå 42', date: '24 okt', avatar: '' },
+      { rank: 1, name: 'ShadowNinja', score: 50400, level: 'Nivå 40', date: '24 okt', avatar: '' },
       { rank: 2, name: 'NeonHunter', score: 48200, level: 'Nivå 40', date: '23 okt', avatar: '' },
       { rank: 3, name: 'CyberCat', score: 45000, level: 'Nivå 38', date: '22 okt', avatar: '' },
       { rank: 4, name: 'GhostPaw', score: 42100, level: 'Nivå 35', date: '21 okt', avatar: '' },
@@ -1717,6 +1718,120 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
             </button>
           </div>
           {shareMessage && <p className="mt-3 text-center text-xs font-bold text-primary">{shareMessage}</p>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** CAMPAIGN COMPLETE **/
+export const CampaignCompleteView: React.FC<{
+  score: number;
+  fishesCollected: number;
+  onReplay: () => void;
+  onLevels: () => void;
+  onMenu: () => void;
+}> = ({ score, fishesCollected, onReplay, onLevels, onMenu }) => {
+  const { progress, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
+  const t = useT();
+  const recordedRef = useRef(false);
+  const lastRun = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('shadow_paw_last_run') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const finalBosses = progress.stats.bossesDefeated + (!recordedRef.current && lastRun.bossDefeated ? 1 : 0);
+
+  useEffect(() => {
+    if (recordedRef.current) return;
+    recordedRef.current = true;
+    addXP(Math.floor(score / 10));
+    applyRunResults({
+      fishesCollected,
+      enemiesDefeated: lastRun.enemiesDefeated || 0,
+      levelsCompleted: lastRun.levelsCompleted || 0,
+      perfectLevel: !!lastRun.perfectLevel,
+      bestCombo: lastRun.bestCombo || 0,
+      bossDefeated: !!lastRun.bossDefeated,
+      deaths: lastRun.deaths || 0,
+      shadowPasses: lastRun.nearMisses || 0,
+    });
+    if ((lastRun.bestCombo || 0) >= 10) {
+      unlockAchievement('combo_10');
+      unlockSkin('shadow');
+    }
+    if ((progress.stats.totalEnemiesDefeated + (lastRun.enemiesDefeated || 0)) >= 60) {
+      unlockAchievement('enemy_60');
+      unlockSkin('ember');
+    }
+    if ((progress.stats.totalFishCollected + fishesCollected) >= 300) {
+      unlockAchievement('fish_300');
+      unlockSkin('frost');
+    }
+    if ((progress.stats.bossesDefeated + (lastRun.bossDefeated ? 1 : 0)) >= 3) {
+      unlockAchievement('boss_3');
+      unlockSkin('aurora');
+    }
+    if (lastRun.noHit) unlockAchievement('flawless');
+    if ((lastRun.nearMisses || 0) >= 5) unlockAchievement('close_call');
+    if ((lastRun.shadowShifts || 0) >= 1) {
+      unlockAchievement('shadow_shift');
+      unlockSkin('umbra');
+    }
+    if ((lastRun.bestStreak || 0) >= 20) unlockAchievement('streak_20');
+  }, [score, fishesCollected]);
+
+  return (
+    <div className="relative mx-auto flex min-h-[calc(100dvh-8rem)] w-full max-w-4xl items-center px-4 py-8 animate-fade-in-up">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+        <div className="absolute left-1/2 top-1/2 size-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute left-[15%] top-[22%] text-3xl text-yellow-300/70 animate-float">✦</div>
+        <div className="absolute right-[18%] top-[18%] text-2xl text-cyan-300/70 animate-float" style={{ animationDelay: '-1s' }}>✦</div>
+        <div className="absolute bottom-[22%] right-[24%] text-xl text-violet-300/70 animate-float" style={{ animationDelay: '-2s' }}>✦</div>
+      </div>
+
+      <div className="mx-auto w-full max-w-2xl text-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-yellow-200">
+          <span className="material-symbols-outlined text-base">workspace_premium</span>
+          {t('Kampanjfinal')}
+        </span>
+        <h1 className="mt-5 font-display text-5xl font-black uppercase leading-[0.9] tracking-tight text-white md:text-7xl">
+          {t('Kampanjen klar!')}
+        </h1>
+        <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-white/60 md:text-base">
+          {t('Du har tagit tillbaka natten. Nu börjar jakten på perfekta banor, bättre tider och högre poäng.')}
+        </p>
+
+        <div className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: t('Slutpoäng'), value: score.toLocaleString(), icon: 'score' },
+            { label: t('Fiskar'), value: fishesCollected, icon: 'set_meal' },
+            { label: t('Bossar'), value: finalBosses, icon: 'swords' },
+            { label: t('Rank'), value: progress.level, icon: 'military_tech' },
+          ].map((item) => (
+            <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 backdrop-blur-sm">
+              <span className="material-symbols-outlined text-lg text-primary">{item.icon}</span>
+              <p className="tabular mt-1 text-xl font-black text-white">{item.value}</p>
+              <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-white/35">{item.label}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-7 flex flex-col gap-2 sm:flex-row">
+          <button onClick={onReplay} className="toon-btn toon-btn-green flex-1 py-3.5 text-sm">
+            <span className="material-symbols-outlined text-lg">replay</span>
+            {t('Spela om finalen')}
+          </button>
+          <button onClick={onLevels} className="toon-btn flex-1 py-3.5 text-xs uppercase tracking-wider">
+            <span className="material-symbols-outlined text-lg">map</span>
+            {t('Kapitelkarta')}
+          </button>
+          <button onClick={onMenu} className="toon-btn flex-1 py-3.5 text-xs uppercase tracking-wider">
+            <span className="material-symbols-outlined text-lg">home</span>
+            {t('Huvudmeny')}
+          </button>
         </div>
       </div>
     </div>
@@ -2733,12 +2848,13 @@ const drawCloud = (
   ctx.restore();
 };
 
-/** ADVANCED 50-LEVEL PLAYABLE GAME VIEW **/
+/** ADVANCED 40-LEVEL PLAYABLE GAME VIEW **/
 export const PlayingView: React.FC<{
   onEnd: (score: number, fishesCollected: number) => void;
+  onCampaignComplete?: (score: number, fishesCollected: number) => void;
   startLevel?: number;
   runMode?: RunMode;
-}> = ({ onEnd, startLevel = 1, runMode = 'campaign' as RunMode }) => {
+}> = ({ onEnd, onCampaignComplete, startLevel = 1, runMode = 'campaign' as RunMode }) => {
   // The game loop is started once per level. Reading onEnd through a ref keeps a
   // parent re-render (e.g. the coin counter updating after every fish) from
   // changing the loop's dependencies and restarting the whole level.
@@ -2778,7 +2894,7 @@ export const PlayingView: React.FC<{
     isPausedRef.current = false;
     if (gameRef.current) gameRef.current.running = false;
     // A restart is a fresh attempt, so run-wide tallies start over too.
-    runTotalsRef.current = { nearMisses: 0, shadowPasses: 0, shadowShifts: 0 };
+    runTotalsRef.current = { nearMisses: 0, shadowPasses: 0, shadowShifts: 0, fishesCollected: 0 };
     runPerksRef.current = [];
     setPerkOffer([]);
     setPerkChoice(null);
@@ -2797,7 +2913,8 @@ export const PlayingView: React.FC<{
     }
     setIsPaused(false);
     isPausedRef.current = false;
-    onEndRef.current(game?.score ?? totalScore, game?.totalCollectedInLevel ?? 0);
+    const fishes = Math.max(game?.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected);
+    onEndRef.current(game?.score ?? totalScore, fishes);
   };
 
   // The level card introduces the stage for a beat and then fades away. The
@@ -2861,7 +2978,7 @@ export const PlayingView: React.FC<{
   // Run-wide tallies. `game` is rebuilt for every level, so these cannot live
   // on it: the results screen and quests need the whole run, not just the last
   // stage. A new PlayingView (keyed by start level) starts a fresh run.
-  const runTotalsRef = useRef({ nearMisses: 0, shadowPasses: 0, shadowShifts: 0 });
+  const runTotalsRef = useRef({ nearMisses: 0, shadowPasses: 0, shadowShifts: 0, fishesCollected: 0 });
   // Cards chosen this run survive level transitions but not a restart.
   const runPerksRef = useRef<string[]>([]);
   // One monitor per PlayingView mount; survives level changes within a run.
@@ -3002,6 +3119,7 @@ export const PlayingView: React.FC<{
       perkEffects,
       perkOffer: offerPerks(level * 31.7 + seedOffset, runPerksRef.current),
       score: existingScore,
+      levelStartScore: existingScore,
       lives: MAX_PLAYER_LIVES,
       maxLives: MAX_PLAYER_LIVES,
       lifeBlessing,
@@ -3036,6 +3154,7 @@ export const PlayingView: React.FC<{
       levelsCompletedInRun: 0,
       bossDefeatedInRun: false,
       deathsInRun: 0,
+      deathsThisLevel: 0,
       screenShake: 0,
       hitStop: 0,
         miniEvent: {
@@ -4228,6 +4347,7 @@ export const PlayingView: React.FC<{
         nearMisses: Math.max(game.nearMisses || 0, runTotalsRef.current.nearMisses),
         shadowPasses: runTotalsRef.current.shadowPasses,
         shadowShifts: runTotalsRef.current.shadowShifts,
+        fishesCollected: Math.max(game.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected),
         noHit: !!game.noHit,
         runLevel: game.runLevel || 1,
         coins: game.coinsThisLevel || 0,
@@ -4276,7 +4396,8 @@ export const PlayingView: React.FC<{
     game.running = false;
     trackDeathCause(cause);
     persistRunSummary(game, false);
-    onEndRef.current(game.score, game.totalCollectedInLevel);
+    const fishes = Math.max(game.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected);
+    onEndRef.current(game.score, fishes);
   };
 
   const leaveLifeEcho = (game: any, x: number, y: number, cause: string) => {
@@ -4362,6 +4483,7 @@ export const PlayingView: React.FC<{
 
     leaveLifeEcho(game, p.x + p.width / 2, p.y + p.height / 2, cause);
     game.lives--;
+    game.deathsThisLevel = (game.deathsThisLevel || 0) + 1;
     // Counted here so every damage source (enemy, hazard, boss) reaches the
     // results screen; only fall-in-pit and the Speed Run clock used to.
     game.deathsInRun = (game.deathsInRun || 0) + 1;
@@ -5057,6 +5179,7 @@ export const PlayingView: React.FC<{
         game.levelTimer = Math.max(0, game.levelTimer - 1 / 60);
         if (game.levelTimer <= 0) {
           game.lives--;
+          game.deathsThisLevel = (game.deathsThisLevel || 0) + 1;
           game.deathsInRun = (game.deathsInRun || 0) + 1;
           game.noHit = false;
           if (game.lives <= 0) {
@@ -5766,6 +5889,7 @@ export const PlayingView: React.FC<{
             'hole',
           );
           game.lives--;
+          game.deathsThisLevel = (game.deathsThisLevel || 0) + 1;
           game.deathsInRun = (game.deathsInRun || 0) + 1;
           game.noHit = false;
           AudioEngine.playLifeLost();
@@ -5935,6 +6059,7 @@ export const PlayingView: React.FC<{
             awardCoins(game, 2);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
             game.totalCollectedInLevel++;
+            runTotalsRef.current.fishesCollected += 1;
             bumpDailyContract(game, 'fish');
             gainShadowCharge(game, 7);
             // The Time Attack goal promises that every fish buys time, and the
@@ -7358,7 +7483,7 @@ export const PlayingView: React.FC<{
             streak: game.bestStreak || 0,
             runLevel: game.runLevel || 1,
             coins: game.coinsThisLevel || 0,
-            boss: !!game.bossDefeatedInRun,
+            boss: !!game.boss && bossCleared,
             kills: game.killsThisLevel || 0,
             time: Math.round((game.levelSeconds || 0)),
             levelType: game.levelType,
@@ -7366,7 +7491,17 @@ export const PlayingView: React.FC<{
             dailyContractProgress: game.dailyContractProgress || null,
             dailyContractBonus: game.dailyContractBonus || 0,
           };
-          setLevelSummary({ ...summary, grade: getGrade(summary) });
+          const grade = getGrade(summary) as 'S' | 'A' | 'B' | 'C';
+          const mastery = recordLevelMastery(currentLevel, {
+            score: Math.max(0, game.score - (game.levelStartScore || 0)),
+            time: summary.time,
+            grade,
+            noHit: summary.noHit,
+            fullCatch: allFishesCollected,
+            deaths: game.deathsThisLevel || 0,
+            bestCombo: game.bestComboInRun || 0,
+          });
+          setLevelSummary({ ...summary, grade, mastery });
           // Seeded offer: restarting this level always shows the same 3 cards.
           setPerkOffer(game.perkOffer || []);
           setPerkChoice(null);
@@ -8670,6 +8805,7 @@ export const PlayingView: React.FC<{
                 ? { ring: '#7ee7ff', text: '#c9f6ff', glow: 'rgba(126,231,255,0.45)' }
                 : { ring: '#a8b3c7', text: '#e2e8f0', glow: 'rgba(168,179,199,0.35)' };
           const stars = grade === 'S' || grade === 'A' ? 3 : grade === 'B' ? 2 : 1;
+          const isCampaignFinal = runMode === 'campaign' && currentLevel >= CAMPAIGN_LEVEL_COUNT;
           return createPortal(<div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/88 p-3 backdrop-blur-lg md:p-6 animate-fade-in-up">
             <div className="flex min-h-full items-center justify-center">
               <div className="toon-card relative w-full max-w-md overflow-hidden rounded-[1.75rem] p-5 md:p-7">
@@ -8736,6 +8872,35 @@ export const PlayingView: React.FC<{
                   </span>
                 </div>
 
+                {levelSummary.mastery && (
+                  <div className="relative mt-3 rounded-2xl border-2 border-[#12182b]/15 bg-[#12182b]/[0.04] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-[#12182b]/60">
+                        <span className="material-symbols-outlined text-[15px] text-[#b57b00]">workspace_premium</span>
+                        {t('Banmästerskap')}
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-[#12182b]/45">
+                        {t('{n} försök', { n: levelSummary.mastery.attempts })}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-1.5">
+                      {[
+                        { label: t('Bästa poäng'), value: levelSummary.mastery.bestScore.toLocaleString() },
+                        { label: t('Bästa tid'), value: levelSummary.mastery.bestTime ? `${levelSummary.mastery.bestTime}s` : '—' },
+                        { label: t('Bästa betyg'), value: levelSummary.mastery.bestGrade },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-xl bg-white/55 px-1.5 py-2 text-center">
+                          <p className="tabular text-xs font-black text-[#12182b]">{item.value}</p>
+                          <p className="mt-0.5 text-[7px] font-black uppercase tracking-wider text-[#12182b]/45">{item.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-center text-[9px] font-bold text-[#12182b]/55">
+                      {levelSummary.mastery.noHit ? t('Felfri medalj upplåst') : levelSummary.mastery.fullCatch ? t('Full fångst registrerad') : t('Spela om för att förbättra rekordet')}
+                    </p>
+                  </div>
+                )}
+
                 {runMode === 'daily' && levelSummary.dailyContracts?.length > 0 && (
                   <div className="relative mt-3 rounded-2xl border-2 border-yellow-500/25 bg-yellow-300/10 p-3">
                     <div className="flex items-center justify-between gap-2">
@@ -8756,7 +8921,7 @@ export const PlayingView: React.FC<{
 
                 {/* Risk/reward: one of three seeded cards. Every option has a
                     cost, so this is a build decision, not a free upgrade. */}
-                {perkOffer.length > 0 && (
+                {!isCampaignFinal && perkOffer.length > 0 && (
                   <div className="relative mt-4 rounded-2xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2">
@@ -8808,12 +8973,31 @@ export const PlayingView: React.FC<{
                 )}
 
                 <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button onClick={startNextLevel} className="toon-btn toon-btn-green w-full py-3.5 text-sm md:text-base">
-                    <span className="material-symbols-outlined text-xl">arrow_forward</span>
-                    {currentLevel % 5 === 4 ? t('Bosskamp · nivå {n}', { n: currentLevel + 1 }) : t('Nästa nivå · {n}', { n: currentLevel + 1 })}
+                  <button
+                    onClick={() => {
+                      if (isCampaignFinal) {
+                        (onCampaignComplete || onEnd)(
+                          gameRef.current?.score ?? totalScore,
+                          Math.max(gameRef.current?.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected),
+                        );
+                      } else {
+                        startNextLevel();
+                      }
+                    }}
+                    className="toon-btn toon-btn-green w-full py-3.5 text-sm md:text-base"
+                  >
+                    <span className="material-symbols-outlined text-xl">{isCampaignFinal ? 'celebration' : 'arrow_forward'}</span>
+                    {isCampaignFinal
+                      ? t('Kampanjen klar')
+                      : currentLevel % 5 === 4
+                        ? t('Bosskamp · nivå {n}', { n: currentLevel + 1 })
+                        : t('Nästa nivå · {n}', { n: currentLevel + 1 })}
                   </button>
                   <button
-                    onClick={() => onEnd(totalScore, gameRef.current?.totalCollectedInLevel ?? 0)}
+                    onClick={() => onEnd(
+                      totalScore,
+                      Math.max(gameRef.current?.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected),
+                    )}
                     className="toon-btn w-full py-3.5 text-xs uppercase tracking-wider sm:w-auto sm:px-6"
                   >
                     {t('Avsluta')}

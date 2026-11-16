@@ -14,7 +14,8 @@ import {
 } from '../game/level.ts';
 import { PERKS, offerPerks, combinePerkEffects } from '../game/perks.ts';
 import { createQualityMonitor } from '../game/quality.ts';
-import { MAX_PLAYER_LIVES } from '../game/constants.ts';
+import { CAMPAIGN_LEVEL_COUNT, MAX_PLAYER_LIVES } from '../game/constants.ts';
+import { mergeLevelMastery } from '../game/mastery.ts';
 import { updateEnemyMotion } from '../game/enemies.ts';
 import {
   getBossAttackCooldown,
@@ -26,8 +27,26 @@ import {
 
 const fakeGame = (playerX = 400) => ({ player: { x: playerX, width: 50, y: 500, height: 70 } });
 
-test('each stage uses exactly three player lives', () => {
+test('the shipped campaign has exactly 40 levels and three lives per stage', () => {
+  assert.equal(CAMPAIGN_LEVEL_COUNT, 40);
   assert.equal(MAX_PLAYER_LIVES, 3);
+});
+
+test('level mastery keeps the best score, time, grade and medals', () => {
+  const first = mergeLevelMastery(undefined, {
+    score: 1200, time: 44, grade: 'B', noHit: false, fullCatch: true, deaths: 1, bestCombo: 8,
+  });
+  const second = mergeLevelMastery(first, {
+    score: 1000, time: 31, grade: 'S', noHit: true, fullCatch: false, deaths: 0, bestCombo: 12,
+  });
+  assert.equal(second.bestScore, 1200);
+  assert.equal(second.bestTime, 31);
+  assert.equal(second.bestGrade, 'S');
+  assert.equal(second.noHit, true);
+  assert.equal(second.fullCatch, true);
+  assert.equal(second.attempts, 2);
+  assert.equal(second.deaths, 1);
+  assert.equal(second.bestCombo, 12);
 });
 
 test('seeded RNG is deterministic and bounded', () => {
