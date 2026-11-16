@@ -14,6 +14,7 @@ import {
 } from '../game/level.ts';
 import { PERKS, offerPerks, combinePerkEffects } from '../game/perks.ts';
 import { createQualityMonitor } from '../game/quality.ts';
+import { MAX_PLAYER_LIVES } from '../game/constants.ts';
 import { updateEnemyMotion } from '../game/enemies.ts';
 import {
   getBossAttackCooldown,
@@ -24,6 +25,10 @@ import {
 } from '../game/boss.ts';
 
 const fakeGame = (playerX = 400) => ({ player: { x: playerX, width: 50, y: 500, height: 70 } });
+
+test('each stage uses exactly three player lives', () => {
+  assert.equal(MAX_PLAYER_LIVES, 3);
+});
 
 test('seeded RNG is deterministic and bounded', () => {
   const a = makeRng(1234);

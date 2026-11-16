@@ -17,21 +17,21 @@ export type LifeBlessing = {
 export const LIFE_BLESSINGS: readonly LifeBlessing[] = [
   {
     id: 'pounce',
-    name: 'Nio liv · studs',
+    name: 'Tre liv · studs',
     detail: 'Nästa försök får lite högre hoppkraft.',
     icon: 'north',
     color: '#7ef7c2',
   },
   {
     id: 'scent',
-    name: 'Nio liv · spår',
+    name: 'Tre liv · spår',
     detail: 'Morrhårsläget startar laddat och visar dolda vägar.',
     icon: 'visibility',
     color: '#ffd166',
   },
   {
     id: 'echo',
-    name: 'Nio liv · eko',
+    name: 'Tre liv · eko',
     detail: 'Ett förlorat liv lämnar ett eko som kan samlas upp.',
     icon: 'all_inclusive',
     color: '#c084fc',
