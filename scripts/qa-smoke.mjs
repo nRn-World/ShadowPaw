@@ -219,9 +219,35 @@ try {
     assert.equal(mini.exposed, 0);
   });
 
+  // A closed core is not a shield: a regular shot must still reduce HP.
+  // Inject the projectile into the real fixed-step loop instead of calling a
+  // damage helper so collision order and the boss state are covered together.
+  const shotBefore = await page.evaluate(() => {
+    const g = window.__SP;
+    const b = g.boss;
+    g.enemies.length = 0;
+    g.enemyBullets.length = 0;
+    b.projectiles.length = 0;
+    b.stunTimer = 60;
+    b.coreExposed = 0;
+    g.bullets.length = 0;
+    g.bullets.push({
+      x: b.x + b.width / 2, y: b.y + b.height / 2,
+      vx: 0, vy: 0, radius: 8, life: 20,
+    });
+    return b.hp;
+  });
+  await page.clock.runFor(12);
+  const shotAfter = await page.evaluate(() => window.__SP.boss.hp);
+  check('a regular shot damages a boss while its core is closed', () => {
+    assert.equal(shotAfter, shotBefore - 1);
+  });
+
   // The boss route must still work when every shot is gone. Put the cat just
   // above the miniboss and let the real fixed-step collision code resolve the
   // landing; this guards the swept top-edge check against future physics edits.
+  // Keep defensive invulnerability enabled intentionally: spawn/shield
+  // protection must not turn an offensive stomp into a no-op.
   const stompBefore = await page.evaluate(() => {
     const g = window.__SP;
     const b = g.boss;
@@ -230,8 +256,8 @@ try {
     b.projectiles.length = 0;
     g.introTimer = 0;
     g.ammo = 0;
-    g.player.invincible = false;
-    g.player.invincibleTimer = 0;
+    g.player.invincible = true;
+    g.player.invincibleTimer = 100;
     g.player.x = b.x + b.width / 2 - g.player.width / 2;
     g.player.y = b.y - g.player.height - 4;
     g.player.velocityY = 8;
@@ -373,6 +399,62 @@ try {
   for (let level = 4; level <= 14; level++) {
     await page.evaluate(() => window.__SP_NEXT());
     await page.waitForFunction(n => window.__SP?.level === n, level, { polling: 50 });
+    if (level === 5) {
+      // Repeat the two regression paths on a full boss as well as the
+      // miniboss above. The browser drives the same generated boss instance;
+      // only the player/projectile placement is deterministic for the test.
+      const fullShotBefore = await page.evaluate(() => {
+        const g = window.__SP;
+        const b = g.boss;
+        if (!b || b.isMini) throw new Error('level 5 should create a full boss');
+        g.enemies.length = 0;
+        g.enemyBullets.length = 0;
+        b.projectiles.length = 0;
+        b.encountered = true;
+        b.stunTimer = 60;
+        b.coreExposed = 0;
+        g.bullets.length = 0;
+        g.bullets.push({
+          x: b.x + b.width / 2, y: b.y + b.height / 2,
+          vx: 0, vy: 0, radius: 8, life: 20,
+        });
+        return b.hp;
+      });
+      await page.clock.runFor(12);
+      const fullShotAfter = await page.evaluate(() => window.__SP.boss.hp);
+      check('a regular shot damages a full boss while its core is closed', () => {
+        assert.equal(fullShotAfter, fullShotBefore - 1);
+      });
+
+      const fullStompBefore = await page.evaluate(() => {
+        const g = window.__SP;
+        const b = g.boss;
+        b.stunTimer = 0;
+        b.stompCooldown = 0;
+        b.coreExposed = 0;
+        g.ammo = 0;
+        g.player.invincible = true;
+        g.player.invincibleTimer = 100;
+        g.player.x = b.x + b.width / 2 - g.player.width / 2;
+        g.player.y = b.y - g.player.height - 4;
+        g.player.velocityY = 8;
+        g.player.velocityX = 0;
+        g.player.onGround = false;
+        g.player.isJumping = true;
+        return { hp: b.hp, stompCount: b.stompCount || 0 };
+      });
+      await page.clock.runFor(100);
+      const fullStompAfter = await page.evaluate(() => ({
+        hp: window.__SP.boss.hp,
+        stompCount: window.__SP.boss.stompCount,
+        angry: window.__SP.boss.angry,
+      }));
+      check('a protected cat can stomp a full boss without ammo', () => {
+        assert.ok(fullStompAfter.hp < fullStompBefore.hp);
+        assert.ok(fullStompAfter.stompCount > fullStompBefore.stompCount);
+        assert.equal(fullStompAfter.angry, true);
+      });
+    }
     if (level >= 11) {
       const data = await page.evaluate(() => ({
         signs: window.__SP.platforms.filter(p => p.neonPhase !== undefined).length,

@@ -32,6 +32,7 @@ import { SHADOW_ENEMY_TYPE, updateEnemyMotion, drawShadowWraith } from '../game/
 import {
   getBossAttackCooldown,
   getBossAngerSpeedMultiplier,
+  getBossShotDamage,
   getBossStompDamage,
   getNextBossAnger,
 } from '../game/boss';
@@ -4756,9 +4757,13 @@ export const PlayingView: React.FC<{
           if (boss.x < b.x + b.radius && boss.x + boss.width > b.x - b.radius && boss.y < b.y + b.radius && boss.y + boss.height > b.y - b.radius) {
             b.life = 0;
             const coreHit = boss.coreExposed > 0;
-            const shadowShot = game.shadowActive > 0;
-            const damage = (coreHit ? 2 : 1) * (shadowShot ? 2 : 1);
-            boss.hp -= damage;
+            // The core window doubles damage but never gates the hit. A boss
+            // with a closed core is still vulnerable to ordinary bullets.
+            const damage = getBossShotDamage({
+              coreExposed: boss.coreExposed,
+              shadowActive: game.shadowActive,
+            });
+            boss.hp = Math.max(0, boss.hp - damage);
             gainShadowCharge(game, 6);
             boss.stunTimer = 8;
             game.hitStop = 2;
@@ -5350,10 +5355,17 @@ export const PlayingView: React.FC<{
         const playerBottom = game.player.y + game.player.height;
         const stompOverlapX = game.player.x + game.player.width > boss.x + 8 &&
           game.player.x < boss.x + boss.width - 8;
-        const crossedBossTop = previousPlayerBottom <= boss.y + 18 && playerBottom >= boss.y;
+        // Defensive protection must never disable an offensive stomp. The
+        // shield pickup, spawn protection and the short bounce invulnerability
+        // all set `player.invincible`; using that flag here made a protected
+        // cat pass straight through the boss without dealing damage.
+        //
+        // Use a wider swept top band than a single-pixel crossing. A boss can
+        // bob during its protected/telegraph animation, and the platform
+        // solver may snap the cat to the arena floor in the same frame.
+        const crossedBossTop = previousPlayerBottom <= boss.y + 34 && playerBottom >= boss.y - 6;
         if (
           !boss.stompCooldown &&
-          !game.player.invincible &&
           previousPlayerVelocityY > 0 &&
           stompOverlapX &&
           crossedBossTop

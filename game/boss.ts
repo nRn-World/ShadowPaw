@@ -17,6 +17,20 @@ export interface BossStompTuning {
 export const getBossStompDamage = ({ maxHp, isMini = false }: BossStompTuning): number =>
   Math.max(2, Math.ceil(maxHp * (isMini ? 0.34 : 0.2)));
 
+export interface BossShotTuning {
+  /** Remaining recovery/core window. A closed core is still damageable. */
+  coreExposed?: number;
+  /** Shadow Shift doubles shots while the form is active. */
+  shadowActive?: number;
+}
+
+/**
+ * Damage from a regular bullet. `coreExposed` is a reward multiplier, not a
+ * shield: returning zero must never turn a hit into an invulnerable boss.
+ */
+export const getBossShotDamage = ({ coreExposed = 0, shadowActive = 0 }: BossShotTuning): number =>
+  (coreExposed > 0 ? 2 : 1) * (shadowActive > 0 ? 2 : 1);
+
 /** Increase anger without letting repeated stomps grow without bound. */
 export const getNextBossAnger = (angerLevel = 0): number =>
   Math.min(MAX_BOSS_ANGER, Math.max(0, angerLevel) + 1);
