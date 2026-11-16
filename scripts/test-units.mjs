@@ -205,6 +205,44 @@ test('rescues and decorations validate old, duplicate and imported save data', a
   assert.equal(cleanDecor('other', 8), 'classic');
 });
 
+test('unique systems stay deterministic and companions require a rescue', async () => {
+  const { COMPANIONS, getActiveCompanion, getDailyContracts, getDistrictRule, getFishBehavior, getLifeBlessing, createContractProgress, isDailyContractComplete } = await import('../game/uniqueSystems.ts');
+  assert.equal(COMPANIONS.length, 8);
+  assert.equal(getActiveCompanion([2], 'miso')?.ability, 'scent');
+  assert.equal(getActiveCompanion([], 'miso'), null, 'a save cannot equip an unrescued cat');
+  assert.equal(getActiveCompanion([2, 7])?.id, 'luna');
+  assert.deepEqual(getDailyContracts('2026-11-03'), getDailyContracts('2026-11-03'));
+  assert.equal(getDailyContracts('2026-11-03').length, 3);
+  assert.notEqual(getDailyContracts('2026-11-03').map(c => c.id).join(','), getDailyContracts('2026-11-04').map(c => c.id).join(','));
+  assert.equal(getDailyContracts('2026-11-15', 29).some(c => c.kind === 'stomp'), false, 'non-boss daily stages cannot promise a boss stomp');
+  assert.equal(getDailyContracts('2026-11-15', 30).some(c => c.kind === 'stomp'), true, 'boss daily stages can offer the stomp contract');
+  assert.equal(getDistrictRule('ice_cave', 4).id, 'frozen');
+  assert.equal(getDistrictRule('space_station', 4).id, 'cosmic');
+  assert.equal(getDistrictRule('park', 4).id, 'wild');
+  assert.equal(getFishBehavior(1, 0), 'calm');
+  assert.equal(getFishBehavior(6, 5), 'school');
+  assert.equal(getFishBehavior(6, 3), 'skittish');
+  assert.notEqual(getLifeBlessing(9, 1).id, getLifeBlessing(9, 2).id);
+  const progress = createContractProgress();
+  progress.fish = 10;
+  const contract = getDailyContracts('2026-11-03').find(c => c.kind === 'fish');
+  if (contract) assert.equal(isDailyContractComplete(contract, progress), true);
+});
+
+test('daily ghosts are capped and validated in local storage', async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => store.set(k, v),
+  };
+  const { saveDailyGhost, loadDailyGhost } = await import('../game/daily.ts');
+  const frames = Array.from({ length: 2505 }, (_, frame) => ({ frame, x: frame * 2, y: 500, facing: frame % 2 ? -1 : 1 }));
+  assert.equal(saveDailyGhost('2026-11-03', 12, frames), true);
+  assert.equal(loadDailyGhost('2026-11-03', 12).length, 2400);
+  store.set('shadow_paw_daily_ghost_v2', JSON.stringify({ '2026-11-03:12': [{ frame: 1, x: 2, y: 3, facing: 0 }, { frame: 2, x: 2, y: 3, facing: 1 }] }));
+  assert.deepEqual(loadDailyGhost('2026-11-03', 12), [{ frame: 2, x: 2, y: 3, facing: 1 }]);
+});
+
 test('card synergies require both cards and stack only once', async () => {
   const { activeSynergies, combinePerkEffects } = await import('../game/perks.ts');
   assert.equal(activeSynergies(['shadow_battery']).length, 0);

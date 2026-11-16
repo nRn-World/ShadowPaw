@@ -41,6 +41,8 @@ export interface PlayerProgress {
   /** Campaign levels whose optional shadow fragment has been found. */
   shadowSecrets: number[];
   rescuedCats: number[];
+  /** Optional for old saves; when set it is one of the rescued companion ids. */
+  equippedCompanion?: string | null;
   claimedCatQuests: string[];
   hideoutDecor: 'classic' | 'garden' | 'neon';
   unlockedSkins: string[];

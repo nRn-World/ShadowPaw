@@ -19,6 +19,8 @@ export class AudioEngine {
     private static duckTimer: ReturnType<typeof setTimeout> | null = null;
     private static comboTier = 0;
     private static lastComboLayerAt = 0;
+    private static lastPurrAt = 0;
+    private static lastPawAt = 0;
 
     /** Shared tone helper so every new sound follows the same envelope rules. */
     private static tone(opts: {
@@ -192,6 +194,67 @@ export class AudioEngine {
         const roots = [0, 220, 261.63, 329.63];
         const root = roots[clamped];
         this.chord([root, root * 1.25, root * 1.5], 0.55, 0.035, 0, 'sine');
+    }
+
+    /** A quiet, throttled purr gives speed and a full combo a physical audio identity. */
+    public static setPurrIntensity(intensity: number) {
+        if (!this.adaptive) return;
+        const value = Math.max(0, Math.min(1, intensity));
+        if (value < 0.28) return;
+        const now = Date.now();
+        if (now - this.lastPurrAt < 520) return;
+        this.lastPurrAt = now;
+        this.tone({
+            type: 'sine',
+            from: 72 + value * 18,
+            to: 92 + value * 24,
+            duration: 0.18,
+            gain: 0.018 + value * 0.024,
+            filter: 240,
+        });
+    }
+
+    /** Soft alternating paw taps make grounded movement feel feline without
+        turning a sprint into a wall of clicks. */
+    public static playPawStep(speed = 1) {
+        if (!this.adaptive) return;
+        const now = Date.now();
+        if (now - this.lastPawAt < 150) return;
+        this.lastPawAt = now;
+        this.tone({
+            type: 'triangle',
+            from: 118 + Math.min(30, Math.abs(speed) * 4),
+            to: 72,
+            duration: 0.075,
+            gain: 0.025,
+            filter: 520,
+        });
+    }
+
+    /** A short spoken-like chirp, used for rescues and safe level moments. */
+    public static playMeow(pitch = 1) {
+        const safePitch = Math.max(0.75, Math.min(1.35, pitch));
+        this.tone({ type: 'triangle', from: 420 * safePitch, to: 760 * safePitch, duration: 0.16, gain: 0.075, filter: 1800 });
+        this.tone({ type: 'sine', from: 690 * safePitch, to: 520 * safePitch, duration: 0.11, gain: 0.045, delay: 0.12, filter: 2200 });
+    }
+
+    /** Whispery radar cue for the Q / whisker-sense ability. */
+    public static playScentSense() {
+        this.tone({ type: 'sine', from: 260, to: 740, duration: 0.28, gain: 0.08 });
+        this.tone({ type: 'triangle', from: 1040, to: 680, duration: 0.22, gain: 0.045, delay: 0.08 });
+    }
+
+    public static playLifeEcho() {
+        this.chord([261.63, 392, 523.25], 0.36, 0.07, 0, 'sine');
+    }
+
+    public static playArenaShift() {
+        this.noise({ duration: 0.28, gain: 0.1, from: 900, to: 110, type: 'lowpass' });
+        this.tone({ type: 'sawtooth', from: 120, to: 250, duration: 0.34, gain: 0.09, filter: 700 });
+    }
+
+    public static playFishScatter() {
+        this.tone({ type: 'triangle', from: 980, to: 430, duration: 0.12, gain: 0.045 });
     }
 
     /** Distinct new cues for the systems added in the 2026 gameplay pass. */

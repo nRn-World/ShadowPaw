@@ -117,6 +117,8 @@ try {
   await hideoutPage.reload({ waitUntil: 'domcontentloaded' });
   await hideoutPage.getByRole('button', { name: /^map\s*chapters$/i }).first().click();
   await waitFor(hideoutPage, () => document.body.innerText.includes('Cats rescued: 2/8'), 'rescued cats');
+  await hideoutPage.getByRole('button', { name: /Miso.*Whisker Sense/i }).click();
+  await waitFor(hideoutPage, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).equippedCompanion === 'miso', 'saved companion selection');
   await hideoutPage.getByRole('button', { name: 'Garden', exact: true }).click();
   await waitFor(hideoutPage, () => JSON.parse(localStorage.getItem('shadow_paw_progress_v2')).hideoutDecor === 'garden', 'saved hideout theme');
   await hideoutPage.getByRole('button', { name: 'Claim reward', exact: true }).first().click();
@@ -134,7 +136,11 @@ try {
   await hideoutPage.reload({ waitUntil: 'domcontentloaded' });
   await hideoutPage.getByRole('button', { name: /^map\s*chapters$/i }).first().click();
   const pressed = await hideoutPage.getByRole('button', { name: 'Garden', exact: true }).getAttribute('aria-pressed');
-  check('hideout decoration survives reload', () => assert.equal(pressed, 'true'));
+  const equipped = await hideoutPage.getByRole('button', { name: /Miso.*Whisker Sense/i }).getAttribute('aria-pressed');
+  check('hideout decoration and companion survive reload', () => {
+    assert.equal(pressed, 'true');
+    assert.equal(equipped, 'true');
+  });
 
   // --- Shop ---------------------------------------------------------------
   await page.getByRole('button', { name: /shop|butik/i }).first().click();

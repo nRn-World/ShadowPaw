@@ -21,6 +21,8 @@ export interface Platform extends Rect {
   bossArena?: boolean;
   bossWalkway?: boolean;
   shadowBridge?: boolean;
+  /** Exists in the normal collision list but only solid in Shadow Shift. */
+  shadowGate?: boolean;
   neonPhase?: number;
   chasm?: boolean;
   mover?: { axis: 'h' | 'v'; range: number; speed: number; phase: number; originX?: number; originY?: number };
@@ -53,6 +55,7 @@ export interface EnemyState extends Rect {
   platform: number;
   baseY?: number;
   isShadow?: boolean;
+  shadowOnly?: boolean;
   shadowKilled?: boolean;
   nearMissed?: boolean;
   feintTimer?: number;
@@ -169,6 +172,7 @@ export interface GameState {
   platforms: Platform[];
   holes: Array<Rect & { width: number }>;
   fishes: Rect[];
+  shadowFishes?: Array<Rect & { collected: boolean; value: number }>;
   enemies: EnemyState[];
   bullets: Particle[];
   enemyBullets: Particle[];
@@ -193,6 +197,13 @@ export interface GameState {
   shadowShiftId: number;
   shadowPasses: number;
   shadowShifts: number;
+  shadowWorld?: boolean;
+  shadowRoute?: Platform[];
+  lifeEchoes?: Array<{ x: number; y: number; life: number; value: number; cause?: string }>;
+  senseTimer?: number;
+  senseCooldown?: number;
+  ghostPlayback?: Array<{ frame: number; x: number; y: number; facing: 1 | -1 }>;
+  ghostTrace?: Array<{ frame: number; x: number; y: number; facing: 1 | -1 }>;
   checkpoints: number[];
   checkpointIndex: number;
   checkpointX: number;

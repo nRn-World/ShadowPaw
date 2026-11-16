@@ -4,6 +4,7 @@ import { PlayerProgress } from '../types';
 import { cleanSecrets, SECRET_REWARD_COUNT } from '../game/shadowSecrets';
 import { cleanRescues, cleanDecor, type HideoutDecor } from '../game/rescue';
 import { cleanCatQuestClaims, claimCatQuest as applyCatQuest } from '../game/sideQuests';
+import { getCompanionById } from '../game/uniqueSystems';
 
 const STORAGE_KEY = 'shadow_paw_progress_v2';
 const STORAGE_BACKUP_KEY = 'shadow_paw_progress_backup_v2';
@@ -52,6 +53,7 @@ const defaultProgress: PlayerProgress = {
   campaignLevel: 1,
   shadowSecrets: [],
   rescuedCats: [],
+  equippedCompanion: null,
   claimedCatQuests: [],
   hideoutDecor: 'classic',
   unlockedSkins: ['default'],
@@ -115,6 +117,7 @@ interface ProgressContextType {
   unlockSkin: (skinId: string) => void;
   collectShadowSecret: (level: number) => void;
   rescueCat: (level: number) => void;
+  equipCompanion: (id: string | null) => void;
   claimCatQuest: (id: string) => void;
   setHideoutDecor: (decor: HideoutDecor) => void;
   applyRunResults: (results: {
@@ -205,6 +208,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
+          const rescuedCats = cleanRescues(parsed.rescuedCats);
           return {
             ...defaultProgress,
             ...parsed,
@@ -212,9 +216,10 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
               ? readLegacyCheckpoint()
               : clampCampaignLevel(parsed.campaignLevel),
             shadowSecrets: cleanSecrets(parsed.shadowSecrets),
-            rescuedCats: cleanRescues(parsed.rescuedCats),
+            rescuedCats,
+            equippedCompanion: getCompanionById(parsed.equippedCompanion, rescuedCats)?.id || null,
             claimedCatQuests: cleanCatQuestClaims(parsed.claimedCatQuests),
-            hideoutDecor: cleanDecor(parsed.hideoutDecor, cleanRescues(parsed.rescuedCats).length),
+            hideoutDecor: cleanDecor(parsed.hideoutDecor, rescuedCats.length),
             upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
             settings: cleanGameSettings(cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }))),
             stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
@@ -265,6 +270,16 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       return rescuedCats.length === p.rescuedCats.length ? p : { ...p, rescuedCats };
     });
   };
+
+  const equipCompanion = (id: string | null) => {
+    setProgress(p => {
+      if (id === null) return p.equippedCompanion === null ? p : { ...p, equippedCompanion: null };
+      const companion = getCompanionById(id, p.rescuedCats);
+      if (!companion || p.equippedCompanion === companion.id) return p;
+      return { ...p, equippedCompanion: companion.id };
+    });
+  };
+
   const setHideoutDecor = (decor: HideoutDecor) => {
     setProgress(p => ({ ...p, hideoutDecor: cleanDecor(decor, p.rescuedCats.length) }));
   };
@@ -485,14 +500,16 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
   const importProgressCode = (encoded: string) => {
     try {
       const parsed = JSON.parse(decodeURIComponent(escape(atob(encoded.trim()))));
+      const rescuedCats = cleanRescues(parsed.rescuedCats);
       setProgress({
         ...defaultProgress,
         ...parsed,
         campaignLevel: clampCampaignLevel(parsed.campaignLevel),
         shadowSecrets: cleanSecrets(parsed.shadowSecrets),
-        rescuedCats: cleanRescues(parsed.rescuedCats),
+        rescuedCats,
+        equippedCompanion: getCompanionById(parsed.equippedCompanion, rescuedCats)?.id || null,
         claimedCatQuests: cleanCatQuestClaims(parsed.claimedCatQuests),
-        hideoutDecor: cleanDecor(parsed.hideoutDecor, cleanRescues(parsed.rescuedCats).length),
+        hideoutDecor: cleanDecor(parsed.hideoutDecor, rescuedCats.length),
         upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
         settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
         stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
@@ -525,6 +542,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
       unlockSkin,
       collectShadowSecret,
       rescueCat,
+      equipCompanion,
       claimCatQuest,
       setHideoutDecor,
       applyRunResults,

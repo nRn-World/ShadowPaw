@@ -25,6 +25,7 @@ import { useT, tr, renderRich, LanguageButtons } from '../i18n';
 import {
   loadDailyScores, recordDailyScore,
   readDailyStreak, touchDailyStreak,
+  loadDailyGhost, saveDailyGhost,
 } from '../game/daily';
 import { getTopDeathCause, getMostDangerousLevel, type DeathCause } from '../game/telemetry';
 import { PERK_BY_ID, combinePerkEffects, offerPerks, activeSynergies, type PerkDef } from '../game/perks';
@@ -42,6 +43,15 @@ import {
   type ActiveEvent, type EventId,
 } from '../game/twists';
 import { createQualityMonitor, FULL_QUALITY } from '../game/quality';
+import {
+  createContractProgress,
+  getActiveCompanion,
+  getDailyContracts,
+  getDistrictRule,
+  getFishBehavior,
+  getLifeBlessing,
+  isDailyContractComplete,
+} from '../game/uniqueSystems';
 import type { GameState, HudStats } from '../game/types';
 import { ShadowShiftMeter, ObjectivePill } from './GameHud';
 import { drawCartoonEnemy } from './enemyArt';
@@ -1848,6 +1858,17 @@ const BOSS_ATTACK_PROFILES: Record<string, {
   },
 };
 
+const BOSS_COUNTER_HINTS: Record<BossPattern, string> = {
+  orb: 'DASH ELLER SIDESTEGA',
+  burst: 'SIDESTEGA',
+  fan: 'HOPPA I LUCKAN',
+  sweep: 'HOPPA ÖVER',
+  summon: 'RÖR DIG · RENSAR ARENAN',
+  slam: 'HOPPA OCH STOMPA TILLBAKA',
+  crossfire: 'DASH GENOM GLAPPET',
+  spiral: 'FÖLJ GLAPPET',
+};
+
 /* Applies one boss signature move. Kept outside the game loop so the pattern
    logic stays readable and every boss shares the same telegraph rules. */
 const fireBossAttack = (
@@ -1856,6 +1877,8 @@ const fireBossAttack = (
   move: BossPattern,
   profile: { speed: number; radius: number; color: string },
 ) => {
+  boss.lastMove = move;
+  boss.counterHint = BOSS_COUNTER_HINTS[move] || 'HÅLL DIG I RÖRELSE';
   const px = game.player.x + game.player.width / 2;
   const py = game.player.y + game.player.height / 2;
   const bx = boss.x + boss.width / 2;
@@ -1972,6 +1995,29 @@ const fireBossAttack = (
     default:
       shoot(baseAngle, speedBase, profile.radius);
   }
+};
+
+/** Phase changes reshape the arena for a few beats. Warning zones are visible,
+    deterministic and placed on the boss platform so they never create an
+    invisible off-screen hit. */
+const activateBossArenaShift = (game: any, boss: any) => {
+  const platform = game.platforms.find((p: any) => p.bossArena);
+  if (!platform) return;
+  const count = Math.min(3, 1 + (boss.phase || 0));
+  const width = 62;
+  game.arenaHazards = Array.from({ length: count }, (_, index) => ({
+    x: platform.x + platform.width * ((index + 1) / (count + 1)) - width / 2,
+    y: platform.y - 24,
+    width,
+    height: 24,
+    life: 96,
+    warning: 38,
+    active: false,
+  }));
+  game.arenaShift = 96;
+  AudioEngine.playArenaShift();
+  game.toasts.push({ text: tr('ARENAN SKIFTAR · LÄS RINGARNA'), color: '#ff82e5', life: 90, maxLife: 90 });
+  if (game.toasts.length > 3) game.toasts.shift();
 };
 
 /** Deterministic 0..1 noise for scenery details that must never flicker. */
@@ -2700,7 +2746,7 @@ export const PlayingView: React.FC<{
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentLevel, setCurrentLevel] = useState(() => Math.max(1, startLevel));
   const [totalScore, setTotalScore] = useState(0);
-  const [lives, setLives] = useState(5);
+  const [lives, setLives] = useState(9);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const [levelSummary, setLevelSummary] = useState<any>(null);
   const [perkOffer, setPerkOffer] = useState<PerkDef[]>([]);
@@ -2908,6 +2954,16 @@ export const PlayingView: React.FC<{
     const intensity = randomWeather.intensity;
     const timeOfDay = randomWeather.timeOfDay;
     const theme = baseLevelDesign.theme;
+    const companion = getActiveCompanion(progress.rescuedCats, progress.equippedCompanion);
+    const districtRule = getDistrictRule(theme, level);
+    const lifeBlessing = getLifeBlessing(existingLives, level);
+    const dailyContracts = runMode === 'daily' ? getDailyContracts(dailySeed, level) : [];
+    // District identity is mechanical as well as visual: frozen stages slide,
+    // cosmic stages bend gravity, industrial stages have a firmer ground feel,
+    // and wild stages give the cat a slightly more forgiving air control.
+    const districtGravity = districtRule.id === 'cosmic' ? 1.06 : districtRule.id === 'frozen' ? 0.94 : 1;
+    const districtFriction = districtRule.id === 'frozen' ? 0.96 : districtRule.id === 'industrial' ? 0.92 : 0.85;
+    const ghostPlayback = runMode === 'daily' ? loadDailyGhost(dailySeed, level) : [];
 
     const skin = SKINS[progress.equippedSkin] || SKINS.default;
     // A predictable five-level rhythm teaches a mechanic, adds a challenge,
@@ -2943,7 +2999,19 @@ export const PlayingView: React.FC<{
       perkEffects,
       perkOffer: offerPerks(level * 31.7 + seedOffset, runPerksRef.current),
       score: existingScore,
-      lives: existingLives,
+      lives: Math.min(9, existingLives),
+      maxLives: 9,
+      lifeBlessing,
+      lifeEchoes: [] as any[],
+      lastStandUsed: false,
+      companion,
+      districtRule,
+      dailyContracts,
+      dailyContractProgress: createContractProgress(),
+      dailyContractBonus: 0,
+      ghostPlayback,
+      ghostTrace: [] as Array<{ frame: number; x: number; y: number; facing: 1 | -1 }>,
+      ghostFrame: 0,
       // Boss stages get enough extra shots for missed shots and a few regular
       // enemies, without turning their required fight into an ammo soft-lock.
       ammo: progress.upgrades.maxAmmo + (progress.level >= 10 ? 2 : 0) + (level % 5 === 0 ? 14 + Math.ceil(level * 0.9) : 0),
@@ -2952,8 +3020,8 @@ export const PlayingView: React.FC<{
       intensity: intensity,
       timeOfDay: timeOfDay,
       scrollX: 0,
-      gravity: levelMode === 'Speed Run' ? 0.75 : 0.8,
-      friction: 0.85,
+      gravity: (levelMode === 'Speed Run' ? 0.75 : 0.8) * districtGravity,
+      friction: districtFriction,
       levelType: levelMode,
       levelTimer: levelMode === 'Speed Run' ? speedRunTimer : 0,
       levelTimerBudget: levelMode === 'Speed Run' ? speedRunTimer : 0,
@@ -3007,13 +3075,22 @@ export const PlayingView: React.FC<{
       // At 100 the player can dissolve into shadow for four seconds: immune to
       // every damage source, faster, drawing fish in, and defeating enemies
       // simply by passing through them.
-      shadowCharge: 0,
+      shadowCharge: lifeBlessing.id === 'echo' ? 12 : 0,
       shadowActive: 0,
+      shadowWorld: false,
       shadowPasses: 0,
       shadowShifts: 0,
+      senseTimer: lifeBlessing.id === 'scent' || companion?.ability === 'scent' ? 120 : 0,
+      senseCooldown: 0,
+      senseUses: 0,
+      companionGuardUsed: false,
+      shadowRoute: [] as any[],
+      shadowFishes: [] as any[],
       shadowSecret: null as null | { x: number; y: number; collected: boolean },
       neonPrize: null as null | { x: number; y: number; phase: number; collected: boolean },
       rescueCat: null as null | { x: number; y: number; name: string; color: string; rescued: boolean },
+      arenaHazards: [] as any[],
+      arenaShift: 0,
       // --- Power-up layer ---
       pickups: [] as any[],
       enemyBullets: [] as any[],
@@ -3034,8 +3111,11 @@ export const PlayingView: React.FC<{
         velocityX: 0, velocityY: 0,
         speed: (4.6 + (level * 0.08)) * (progress.settings.uiScale < 0.95 ? 0.98 : 1),
         baseSpeed: 0, // set below; Shadow Shift restores this exact value
-        jumpPower: progress.upgrades.jumpPower,
-        doubleJumpPower: progress.upgrades.jumpPower + 3,
+        jumpPower: progress.upgrades.jumpPower
+          * (lifeBlessing.id === 'pounce' ? 1.05 : 1)
+          * (companion?.ability === 'air' ? 1.07 : 1),
+        doubleJumpPower: progress.upgrades.jumpPower + 3
+          + (companion?.ability === 'air' ? 1.5 : 0),
         isJumping: false, canDoubleJump: true, hasDoubleJumped: false,
         // Game feel state
         onGround: false,
@@ -3459,11 +3539,15 @@ export const PlayingView: React.FC<{
       if (!fishCollision && !fishTooClose && !overWideHole && !onEnemy) {
         game.fishes.push({
           x: clampedFx,
+          baseX: clampedFx,
           y: fy,
           width: 24,
           height: 14,
           collected: false,
           isFlying: isFlying,
+          behavior: getFishBehavior(level, placedFish),
+          schoolPhase: rng() * Math.PI * 2,
+          escapeTimer: 0,
           hoverOffset: rng() * Math.PI * 2,
           baseY: fy
         });
@@ -3482,8 +3566,9 @@ export const PlayingView: React.FC<{
         const groundPlat = game.platforms.find((pl: any) => pl.isGround && x >= pl.x && x <= pl.x + pl.width);
         const fy = (groundPlat ? groundPlat.y : groundY) - 44;
         game.fishes.push({
-          x, y: fy, width: 24, height: 14, collected: false,
-          isFlying: false, hoverOffset: 0, baseY: fy,
+          x, baseX: x, y: fy, width: 24, height: 14, collected: false,
+          isFlying: false, behavior: getFishBehavior(level, game.fishes.length), schoolPhase: rng() * Math.PI * 2,
+          escapeTimer: 0, hoverOffset: 0, baseY: fy,
         });
       }
     }
@@ -3561,6 +3646,14 @@ export const PlayingView: React.FC<{
           offDuration: 70 + Math.floor(rng() * 90),
         });
       }
+    }
+    // A few late-district dangers are sensed rather than seen. The deterministic
+    // index keeps the same hazard hidden for every player on the same seed, and
+    // the whisker pulse is the intended counterplay.
+    if (level >= 4) {
+      game.hazards.forEach((hazard: any, index: number) => {
+        if (index % 4 === 1) hazard.scentOnly = true;
+      });
     }
 
     // --- Power-ups -----------------------------------------------------
@@ -3662,7 +3755,7 @@ export const PlayingView: React.FC<{
         game.enemies.push({
           x: wx, y: plat.y - 44, width: 42, height: 44,
           velocityX: 0, direction: 1, type: SHADOW_ENEMY_TYPE,
-          isShadow: true, platform: game.platforms.indexOf(plat),
+          isShadow: true, shadowOnly: true, platform: game.platforms.indexOf(plat),
           baseY: plat.y - 44, hover: rng() * Math.PI * 2,
           shootTimer: 0, chargeTimer: 0,
         });
@@ -3718,10 +3811,47 @@ export const PlayingView: React.FC<{
 
     // Optional shadow bridges sit above existing gaps. The normal route and
     // quota are untouched; the bridge is solid only while Shift is active.
-    if (runMode === 'campaign') {
+    if (runMode === 'campaign' || level >= 3) {
       const gap = game.holes.find((h: any) => h.x > 600 && h.x < levelLength - 1800 && h.width <= 250);
-      if (gap) game.platforms.push({ x: gap.x - 30, y: groundY - 65, width: gap.width + 60, height: 14, shadowBridge: true } as any);
+      if (gap) {
+        const bridge = { x: gap.x - 30, y: groundY - 65, width: gap.width + 60, height: 14, shadowBridge: true, shadowGate: true } as any;
+        game.platforms.push(bridge);
+        game.shadowRoute.push(bridge);
+      }
+      // A second, elevated shadow ledge makes Shift a route choice rather than
+      // only a panic button. It is deliberately optional and never carries the
+      // mandatory fish quota, so the normal path remains fair.
+      const anchor = game.platforms.find((pl: any) =>
+        pl.isGround && !pl.bossArena && !pl.bossWalkway && pl.x > 900 && pl.x < levelLength - 1200 && pl.width > 170,
+      );
+      if (anchor) {
+        const ledge = {
+          x: anchor.x + Math.min(42, anchor.width * 0.2),
+          y: anchor.y - 148,
+          width: Math.min(160, anchor.width - 36),
+          height: 14,
+          shadowBridge: true,
+          shadowGate: true,
+        } as any;
+        game.platforms.push(ledge);
+        game.shadowRoute.push(ledge);
+      }
     }
+
+    // Shadow collectibles live on the alternate ledges and never count toward
+    // the mandatory fish quota. They are valuable enough to make a Shift route
+    // a deliberate choice rather than a cosmetic colour filter.
+    game.shadowFishes = game.shadowRoute.slice(0, 3).map((route: any, index: number) => ({
+      x: route.x + route.width * (0.28 + (index % 2) * 0.42),
+      y: route.y - 30,
+      baseY: route.y - 30,
+      width: 24,
+      height: 16,
+      collected: false,
+      hoverOffset: index * 1.7,
+      value: 120 + level * 4,
+    }));
+
     // This is optional and never part of the fish quota or the daily run.
     if (runMode === 'campaign' && level <= 40 && !progress.shadowSecrets.includes(level)) {
       const point = secretLocation(game.platforms, [...game.holes, ...game.hazards, ...game.enemies], levelLength, level % 5 === 0);
@@ -3936,6 +4066,23 @@ export const PlayingView: React.FC<{
     addCoins(amount);
   };
 
+  /** Daily contracts are run-local: a shared seed gives everyone the same
+      goals, while the rewards are paid once when a goal flips complete. */
+  const bumpDailyContract = (game: any, kind: 'fish' | 'shadow' | 'stomp' | 'clean', amount = 1) => {
+    if (game.runMode !== 'daily' || !game.dailyContracts?.length) return;
+    const progress = game.dailyContractProgress || createContractProgress();
+    const before = progress[kind] || 0;
+    progress[kind] = before + amount;
+    game.dailyContractProgress = progress;
+    for (const contract of game.dailyContracts) {
+      if (contract.kind !== kind || before >= contract.target || progress[kind] < contract.target) continue;
+      game.dailyContractBonus = (game.dailyContractBonus || 0) + contract.reward;
+      awardCoins(game, contract.reward);
+      pushToast(game, tr('KONTRAK KLAR · {n} · +{a}', { n: contract.name, a: contract.reward }), '#ffd166');
+      AudioEngine.playLevelUp();
+    }
+  };
+
   /** One reward path for every way of defeating a boss: bullets, Shadow Shift
       and the new ammo-free stomp route all pay the same clear reward. */
   const finishBoss = (game: any, boss: any) => {
@@ -3976,7 +4123,8 @@ export const PlayingView: React.FC<{
     // shifts forever and the ability would never have a downtime.
     if (!game || game.shadowActive > 0) return;
     const before = game.shadowCharge || 0;
-    const scaled = Math.round(amount * (game.perkEffects?.shadowChargeMult || 1));
+    const companionMult = game.companion?.ability === 'shadow' ? 1.35 : 1;
+    const scaled = Math.round(amount * (game.perkEffects?.shadowChargeMult || 1) * companionMult);
     game.shadowCharge = Math.min(100, before + scaled);
     if (before < 100 && game.shadowCharge >= 100) {
       pushToast(game, tr('SKUGGSKIFTE REDO · E'), '#c084fc');
@@ -3991,7 +4139,9 @@ export const PlayingView: React.FC<{
     const p = game.player;
     game.shadowCharge = 0;
     game.shadowActive = SHADOW_DURATION;
+    game.shadowWorld = true;
     game.shadowShiftId = (game.shadowShiftId || 0) + 1;
+    bumpDailyContract(game, 'shadow');
     game.shadowShifts = (game.shadowShifts || 0) + 1;
     runTotalsRef.current.shadowShifts += 1;
     p.baseSpeed = p.baseSpeed || p.speed;
@@ -4016,6 +4166,19 @@ export const PlayingView: React.FC<{
     AudioEngine.playDash();
     AudioEngine.playPowerup();
     haptic('shadowShift', progress.settings.haptics);
+  };
+
+  const triggerScentSense = () => {
+    const game = gameRef.current;
+    if (!game || !game.running || isPausedRef.current || game.senseTimer > 0 || game.senseCooldown > 0) return;
+    const companionBonus = game.companion?.ability === 'scent' ? 90 : 0;
+    game.senseTimer = 150 + companionBonus;
+    game.senseCooldown = 360;
+    game.senseUses = (game.senseUses || 0) + 1;
+    game.screenShake = Math.max(game.screenShake || 0, 2);
+    pushToast(game, tr('MORRHÅRSLÄGE · DOLDA SPÅR'), '#ffd166');
+    AudioEngine.playScentSense();
+    haptic('collect', progress.settings.haptics);
   };
 
   /** Passing through an enemy while shifted dissolves it instead of hurting
@@ -4070,7 +4233,12 @@ export const PlayingView: React.FC<{
         runMode: game.runMode || 'campaign',
         dailySeed: game.dailySeed || '',
         level: game.level || 1,
+        dailyContracts: game.dailyContractProgress || null,
+        dailyContractBonus: game.dailyContractBonus || 0,
       }));
+      if (game.runMode === 'daily' && game.ghostTrace?.length) {
+        saveDailyGhost(game.dailySeed || getDailySeed(), game.level || 1, game.ghostTrace);
+      }
     } catch {
       // Private browsing can reject writes; losing the summary must not stop
       // the level-complete or game-over screen from appearing.
@@ -4108,6 +4276,41 @@ export const PlayingView: React.FC<{
     onEndRef.current(game.score, game.totalCollectedInLevel);
   };
 
+  const leaveLifeEcho = (game: any, x: number, y: number, cause: string) => {
+    if (!game.lifeEchoes) game.lifeEchoes = [];
+    game.lifeEchoes.push({
+      x, y, cause,
+      life: 900,
+      value: game.companion?.ability === 'echo' || game.lifeBlessing?.id === 'echo' ? 180 : 90,
+    });
+    if (game.lifeEchoes.length > 3) game.lifeEchoes.shift();
+  };
+
+  /** Losing a life rewinds the cat to the last checkpoint instead of leaving
+      it inside the hazard that caused the hit. The dropped echo remains at the
+      old position, making the lost life a route decision: press on, or turn
+      back for its bonus before the short recovery window closes. */
+  const respawnAtCheckpoint = (game: any) => {
+    const anchorX = game.checkpointX && game.checkpointX > 120 ? game.checkpointX : 100;
+    const safePlatforms = game.platforms
+      .filter((pl: any) => pl.isGround && !pl.chasm && pl.x < anchorX + 40 && pl.x + pl.width > anchorX - 40)
+      .sort((a: any, b: any) => b.x - a.x);
+    const safe = safePlatforms[0];
+    game.player.x = safe
+      ? Math.max(safe.x + 10, Math.min(anchorX, safe.x + safe.width - game.player.width - 10))
+      : Math.max(100, anchorX);
+    game.player.y = (safe ? safe.y : game.groundY) - game.player.height - 2;
+    game.player.velocityY = 0;
+    game.player.velocityX = 0;
+    game.player.isJumping = false;
+    game.player.onGround = false;
+    game.player.ridingRef = null;
+    game.player.invincible = true;
+    game.player.invincibleTimer = Math.max(110, game.perkEffects?.invincibleBonus || 0);
+    game.respawnFlash = 24;
+    pushToast(game, tr('-1 LIV · TILLBAKA VID CHECKPOINT'), '#ff8888');
+  };
+
   /**
    * The only place the player can lose a life. Centralising it means the shield
    * power-up protects against every hazard in the game, knockback is consistent,
@@ -4143,6 +4346,18 @@ export const PlayingView: React.FC<{
       return 'shielded';
     }
 
+    if (game.companion?.ability === 'guard' && !game.companionGuardUsed) {
+      game.companionGuardUsed = true;
+      p.invincible = true;
+      p.invincibleTimer = 82;
+      p.velocityY = Math.min(p.velocityY, -lift - 1);
+      game.screenShake = Math.max(game.screenShake, 8);
+      pushToast(game, tr('{n} parerade träffen!', { n: game.companion.name }), game.companion.color);
+      AudioEngine.playLifeEcho();
+      return 'companion_guard';
+    }
+
+    leaveLifeEcho(game, p.x + p.width / 2, p.y + p.height / 2, cause);
     game.lives--;
     // Counted here so every damage source (enemy, hazard, boss) reaches the
     // results screen; only fall-in-pit and the Speed Run clock used to.
@@ -4158,6 +4373,7 @@ export const PlayingView: React.FC<{
     game.multiplier = 1;
     AudioEngine.setComboTier(0);
     game.noHit = false;
+    respawnAtCheckpoint(game);
     game.slowMo = 10;
     game.zoomPunch = 14;
     game.screenShake = Math.max(game.screenShake, 14);
@@ -4197,7 +4413,7 @@ export const PlayingView: React.FC<{
         color = '#ff8f6b';
         break;
       case 'heart':
-        game.lives = Math.min(6, game.lives + 1);
+        game.lives = Math.min(9, game.lives + 1);
         label = tr('+1 LIV');
         color = '#ff5f8a';
         break;
@@ -4250,7 +4466,7 @@ export const PlayingView: React.FC<{
 
   const startNextLevel = () => {
     const finished = gameRef.current;
-    setLives(Math.min(6, (finished?.lives ?? lives) + levelLifeBonus(finished)));
+    setLives(Math.min(9, (finished?.lives ?? lives) + levelLifeBonus(finished)));
     setShowLevelComplete(false);
     setLevelSummary(null);
     setPerkOffer([]);
@@ -4276,10 +4492,10 @@ export const PlayingView: React.FC<{
     if (active && [16, 75, 88].includes(code)) {
       triggerDash();
     }
-    // E / Q: spend a full Shadow Shift meter.
-    if (active && [69, 81].includes(code)) {
-      triggerShadowShift();
-    }
+    // E spends the Shadow Shift meter; Q activates the short whisker-sense
+    // pulse that reveals fish, secrets and the ghost route.
+    if (active && code === 69) triggerShadowShift();
+    if (active && code === 81) triggerScentSense();
     // Skjut med tangentbord: F (70), J (74), Z (90), Ctrl (17)
     if (active && [70, 74, 90, 17].includes(code)) {
       fireBullet();
@@ -4507,6 +4723,7 @@ export const PlayingView: React.FC<{
       if (game.shadowActive > 0) {
         game.shadowActive--;
         if (game.shadowActive === 0) {
+          game.shadowWorld = false;
           game.player.speed = game.player.baseSpeed || game.player.speed;
           game.player.invincible = false;
           game.player.invincibleTimer = 0;
@@ -4523,7 +4740,21 @@ export const PlayingView: React.FC<{
       // The intro card's spawn-protection clock runs in simulation frames,
       // not wall-clock time, so it cannot expire while a tab is throttled.
       if (game.introTimer > 0) game.introTimer--;
+      if (game.senseTimer > 0) game.senseTimer--;
+      if (game.senseCooldown > 0) game.senseCooldown--;
       game.frame = (game.frame || 0) + 1;
+      if (game.runMode === 'daily' && game.frame % 6 === 0 && game.ghostTrace.length < 2400) {
+        game.ghostTrace.push({
+          frame: game.frame,
+          x: game.player.x,
+          y: game.player.y,
+          facing: game.player.facing === -1 ? -1 : 1,
+        });
+      }
+      if (game.frame % 12 === 0) {
+        const speedPurr = Math.min(1, Math.abs(game.player.velocityX) / Math.max(1, game.player.speed));
+        AudioEngine.setPurrIntensity(Math.max(speedPurr, (game.combo || 0) / 12));
+      }
       if (game.frame % 10 === 0) {
         const pCx = game.player.x + game.player.width / 2;
         let nearest: number | null = null;
@@ -4591,7 +4822,7 @@ export const PlayingView: React.FC<{
         const left = game.keys[37] || game.keys[65];
         const right = game.keys[39] || game.keys[68];
         // Acceleration + friction instead of instant velocity for weightier control.
-        const accel = p.onGround ? 1.15 * (tp.grip ?? 1) : 0.7;
+        const accel = p.onGround ? 1.15 * (tp.grip ?? 1) : game.districtRule?.id === 'wild' ? 0.76 : 0.7;
         // Slippery ice multiplies friction *up* (closer to 1 = less braking),
         // sticky boots pushes it *down* so the cat plants and turns.
         const friction = p.onGround
@@ -4650,7 +4881,7 @@ export const PlayingView: React.FC<{
       p.wallDir = 0;
       if (p.wallLock > 0) p.wallLock--;
       for (const wallPlat of game.platforms) {
-        if (!wallPlat.solid) continue;
+        if (!wallPlat.solid || (wallPlat.shadowGate && game.shadowActive <= 0)) continue;
         const verticalBody = p.y + p.height > wallPlat.y + 10 && p.y < wallPlat.y + wallPlat.height - 6;
         if (!verticalBody) continue;
         const wl = wallPlat.x;
@@ -4699,6 +4930,7 @@ export const PlayingView: React.FC<{
       // paddling the moment the cat stops.
       if (Math.abs(p.velocityX) > 0.25) {
         p.runCycle += 0.11 + Math.abs(p.velocityX) * 0.036;
+        if (p.onGround && game.frame % 9 === 0) AudioEngine.playPawStep(p.velocityX);
       }
 
       // Slow motion and zoom punch decay.
@@ -4838,6 +5070,8 @@ export const PlayingView: React.FC<{
           // lives left, which is exactly what "I die for no reason" looked like.
           // Hand the level budget back so the fish hunt stays achievable.
           game.levelTimer = game.levelTimerBudget || 30;
+          leaveLifeEcho(game, game.player.x + game.player.width / 2, game.player.y + game.player.height / 2, 'timer');
+          respawnAtCheckpoint(game);
           game.player.invincible = true;
           game.player.invincibleTimer = 90;
           game.screenShake = 10;
@@ -4977,14 +5211,32 @@ export const PlayingView: React.FC<{
         }
       });
 
+      // Boss arena rings live for one attack cycle. The warning phase is safe;
+      // the bright phase is the temporary terrain change that forces the player
+      // to read the arena instead of camping on one spot.
+      if (game.arenaHazards?.length) {
+        game.arenaHazards.forEach((hazard: any) => {
+          hazard.life--;
+          hazard.active = hazard.life <= hazard.warning;
+        });
+        game.arenaHazards = game.arenaHazards.filter((hazard: any) => hazard.life > 0);
+        if (game.arenaShift > 0) game.arenaShift--;
+      }
+
       // Check if player is over a hole - if so, they fall through!
       let isOverHole = false;
       const playerFeetX = game.player.x + game.player.width / 2;
       const playerFeetY = game.player.y + game.player.height;
 
       game.holes.forEach(hole => {
-        // Player center is within hole horizontal bounds AND at ground level
-        if (playerFeetX > hole.x && playerFeetX < hole.x + hole.width &&
+        // A shadow bridge temporarily replaces the gap below it. Without this
+        // gate the hole check wins before the bridge can catch the cat.
+        const bridged = game.shadowActive > 0 && game.shadowRoute?.some((route: any) =>
+          route.shadowGate && playerFeetX > route.x && playerFeetX < route.x + route.width
+          && playerFeetY >= route.y - 36 && playerFeetY <= route.y + 44,
+        );
+        // Player center is within hole horizontal bounds AND at ground level.
+        if (!bridged && playerFeetX > hole.x && playerFeetX < hole.x + hole.width &&
           playerFeetY >= hole.y - 5 && playerFeetY <= hole.y + 50) {
           isOverHole = true;
         }
@@ -4995,7 +5247,7 @@ export const PlayingView: React.FC<{
       game.player.onGround = false;
       if (!isOverHole && game.player.velocityY >= 0) {
         for (const plat of game.platforms) {
-          if (plat.shadowBridge && game.shadowActive <= 0) continue;
+          if (plat.shadowGate && game.shadowActive <= 0) continue;
           if (plat.neonPhase !== undefined && !isNeonSignActive(game.frame, plat.neonPhase)) continue;
           const playerBottom = game.player.y + game.player.height;
           const playerRight = game.player.x + game.player.width;
@@ -5088,7 +5340,7 @@ export const PlayingView: React.FC<{
 
       // Enemies - with better null safety
       game.enemies.forEach(e => {
-        if (e.x < -500 || !game.platforms[e.platform]) return;
+        if (e.x < -500 || !game.platforms[e.platform] || (e.shadowOnly && game.shadowActive <= 0)) return;
 
         // Near miss: passing close to a live enemy without touching it rewards the player.
         if (!e.nearMissed && !game.player.invincible) {
@@ -5239,6 +5491,7 @@ export const PlayingView: React.FC<{
         const newPhase = hpPct > 0.6 ? 0 : hpPct > 0.3 ? 1 : 2;
         if (newPhase > boss.phase) {
           boss.phase = newPhase;
+          activateBossArenaShift(game, boss);
           game.screenShake = 20;
           game.slowMo = 30;
           pushToast(game, tr('{name} FAS {n}!', { name: boss.name, n: boss.phase + 1 }), '#ff6b35');
@@ -5319,6 +5572,7 @@ export const PlayingView: React.FC<{
               const move = moves[(boss.moveIndex || 0) % moves.length] as BossPattern;
               boss.moveIndex = (boss.moveIndex || 0) + 1;
               boss.pendingMove = move;
+              boss.counterHint = BOSS_COUNTER_HINTS[move] || 'HÅLL DIG I RÖRELSE';
               // Later tiers and anger wind up faster, which makes the same
               // boss genuinely harder without changing its silhouette. The
               // minimum keeps the warning readable even at maximum rage.
@@ -5374,6 +5628,7 @@ export const PlayingView: React.FC<{
           const damage = getBossStompDamage({ maxHp: boss.maxHp, isMini: !!boss.isMini });
           boss.hp = Math.max(0, boss.hp - damage);
           boss.stompCount = (boss.stompCount || 0) + 1;
+          bumpDailyContract(game, 'stomp');
           boss.stompCooldown = 24;
           boss.stunTimer = 22;
           boss.coreFlash = 18;
@@ -5479,6 +5734,7 @@ export const PlayingView: React.FC<{
       // Hazards damage player on touch
       if (!game.player.invincible) {
         for (const h of game.hazards) {
+          if (h.scentOnly && game.senseTimer <= 0 && game.shadowActive <= 0) continue;
           if (h.type === 'laser' && !h.active) continue;
           const overlapX = game.player.x + game.player.width > h.x && game.player.x < h.x + h.width;
           const overlapY = game.player.y + game.player.height > h.y && game.player.y < h.y + h.height;
@@ -5486,6 +5742,11 @@ export const PlayingView: React.FC<{
             hurtPlayer(game, 'hazard', { lift: 5 });
             break;
           }
+        }
+        if (game.arenaHazards?.some((h: any) => h.active
+          && game.player.x + game.player.width > h.x && game.player.x < h.x + h.width
+          && game.player.y + game.player.height > h.y && game.player.y < h.y + h.height)) {
+          hurtPlayer(game, 'boss', { lift: 6 });
         }
       }
 
@@ -5500,6 +5761,12 @@ export const PlayingView: React.FC<{
         // reads as a bug. The respawn still happens, it just costs nothing.
         const carriedByShadow = game.shadowActive > 0;
         if (!carriedByShadow) {
+          leaveLifeEcho(
+            game,
+            game.player.x + game.player.width / 2,
+            Number.isFinite(game.player.lastGroundedY) && game.player.lastGroundedY > 50 ? game.player.lastGroundedY + game.player.height / 2 : game.groundY - game.player.height / 2,
+            'hole',
+          );
           game.lives--;
           game.deathsInRun = (game.deathsInRun || 0) + 1;
           game.noHit = false;
@@ -5590,6 +5857,25 @@ export const PlayingView: React.FC<{
         }
       });
 
+      // A fallen life leaves a recoverable echo. Choosing to turn back for it
+      // is the strategic upside of the nine-lives system.
+      game.lifeEchoes = (game.lifeEchoes || []).filter((echo: any) => {
+        echo.life--;
+        const dx = (game.player.x + game.player.width / 2) - echo.x;
+        const dy = (game.player.y + game.player.height / 2) - echo.y;
+        if (Math.abs(dx) < 34 && Math.abs(dy) < 52) {
+          registerCombo(game, 180, echo.x, echo.y);
+          awardCoins(game, echo.value >= 180 ? 5 : 3);
+          gainShadowCharge(game, echo.value >= 180 ? 12 : 7);
+          game.score += echo.value;
+          game.floatingTexts.push({ x: echo.x, y: echo.y - 20, text: `+${echo.value}`, life: 42, color: '#c084fc' });
+          pushToast(game, tr('LIVSEKO ÅTERFUNNET'), '#c084fc');
+          AudioEngine.playLifeEcho();
+          return false;
+        }
+        return echo.life > 0;
+      });
+
       // Enemy projectiles (turrets). Slow, clearly telegraphed orbs.
       game.enemyBullets = game.enemyBullets.filter((b: any) => b.life > 0);
       game.enemyBullets.forEach((b: any) => {
@@ -5605,6 +5891,22 @@ export const PlayingView: React.FC<{
       // Update coin positions and check collection
       game.fishes.forEach((f: any) => {
         if (!f.collected) {
+          f.baseX = f.baseX ?? f.x;
+          // School fish swim as a little moving constellation. Skittish fish
+          // flee when the cat gets close, but never beyond a generous leash so
+          // the quota remains reachable.
+          if (f.behavior === 'school') {
+            f.x = f.baseX + Math.sin(game.frame * 0.025 + (f.schoolPhase || 0)) * 8;
+          } else if (f.behavior === 'skittish' && game.shadowActive <= 0 && game.buffs.magnet <= 0) {
+            const away = (f.x + f.width / 2) - (game.player.x + game.player.width / 2);
+            const distance = Math.abs(away);
+            if (distance < 150 && distance > 4) {
+              f.x = Math.max(f.baseX - 110, Math.min(f.baseX + 110, f.x + Math.sign(away) * 0.95));
+              if ((f.escapeTimer || 0) <= 0) AudioEngine.playFishScatter();
+              f.escapeTimer = 18;
+            }
+          }
+          if (f.escapeTimer > 0) f.escapeTimer--;
           // Fish magnet: drift nearby fish toward the cat so the pickup feels
           // like a vacuum instead of a larger hitbox.
           if (game.buffs.magnet > 0 || game.shadowActive > 0) {
@@ -5635,6 +5937,7 @@ export const PlayingView: React.FC<{
             awardCoins(game, 2);
             game.fishedThisLevel = (game.fishedThisLevel || 0) + 1;
             game.totalCollectedInLevel++;
+            bumpDailyContract(game, 'fish');
             gainShadowCharge(game, 7);
             // The Time Attack goal promises that every fish buys time, and the
             // intro card says so - but only the opening budget ever counted, so
@@ -5671,6 +5974,26 @@ export const PlayingView: React.FC<{
         }
       });
 
+      // Alternate-world fish are separate from the quota. They only become
+      // tangible while shifted, so crossing into the shadow route is a real
+      // risk/reward decision rather than a recoloured normal pickup.
+      (game.shadowFishes || []).forEach((f: any) => {
+        if (f.collected) return;
+        f.hoverOffset = (f.hoverOffset || 0) + 0.045;
+        f.y = f.baseY + Math.sin(f.hoverOffset) * 7;
+        if (game.shadowActive <= 0) return;
+        if (game.player.x < f.x + f.width && game.player.x + game.player.width > f.x
+          && game.player.y < f.y + f.height && game.player.y + game.player.height > f.y) {
+          f.collected = true;
+          registerCombo(game, f.value || 120, f.x, f.y);
+          grantXp(game, 22);
+          awardCoins(game, 4);
+          game.floatingTexts.push({ x: f.x, y: f.y - 10, text: tr('SKUGGFISK +{n}', { n: f.value || 120 }), life: 46, color: '#d8b4fe' });
+          AudioEngine.playShadowPass();
+          haptic('collect', progress.settings.haptics);
+        }
+      });
+
       // The trace is visible in both worlds; only Shadow Shift can collect it.
       const secret = game.shadowSecret;
       if (secret && !secret.collected && game.shadowActive > 0 &&
@@ -5689,8 +6012,10 @@ export const PlayingView: React.FC<{
           Math.abs(game.player.y + game.player.height / 2 - friend.y) < 58) {
         friend.rescued = true;
         rescueCat(game.level);
+        game.companion = getActiveCompanion([...progress.rescuedCats, game.level], progress.equippedCompanion);
         pushToast(game, tr('{n} är räddad!', { n: friend.name }), '#9df3ff');
         AudioEngine.playCoin(0);
+        AudioEngine.playMeow(1.08);
         haptic('collect', progress.settings.haptics);
       }
 
@@ -5854,11 +6179,18 @@ export const PlayingView: React.FC<{
           ctx.strokeRect(platX, platY, plat.width, plat.height); ctx.restore();
         } else if (plat.shadowBridge) {
           ctx.save();
-          ctx.globalAlpha = game.shadowActive > 0 ? 0.9 : 0.3;
+          const routeVisible = game.shadowActive > 0 || game.senseTimer > 0;
+          ctx.globalAlpha = game.shadowActive > 0 ? 0.9 : routeVisible ? 0.62 : 0.22;
           ctx.fillStyle = '#ab73f5'; ctx.strokeStyle = '#e8caff'; ctx.lineWidth = 2;
           ctx.setLineDash(game.shadowActive > 0 ? [] : [7, 6]);
           if (game.shadowActive > 0) ctx.fillRect(platX, platY, plat.width, plat.height);
           ctx.strokeRect(platX, platY, plat.width, plat.height);
+          if (routeVisible && game.shadowActive <= 0) {
+            ctx.font = 'bold 8px Outfit, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ead7ff';
+            ctx.fillText(tr('Q · SPÅR'), platX + plat.width / 2, platY - 6);
+          }
           ctx.restore();
         } else if (plat.bossArena) {
           drawGroundSlab(ctx, {
@@ -5932,6 +6264,7 @@ export const PlayingView: React.FC<{
 
       // Hazards
       game.hazards.forEach((h: any) => {
+        if (h.scentOnly && game.senseTimer <= 0 && game.shadowActive <= 0) return;
         const hx = h.x - game.scrollX;
         if (hx + h.width < -40 || hx > canvas.width + 40) return;
 
@@ -5979,6 +6312,58 @@ export const PlayingView: React.FC<{
           }
         }
       });
+
+      // Phase-shift rings are the boss's temporary arena geometry. Red is live,
+      // amber is a safe warning, and the platform itself remains deterministic.
+      (game.arenaHazards || []).forEach((hazard: any) => {
+        const hx = hazard.x - game.scrollX;
+        if (hx + hazard.width < -30 || hx > canvas.width + 30) return;
+        const active = !!hazard.active;
+        ctx.save();
+        ctx.globalAlpha = active ? 0.82 : 0.58;
+        ctx.fillStyle = active ? '#ff3b7a' : '#ffd166';
+        ctx.strokeStyle = active ? '#ffb3cf' : '#fff0ae';
+        ctx.lineWidth = 2;
+        ctx.setLineDash(active ? [] : [5, 5]);
+        ctx.fillRect(hx, hazard.y, hazard.width, hazard.height);
+        ctx.strokeRect(hx, hazard.y, hazard.width, hazard.height);
+        ctx.restore();
+      });
+
+      // Whisker Sense is intentionally brief: it reveals the hidden layer with
+      // a radar pulse, outlines scent-only hazards and makes shadow pickups
+      // readable without permanently cluttering the normal route.
+      if (game.senseTimer > 0) {
+        const pulse = 0.55 + 0.25 * Math.sin(Date.now() / 90);
+        const cx = game.player.x + game.player.width / 2 - game.scrollX;
+        const cy = game.player.y + game.player.height / 2;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const radar = ctx.createRadialGradient(cx, cy, 6, cx, cy, 210);
+        radar.addColorStop(0, `rgba(255, 209, 102, ${0.16 * pulse})`);
+        radar.addColorStop(0.6, 'rgba(255, 209, 102, 0.04)');
+        radar.addColorStop(1, 'rgba(255, 209, 102, 0)');
+        ctx.fillStyle = radar;
+        ctx.beginPath(); ctx.arc(cx, cy, 210, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = `rgba(255, 209, 102, ${0.55 * pulse})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath(); ctx.arc(cx, cy, 70 + (1 - game.senseTimer / 240) * 120, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        game.hazards.forEach((hazard: any) => {
+          if (!hazard.scentOnly) return;
+          const hx = hazard.x - game.scrollX;
+          ctx.strokeStyle = 'rgba(255, 209, 102, 0.92)';
+          ctx.strokeRect(hx - 5, hazard.y - 5, hazard.width + 10, hazard.height + 10);
+        });
+        (game.shadowFishes || []).forEach((fish: any) => {
+          if (fish.collected) return;
+          const fx = fish.x - game.scrollX;
+          ctx.strokeStyle = '#d8b4fe';
+          ctx.beginPath(); ctx.arc(fx + fish.width / 2, fish.y + fish.height / 2, 16 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+        });
+        ctx.restore();
+      }
 
       drawCheckpointBeacons(ctx, game, canvas.width);
 
@@ -6054,7 +6439,7 @@ export const PlayingView: React.FC<{
       // replaced glossy gradient props that looked like clip-art next to the
       // hand-drawn cat.
       game.enemies.forEach((e: any) => {
-        if (e.x < -500) return;
+        if (e.x < -500 || (e.shadowOnly && game.shadowActive <= 0 && game.senseTimer <= 0)) return;
         const ex = e.x - game.scrollX;
         const ey = e.y;
         const ew = e.width;
@@ -6062,7 +6447,10 @@ export const PlayingView: React.FC<{
         if (ex + ew < -80 || ex > canvas.width + 80) return;
 
         if (e.isShadow) {
+          ctx.save();
+          if (e.shadowOnly && game.shadowActive <= 0) ctx.globalAlpha = 0.48;
           drawShadowWraith(ctx, ex, ey, ew, eh, Date.now());
+          ctx.restore();
           return;
         }
 
@@ -6583,6 +6971,9 @@ export const PlayingView: React.FC<{
           ctx.shadowColor = ctx.fillStyle;
           ctx.shadowBlur = 10;
           ctx.fillText(tr('VARNING · {m}', { m: boss.pendingMove.toUpperCase() }), bx + bw / 2, by + bh + 24);
+          ctx.font = 'bold 9px Outfit, sans-serif';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(tr(boss.counterHint || 'HÅLL DIG I RÖRELSE'), bx + bw / 2, by + bh + 38);
           ctx.restore();
         }
 
@@ -6674,6 +7065,25 @@ export const PlayingView: React.FC<{
           ctx.stroke(); ctx.restore();
         }
       }
+
+      // Alternate-world collectibles: translucent violet fish on the shadow
+      // ledges. Sense can reveal their position; Shift makes them solid.
+      (game.shadowFishes || []).forEach((f: any) => {
+        if (f.collected || (game.shadowActive <= 0 && game.senseTimer <= 0)) return;
+        const fx = f.x - game.scrollX;
+        if (fx < -50 || fx > canvas.width + 50) return;
+        const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 150 + (f.hoverOffset || 0));
+        ctx.save();
+        ctx.globalAlpha = game.shadowActive > 0 ? 0.95 : 0.45;
+        ctx.translate(fx + f.width / 2, f.y + f.height / 2);
+        ctx.rotate(Math.sin(Date.now() / 260) * 0.12);
+        ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 16;
+        ctx.fillStyle = `rgba(216, 180, 254, ${pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(-f.width / 2, 0); ctx.lineTo(0, -f.height / 2); ctx.lineTo(f.width / 2, 0);
+        ctx.lineTo(0, f.height / 2); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      });
 
       // Draw Fishes (Yellow/Gold Fish) - Now drawn after background and platforms
       game.fishes.forEach((f: any) => {
@@ -6927,6 +7337,7 @@ export const PlayingView: React.FC<{
           const perfectBonus = perfectLevel ? 500 : 0;
           const noHitBonus = game.noHit ? 750 : 0;
           const nearMissBonus = (game.nearMisses || 0) * 25;
+          if (game.noHit) bumpDailyContract(game, 'clean');
           // Every fish on the board is worth reaching for even after the quota
           // is met, so a clean sweep still feels like a win.
           const fullCatchBonus = allFishesCollected ? 400 : 0;
@@ -6954,6 +7365,9 @@ export const PlayingView: React.FC<{
             time: Math.round((game.levelSeconds || 0)),
             levelType: game.levelType,
             lifeBonus: levelLifeBonus(game),
+            dailyContracts: game.dailyContracts || [],
+            dailyContractProgress: game.dailyContractProgress || null,
+            dailyContractBonus: game.dailyContractBonus || 0,
           };
           setLevelSummary({ ...summary, grade: getGrade(summary) });
           // Seeded offer: restarting this level always shows the same 3 cards.
@@ -6964,6 +7378,7 @@ export const PlayingView: React.FC<{
           // a quick Daily Run from level 29 must not unlock the whole story. The
           // guard lives in the progress context, where the live checkpoint is.
           advanceCampaign(currentLevel + 1, startLevel);
+          AudioEngine.playMeow(game.noHit ? 1.18 : 0.92);
           setShowLevelComplete(true);
         }
         else { game.showFishWarning = true; }
@@ -7111,6 +7526,62 @@ export const PlayingView: React.FC<{
         ctx.fill();
         ctx.restore();
       });
+
+      // Lost-life echoes are visible landmarks. They fade slowly so the player
+      // can choose whether the detour is worth the score, coins and shadow
+      // charge before the echo expires.
+      (game.lifeEchoes || []).forEach((echo: any) => {
+        if (echo.life <= 0) return;
+        const ex = echo.x - game.scrollX;
+        if (ex < -50 || ex > canvas.width + 50) return;
+        const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 180 + echo.x);
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.9, echo.life / 180) * pulse;
+        ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 18;
+        ctx.strokeStyle = '#e9d5ff'; ctx.fillStyle = '#c084fc'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(ex, echo.y, 15 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ex, echo.y - 8); ctx.bezierCurveTo(ex - 12, echo.y - 17, ex - 14, echo.y + 2, ex, echo.y + 11);
+        ctx.bezierCurveTo(ex + 14, echo.y + 2, ex + 12, echo.y - 17, ex, echo.y - 8); ctx.fill();
+        ctx.font = 'bold 9px Outfit, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#f5e9ff';
+        ctx.fillText(tr('LIVSEKO'), ex, echo.y - 23);
+        ctx.restore();
+      });
+
+      // Local daily ghost playback: one capped trace is loaded from the last
+      // attempt for the same date and level. It is only a visual pace-setter;
+      // it never collides, changes the quota or touches campaign saves.
+      if (game.runMode === 'daily' && game.ghostPlayback?.length) {
+        const ghostIndex = Math.min(game.ghostPlayback.length - 1, Math.max(0, Math.floor(game.frame / 6) - 1));
+        const ghost = game.ghostPlayback[ghostIndex];
+        if (ghost) {
+          const gx = ghost.x - game.scrollX + 25;
+          const gy = ghost.y + 70;
+          ctx.save();
+          ctx.globalAlpha = 0.28;
+          ctx.globalCompositeOperation = 'lighter';
+          const ghostDrawn = drawCatAtlasSprite(ctx, gx, gy, {
+            color: '#d8b4fe', accent: '#f5e9ff', original: false,
+            t: Date.now() / 1000, running: true, jumping: false, grounded: true,
+            speed: 1.5, vy: 0, phase: ghost.frame * 0.04, dashing: false,
+            shooting: false, facing: ghost.facing, w: 66,
+          });
+          if (!ghostDrawn) {
+            drawCatSprite(ctx, gx, gy, {
+              color: '#d8b4fe', accent: '#f5e9ff', t: Date.now() / 1000,
+              running: true, jumping: false, grounded: true, speed: 1.5, vy: 0,
+              phase: ghost.frame * 0.04, dashing: false, blinking: false,
+              shooting: false, facing: ghost.facing, sx: 1.2, sy: 1.1,
+            });
+          }
+          ctx.globalAlpha = 0.75;
+          ctx.font = 'bold 9px Outfit, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ead7ff';
+          ctx.fillText(tr('SPÖKE'), gx, ghost.y - 12);
+          ctx.restore();
+        }
+      }
 
       // Player
       // Squash and stretch scale around the cat's feet so it never floats off the floor.
@@ -7554,6 +8025,19 @@ export const PlayingView: React.FC<{
             for (const f of game.fishes) if (!f.collected && (!best || Math.abs(f.x - game.player.x) < Math.abs(best.x - game.player.x))) best = f;
             return best ? (best.x < game.player.x - 40 ? -1 : best.x > game.player.x + 40 ? 1 : 0) : 0;
           })(),
+          districtId: game.districtRule?.id || 'meadow',
+          districtName: game.districtRule?.name || '',
+          districtDetail: game.districtRule?.detail || '',
+          districtAccent: game.districtRule?.accent || '#7ef7c2',
+          companionName: game.companion?.name || '',
+          companionAbility: game.companion?.ability || '',
+          lifeBlessingName: game.lifeBlessing?.name || '',
+          senseTimer: game.senseTimer || 0,
+          senseCooldown: game.senseCooldown || 0,
+          dailyContracts: game.dailyContracts || [],
+          dailyContractProgress: game.dailyContractProgress || null,
+          dailyContractBonus: game.dailyContractBonus || 0,
+          ghostAvailable: !!game.ghostPlayback?.length,
         });
         setLives(game.lives);
         setTotalScore(game.score);
@@ -7656,7 +8140,7 @@ export const PlayingView: React.FC<{
                     <span className="tabular text-xs font-black text-[#ff8fa3]">{Math.max(0, lives)}</span>
                   </span>
                   <span className="hidden items-center gap-[1px] sm:flex">
-                    {Array.from({ length: Math.min(6, Math.max(lives, 0)) }).map((_, i) => (
+                    {Array.from({ length: Math.min(9, Math.max(lives, 0)) }).map((_, i) => (
                       <span
                         key={i}
                         className="material-symbols-outlined text-[15px] text-[#ff5f7a]"
@@ -7666,7 +8150,7 @@ export const PlayingView: React.FC<{
                       </span>
                     ))}
                     {lives <= 0 && <span className="text-[10px] font-black text-primary-red">{t('TOMT')}</span>}
-                    {lives > 6 && <span className="ml-1 text-[10px] font-black text-[#ff9db0]">+{lives - 6}</span>}
+                    {lives > 9 && <span className="ml-1 text-[10px] font-black text-[#ff9db0]">+{lives - 9}</span>}
                   </span>
                 </div>
                 {stats.shield && (
@@ -7697,6 +8181,21 @@ export const PlayingView: React.FC<{
                 isTouchDevice={isTouchDevice}
                 onTrigger={triggerShadowShift}
               />
+
+              {(stats.companionName || stats.senseTimer > 0 || stats.senseCooldown > 0) && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {stats.companionName && (
+                    <span className="hud-chip border-violet-300/35 bg-violet-300/10 text-violet-100" title={t('Följeslagare aktiv')}>
+                      <span className="material-symbols-outlined text-[13px]">pets</span>
+                      <span className="text-[9px] font-black">{stats.companionName}</span>
+                    </span>
+                  )}
+                  <span className={`hud-chip ${stats.senseTimer > 0 ? 'border-yellow-300/60 bg-yellow-300/15 text-yellow-100' : 'border-white/15 text-white/45'}`} title={t('Q · Morrhårsläge')}>
+                    <span className="material-symbols-outlined text-[13px]">visibility</span>
+                    <span className="tabular text-[9px] font-black">{stats.senseTimer > 0 ? `${Math.ceil(stats.senseTimer / 60)}s` : stats.senseCooldown > 0 ? `${Math.ceil(stats.senseCooldown / 60)}s` : 'Q'}</span>
+                  </span>
+                </div>
+              )}
 
               {(stats.magnet > 0 || stats.rapid > 0) && (
                 <div className="flex items-center gap-1">
@@ -7768,6 +8267,42 @@ export const PlayingView: React.FC<{
                   >
                     {t((TWISTS[stats.twist as keyof typeof TWISTS] || TWISTS.none).name)}
                   </span>
+                </div>
+              )}
+              {stats.districtName && (
+                <div className="flex max-w-[320px] items-center gap-2 rounded-full border bg-black/55 px-3 py-1 backdrop-blur-md" style={{ borderColor: `${stats.districtAccent}88` }} title={t(stats.districtDetail)}>
+                  <span className="material-symbols-outlined text-[14px]" style={{ color: stats.districtAccent }}>{gameRef.current?.districtRule?.icon || 'place'}</span>
+                  <span className="truncate text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: stats.districtAccent }}>{t(stats.districtName)}</span>
+                </div>
+              )}
+              {runMode === 'daily' && stats.dailyContracts?.length > 0 && (
+                <div className="w-full max-w-[320px] rounded-2xl border border-yellow-300/30 bg-black/60 px-3 py-2 backdrop-blur-md">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-yellow-200">
+                      <span className="material-symbols-outlined text-[14px]">assignment</span>
+                      {t('Dagens kontrakt')}
+                    </span>
+                    {stats.dailyContractBonus > 0 && <span className="text-[9px] font-black text-yellow-300">+{stats.dailyContractBonus}</span>}
+                  </div>
+                  <div className="mt-1.5 grid gap-1">
+                    {stats.dailyContracts.map((contract: any) => {
+                      const value = stats.dailyContractProgress?.[contract.kind] || 0;
+                      const complete = isDailyContractComplete(contract, stats.dailyContractProgress || { fish: 0, shadow: 0, stomp: 0, clean: 0 });
+                      return (
+                        <div key={contract.id} className="flex items-center gap-2 text-[9px]">
+                          <span className={`material-symbols-outlined text-[13px] ${complete ? 'text-primary' : 'text-yellow-300/70'}`}>{complete ? 'task_alt' : 'radio_button_unchecked'}</span>
+                          <span className={`min-w-0 flex-1 truncate ${complete ? 'text-primary' : 'text-white/65'}`}>{t(contract.name)}</span>
+                          <span className="tabular font-black text-white/45">{Math.min(value, contract.target)}/{contract.target}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {runMode === 'daily' && stats.ghostAvailable && (
+                <div className="flex items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-300/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-violet-100">
+                  <span className="material-symbols-outlined text-[14px]">ghost</span>
+                  {t('Spökdata aktiv')}
                 </div>
               )}
               {/* A surprise event, with the warning spelled out before it lands. */}
@@ -7959,6 +8494,21 @@ export const PlayingView: React.FC<{
                     </span>
                   </span>
                 </div>
+              )}
+              {gameRef.current?.districtRule && (
+                <div className="mx-auto mt-3 flex max-w-[330px] items-start gap-2 rounded-2xl border px-3 py-2 text-left" style={{ borderColor: `${gameRef.current.districtRule.accent}66`, background: `${gameRef.current.districtRule.accent}12` }}>
+                  <span className="material-symbols-outlined text-[18px]" style={{ color: gameRef.current.districtRule.accent }}>{gameRef.current.districtRule.icon}</span>
+                  <span>
+                    <span className="block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: gameRef.current.districtRule.accent }}>{t(gameRef.current.districtRule.name)}</span>
+                    <span className="block text-[10px] leading-snug text-white/55">{t(gameRef.current.districtRule.detail)}</span>
+                  </span>
+                </div>
+              )}
+              {gameRef.current?.companion && (
+                <p className="mt-2 text-[10px] font-black text-violet-200">{t('Följeslagare')}: {gameRef.current.companion.name} · {t(gameRef.current.companion.detail)}</p>
+              )}
+              {gameRef.current?.lifeBlessing && (
+                <p className="mt-1 text-[10px] font-black" style={{ color: gameRef.current.lifeBlessing.color }}>{t('Livets välsignelse')}: {t(gameRef.current.lifeBlessing.name)}</p>
               )}
               <p className="mt-3 text-[9px] font-black uppercase tracking-[0.2em] text-primary/70">
                 {isTouchDevice ? t('Tryck för att börja') : t('Tryck valfri tangent för att börja')}
@@ -8195,6 +8745,23 @@ export const PlayingView: React.FC<{
                     <span className="material-symbols-outlined text-[13px]">favorite</span>
                     {t('+{n} liv inför nästa nivå', { n: levelSummary.lifeBonus })}
                   </p>
+                )}
+                {runMode === 'daily' && levelSummary.dailyContracts?.length > 0 && (
+                  <div className="relative mt-3 rounded-2xl border-2 border-yellow-500/25 bg-yellow-300/10 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6b4708]">{t('Dagens kontrakt')}</span>
+                      <span className="text-[10px] font-black text-[#6b4708]">+{levelSummary.dailyContractBonus || 0} {t('Mynt')}</span>
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      {levelSummary.dailyContracts.map((contract: any) => {
+                        const complete = isDailyContractComplete(contract, levelSummary.dailyContractProgress || { fish: 0, shadow: 0, stomp: 0, clean: 0 });
+                        return <p key={contract.id} className={`flex items-center gap-1.5 text-[10px] font-bold ${complete ? 'text-[#0f8a3c]' : 'text-[#6b4708]/60'}`}>
+                          <span className="material-symbols-outlined text-[13px]">{complete ? 'task_alt' : 'radio_button_unchecked'}</span>
+                          {t(contract.name)}
+                        </p>;
+                      })}
+                    </div>
+                  </div>
                 )}
 
                 {/* Risk/reward: one of three seeded cards. Every option has a

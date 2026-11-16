@@ -6,19 +6,48 @@
 export type DailyEntry = { score: number; level: number; date: string };
 
 const DAILY_KEY = 'shadow_paw_daily_scores_v1';
-/**
- * Ghost replays were removed from the game (the translucent pace-setter cat in
- * each level, plus the localStorage recordings behind it). Players who ran an
- * earlier build still carry that data in their browser, so it is dropped here
- * once on first read rather than left to sit in storage forever.
- */
+const GHOST_KEY = 'shadow_paw_daily_ghost_v2';
 const LEGACY_GHOST_KEY = 'shadow_paw_ghost_v1';
+const STREAK_KEY = 'shadow_paw_daily_streak_v1';
+
+// The old replay format was an unbounded, incompatible blob. Remove it once;
+// the v2 trace below is separate, capped and validated.
 try {
   localStorage.removeItem(LEGACY_GHOST_KEY);
 } catch {
-  // Private browsing can refuse storage access; nothing to clean up there.
+  // Storage can be unavailable in private browsing or unit tests.
 }
-const STREAK_KEY = 'shadow_paw_daily_streak_v1';
+
+export type GhostFrame = { frame: number; x: number; y: number; facing: 1 | -1 };
+
+/** A tiny local replay: no account or server is required, and it is capped so
+    a daily run can never fill localStorage. */
+const cleanGhostFrames = (value: unknown): GhostFrame[] => {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 2400).filter((frame): frame is GhostFrame => {
+    if (!frame || typeof frame !== 'object') return false;
+    const candidate = frame as Partial<GhostFrame>;
+    return typeof candidate.frame === 'number' && Number.isFinite(candidate.frame)
+      && typeof candidate.x === 'number' && Number.isFinite(candidate.x)
+      && typeof candidate.y === 'number' && Number.isFinite(candidate.y)
+      && (candidate.facing === 1 || candidate.facing === -1);
+  });
+};
+
+export const loadDailyGhost = (date: string, level: number): GhostFrame[] => {
+  const all = read<Record<string, unknown>>(GHOST_KEY, {});
+  return cleanGhostFrames(all[`${date}:${level}`]);
+};
+
+export const saveDailyGhost = (date: string, level: number, frames: GhostFrame[]): boolean => {
+  const clean = cleanGhostFrames(frames);
+  if (!clean.length) return false;
+  const all = read<Record<string, unknown>>(GHOST_KEY, {});
+  all[`${date}:${level}`] = clean.slice(-2400);
+  const keys = Object.keys(all).sort();
+  if (keys.length > 14) keys.slice(0, keys.length - 14).forEach((key) => delete all[key]);
+  return write(GHOST_KEY, all);
+};
 
 const read = <T,>(key: string, fallback: T): T => {
   try {
