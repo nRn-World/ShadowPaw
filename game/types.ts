@@ -116,6 +116,7 @@ export interface GameState {
   frame: number;
   /* Score & progression ------------------------------------------------- */
   score: number;
+  levelStartScore: number;
   lives: number;
   /** Fixed at three for every stage; lives never become a run-wide pool. */
   maxLives: number;
@@ -143,6 +144,7 @@ export interface GameState {
   levelsCompletedInRun: number;
   bossDefeatedInRun: boolean;
   deathsInRun: number;
+  deathsThisLevel: number;
   noHit: boolean;
   /* World --------------------------------------------------------------- */
   levelLength: number;

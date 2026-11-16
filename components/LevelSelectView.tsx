@@ -5,6 +5,8 @@ import { getLevelDesign } from '../game/level';
 import { RESCUE_CATS, type HideoutDecor } from '../game/rescue';
 import { CAT_QUESTS } from '../game/sideQuests';
 import { COMPANIONS } from '../game/uniqueSystems';
+import { CAMPAIGN_LEVEL_COUNT } from '../game/constants';
+import { masteryCount, readMasteryRecords } from '../game/mastery';
 
 /**
  * Chapter map for the campaign.
@@ -34,7 +36,7 @@ const CHAPTERS: { name: string; tagline: string; tint: string }[] = [
   { name: 'SKUGGTORNET', tagline: 'Återstoden av allt', tint: 'from-rose-400/25' },
 ];
 
-const TOTAL_LEVELS = CHAPTERS.length * LEVELS_PER_CHAPTER;
+const TOTAL_LEVELS = CAMPAIGN_LEVEL_COUNT;
 
 /** A picture per stage theme, so the map reads as a journey through places
     instead of forty identical numbers. Matches the world the stage actually
@@ -109,6 +111,8 @@ const LevelSelectView: React.FC<{
   const unlockedCompanions = COMPANIONS.filter((companion) => progress.rescuedCats.includes(companion.level));
   const fallbackCompanionId = unlockedCompanions.length ? unlockedCompanions[unlockedCompanions.length - 1].id : null;
   const activeCompanionId = progress.equippedCompanion || fallbackCompanionId;
+  const masteryRecords = readMasteryRecords();
+  const masteredLevels = masteryCount(masteryRecords);
 
   return (
     <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-6 md:py-9">
@@ -126,6 +130,9 @@ const LevelSelectView: React.FC<{
           </h1>
           <p className="mt-1.5 text-sm font-bold text-white/60">
             {t('{a} av {b} nivåer klara', { a: clearedThrough, b: TOTAL_LEVELS })}
+          </p>
+          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.16em] text-yellow-200/70">
+            {t('{n} banor bemästrade', { n: masteredLevels })}
           </p>
         </div>
 
@@ -306,6 +313,7 @@ const LevelSelectView: React.FC<{
                   const locked = !cleared && !next;
                   const isBoss = level % LEVELS_PER_CHAPTER === 0;
                   const secretFound = progress.shadowSecrets.includes(level);
+                  const record = masteryRecords[String(level)];
 
                   return (
                     <button
@@ -349,6 +357,11 @@ const LevelSelectView: React.FC<{
                         ) : (
                           <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
                             {iconForLevel(level)}
+                          </span>
+                        )}
+                        {record && (
+                          <span className="text-[9px] font-black" aria-label={t('Bästa betyg {n}', { n: record.bestGrade })}>
+                            {record.bestGrade}{record.noHit ? ' ✦' : ''}
                           </span>
                         )}
                       </span>

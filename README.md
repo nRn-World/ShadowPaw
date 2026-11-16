@@ -39,8 +39,10 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🎧 **Adaptive Audio & Haptics** - Combo-driven music layers, ducking under boss warnings, enemy-position stereo panning and a distinct vibration signature per event
 - ⚡ **Auto Quality** - Measures real frame time, trims particles and weather, caches the static skyline offscreen and makes bloom/atmosphere optional
 - 🏙️ **CC0 3D Neon Kit** - A Kenney cat, future car, street lights, road and modular towers are composed into the menu studio and city vignette; the assets are recoloured, lit and arranged at runtime without touching the Canvas 2D gameplay fallback
-- ❤️ **Fair Campaigns** - Clearing a level restores a life (two for a flawless or boss clear), and the intro card can be skipped with any key or tap
-- 🗺️ **Chapter Map** - See your progress, jump back into any cleared level
+- ❤️ **Fair Campaigns** - Every level starts with exactly three lives; checkpoints are safe, and the intro card can be skipped with any key or tap
+- 🏅 **Level Mastery** - Every cleared stage records best score, best time, grade, full catch and no-hit medals for replayable mastery
+- 🗺️ **Chapter Map** - See your progress, mastery grades and jump back into any cleared level
+- 🎉 **Campaign Finale** - Clearing level 40 ends in a dedicated finale screen instead of sending the player into a nonexistent level 41
 - 💾 **Campaign Checkpoint** - Continue from the highest chapter you have unlocked
 - 🌍 **Five Languages** - English, Swedish, Turkish, Spanish and Arabic (with full RTL layout)
 - 🐱 **Play as a Cat** - Control your feline hero through neon streets
@@ -76,7 +78,8 @@ Requires Node 22+ (the unit runner uses native TypeScript stripping).
 All three suites run in `.github/workflows/deploy-pages.yml` before a deploy.
 `test:smoke` drives the real game and verifies deterministic level generation,
 a reachable fish quota, checkpoints, seeded perk offers, the miniboss, wraith
-immunity, intro skipping, the life refill and the whole Shadow Shift lifecycle.
+immunity, intro skipping, the three-life-per-level rule and the whole Shadow
+Shift lifecycle.
 `test:ui` covers pause/results/game over/shop plus all five languages including
 Arabic RTL and the shared daily seed. `test:units` needs no browser at all.
 

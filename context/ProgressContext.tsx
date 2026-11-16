@@ -5,6 +5,7 @@ import { cleanSecrets, SECRET_REWARD_COUNT } from '../game/shadowSecrets';
 import { cleanRescues, cleanDecor, type HideoutDecor } from '../game/rescue';
 import { cleanCatQuestClaims, claimCatQuest as applyCatQuest } from '../game/sideQuests';
 import { getCompanionById } from '../game/uniqueSystems';
+import { CAMPAIGN_LEVEL_COUNT } from '../game/constants';
 
 const STORAGE_KEY = 'shadow_paw_progress_v2';
 const STORAGE_BACKUP_KEY = 'shadow_paw_progress_backup_v2';
@@ -162,15 +163,18 @@ const migrateLegacyAudio = (settings: PlayerProgress['settings']): PlayerProgres
 const readLegacyCheckpoint = () => {
   try {
     const n = Number(localStorage.getItem('shadow_paw_checkpoint'));
-    return Number.isFinite(n) && n > 1 ? Math.min(999, Math.floor(n)) : 1;
+    return Number.isFinite(n) && n > 1 ? Math.min(CAMPAIGN_LEVEL_COUNT, Math.floor(n)) : 1;
   } catch {
     return 1;
   }
 };
 
+// The save file stores the next playable story level. Keep old saves and the
+// final clear inside the shipped campaign so no code path can create a ghost
+// level 41 checkpoint after the finale.
 const clampCampaignLevel = (value: unknown, fallback = 1) => {
   const n = Number(value);
-  return Number.isFinite(n) ? Math.min(999, Math.max(1, Math.floor(n))) : fallback;
+  return Number.isFinite(n) ? Math.min(CAMPAIGN_LEVEL_COUNT, Math.max(1, Math.floor(n))) : fallback;
 };
 
 /** True when the player's device asks for less animation. Read on every frame
