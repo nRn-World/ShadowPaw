@@ -88,6 +88,7 @@ export interface BossState extends Rect {
   auraAngle: number;
   encountered: boolean;
   isMini?: boolean;
+  /** Recovery multiplier window; zero means normal damage, not immunity. */
   coreExposed?: number;
   coreFlash?: number;
   shadowHitShift?: number;

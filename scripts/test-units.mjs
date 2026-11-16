@@ -18,6 +18,7 @@ import { updateEnemyMotion } from '../game/enemies.ts';
 import {
   getBossAttackCooldown,
   getBossAngerSpeedMultiplier,
+  getBossShotDamage,
   getBossStompDamage,
   getNextBossAnger,
 } from '../game/boss.ts';
@@ -117,6 +118,13 @@ test('enemy archetypes 0-2 behave differently', () => {
   assert.ok(hound.x > 300, 'hound should close the distance');
   assert.ok(skittish.feintTimer > 0, 'skittish enemy should be freezing');
   assert.notEqual(hopper.y, hopper.baseY, 'hopper should leave the ground');
+});
+
+test('boss shots always deal damage while the core window rewards precision', () => {
+  assert.equal(getBossShotDamage({ coreExposed: 0 }), 1, 'closed core is not a shield');
+  assert.equal(getBossShotDamage({ coreExposed: 52 }), 2, 'exposed core doubles a regular shot');
+  assert.equal(getBossShotDamage({ coreExposed: 0, shadowActive: 120 }), 2);
+  assert.equal(getBossShotDamage({ coreExposed: 52, shadowActive: 120 }), 4);
 });
 
 test('boss stomps provide an ammo-free route but raise the difficulty', () => {
