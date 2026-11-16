@@ -1,13 +1,14 @@
 /**
- * Bakes an animated cat model into walk-cycle sprite frames.
+ * Bakes the CC0 Vuena cat's named walk clip into diagnostic sprite frames.
  *
- * Source: public/models/toon_cat_free.glb (Toon Cat FREE by Omabuarts Studio,
- * CC BY 4.0). The model has a 36-bone rig and one 0.833 s loop that covers a
- * full walk cycle of all four legs.
+ * Source: public/models/vuena/animal_cat.glb from Vuena / Popyca's free
+ * low-poly animals sample, released under CC0 1.0. The source contains a
+ * 19-bone rig and named idle, walk, run and jump clips.
  *
- * Output: public/sprites/cat_walk_<n>.png - 8 evenly spaced poses around the
- * loop, seen in profile facing right. The game flips them to face left and
- * picks the frame from the player's speed, so the legs really move.
+ * Output: public/sprites/cat_walk_<n>.png - 8 evenly spaced samples of the
+ * model's walk clip. The gameplay path uses the richer run samples generated
+ * by scripts/render-cat-sprites.mjs; this script remains useful for inspecting
+ * the source animation without changing the runtime.
  *
  * Usage: node scripts/bake-cat-animation.mjs
  */
@@ -17,9 +18,10 @@ import { existsSync } from 'node:fs';
 import { extname, join, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { resolveExecutable } from './browser.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const MODEL = join(ROOT, 'public', 'models', 'toon_cat_free.glb');
+const MODEL = join(ROOT, 'public', 'models', 'vuena', 'animal_cat.glb');
 const OUT = join(ROOT, 'public', 'sprites');
 const PORT = 4322;
 const FRAMES = 8;
@@ -52,7 +54,9 @@ const rim = new THREE.DirectionalLight(0x2bee79, 1.6); rim.position.set(-2, 1, -
 const gltf = await new GLTFLoader().loadAsync('/model.glb');
 const model = gltf.scene;
 const mixer = new THREE.AnimationMixer(model);
-const clip = gltf.animations[0];
+const clip = gltf.animations.find((candidate) => candidate.name === 'walk')
+  ?? gltf.animations.find((candidate) => candidate.name === 'run')
+  ?? gltf.animations[0];
 const action = mixer.clipAction(clip);
 action.play();
 
@@ -61,6 +65,7 @@ const box = new THREE.Box3().setFromObject(model);
 const centre = box.getCenter(new THREE.Vector3());
 model.position.sub(centre);
 const sphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).length() / 2);
+scene.add(model);
 
 const camera = new THREE.PerspectiveCamera(30, 1, 0.001, 1000);
 const distance = (sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.15;
