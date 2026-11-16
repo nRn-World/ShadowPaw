@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
- * Photo booth for the CC0 Kenney cat, used by the shop's studio panel.
+ * Photo booth for the CC0 Vuena cat, used by the shop's studio panel.
  *
- * The model has an idle animation, so it stands on a slow turntable instead of
- * showing a frozen bind pose. The whole 3D stack is loaded on demand: the
- * chunk with three.js only arrives when this component is first shown, so the
- * menu and the game never pay for it.
+ * The rigged model has a supplied idle animation, so it stands on a slow
+ * turntable instead of showing a frozen bind pose. The whole 3D stack is
+ * loaded on demand: the chunk with three.js only arrives when this component
+ * is first shown, so the menu and the game never pay for it.
  */
 
 type Props = {
@@ -17,8 +17,8 @@ type Props = {
   onReady?: () => void;
 };
 
-// Kenney's Cube Pets cat is CC0; see ASSET_LICENSES.md for the pinned source.
-const MODEL_URL = 'models/kenney/cube-pets/animal-cat.glb';
+// Vuena's free sample cat is CC0; see ASSET_LICENSES.md for the pinned source.
+const MODEL_URL = 'models/vuena/animal_cat.glb';
 
 const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -103,8 +103,8 @@ const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
         // Frame the model from its own bounds so a different download still fits.
         const box = new THREE.Box3().setFromObject(model);
         const sphere = box.getBoundingSphere(new THREE.Sphere());
-        // The toon sculpt ships in centimetres, so normalise it to a unit
-        // sphere; otherwise the camera ends up past its far plane.
+        // Normalise the measured model to a unit sphere so the framing remains
+        // stable across the source pack's LOD meshes.
         const distance = 1 / Math.sin((camera.fov * Math.PI) / 360);
 
         const turntable = new THREE.Group();

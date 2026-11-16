@@ -13,7 +13,7 @@ const ASSETS = {
   building: '/models/kenney/city-commercial/building-a.glb',
   tower: '/models/kenney/city-commercial/building-skyscraper-a.glb',
   car: '/models/kenney/car/race-future.glb',
-  cat: '/models/kenney/cube-pets/animal-cat.glb',
+  cat: '/models/vuena/animal_cat.glb',
 } as const;
 
 /**
@@ -154,7 +154,11 @@ const NeonCityStage: React.FC<Props> = ({ height = 150, className }) => {
         add(lightGltf.scene, 4.1, -2.15, 0, -0.05);
         const secondLight = lightGltf.scene.clone(true);
         add(secondLight, 4.1, 2.6, 0, -0.95, Math.PI);
-        const cat = add(catGltf.scene, 1.32, -0.85, 0.02, 0.58, -0.7);
+        const cat = add(catGltf.scene, 1.05, -0.85, 0.02, 0.58, -0.7);
+        // The Vuena file is authored at 1 unit = 1 metre. Keep its paws on the
+        // shared city floor even if a future export changes the scene origin.
+        const catBounds = new THREE.Box3().setFromObject(cat);
+        cat.position.y -= catBounds.min.y;
 
         tuneMaterials(roadGltf.scene, 0.38, 0.66);
         tuneMaterials(buildingGltf.scene, 0.18, 0.54);
@@ -163,8 +167,9 @@ const NeonCityStage: React.FC<Props> = ({ height = 150, className }) => {
         tuneMaterials(lightGltf.scene, 0.42, 0.34);
         tuneMaterials(catGltf.scene, 0.08, 0.58);
 
-        // The Kenney cat ships with a full idle/run set. A small idle loop gives
-        // the scene a heartbeat without distracting from the live-run preview.
+        // The CC0 Vuena cat ships with named idle/run/jump clips. A small idle
+        // loop gives the scene a heartbeat without distracting from the live-run
+        // preview.
         const idleClip = catGltf.animations.find((clip) => clip.name === 'idle') ?? catGltf.animations[0];
         const mixer = idleClip ? new THREE.AnimationMixer(cat) : null;
         if (idleClip && mixer) mixer.clipAction(idleClip).play();

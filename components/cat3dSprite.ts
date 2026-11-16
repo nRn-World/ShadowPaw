@@ -2,8 +2,8 @@
  * The 3D cat as a Canvas 2D sprite.
  *
  * scripts/render-cat-sprites.mjs bakes public/sprites/cat_<pose>_<angle>.png
- * from the toon cat sculpt. This module picks the right frame for the moment
- * and blits it, so the game loop never touches WebGL.
+ * from the CC0 Vuena cat model. This module picks the right frame for the
+ * moment and blits it, so the game loop never touches WebGL.
  *
  * Angles run from -3 to 4 (8 steps, 45 degrees apart). The sculpt faces +Z, so
  * angle 2 is the profile view the game draws when the cat runs right.

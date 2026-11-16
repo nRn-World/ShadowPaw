@@ -1,25 +1,30 @@
 /**
  * Shadow Paw - the hero cat as a sprite atlas.
  *
- * Draws the baked 3D character render (public/cat_character.png) with the
- * same feet-origin contract as the vector catSprite, so every caller - the
- * game, the shop preview and the attract loop - can swap between the two
- * without knowing which one is on screen.
+ * Draws transparent frames baked from the CC0 Vuena cat model with the same
+ * feet-origin contract as the vector catSprite, so every caller - the game,
+ * the shop preview and the attract loop - shows the same character.
  *
- * The atlas ships as one standing pose, so the poses are carried by cheap
- * transforms: an idle breath, a run bob, a nose-down/nose-up tilt in the air.
- * Skins are honoured by tinting the baked art toward the skin colour and
- * pushing the neon accents toward the skin accent, which keeps the original
- * shading instead of flattening the sprite to a silhouette.
+ * The sprite bake keeps the model's real `idle`, `run` and `jump` animation
+ * clips. Skins are honoured by tinting the baked fur toward the skin colour
+ * while preserving the model's shading and glossy eyes.
+ *
+ * Source and bake command: `public/models/vuena/animal_cat.glb` and
+ * `node scripts/render-cat-sprites.mjs`. See ASSET_LICENSES.md.
  */
 
-const URL = 'cat_character.png';
-// Four running strides baked from the generated sheet (scripts/bake-run-frames
-// .mjs). They cycle while the cat is grounded and moving so a keyboard run
-// reads as real leg motion instead of a bobbing single stance.
-const RUN_URLS = ['cat_run_0.png', 'cat_run_1.png', 'cat_run_2.png', 'cat_run_3.png'];
-// Playback order that flows extend -> stride -> stance -> collect -> repeat.
-const RUN_ORDER = [0, 3, 1, 2];
+const URL = 'sprites/cat_idle_1.png';
+// Four samples of the model's real run clip at the gameplay three-quarter
+// angle. They cycle while the cat is grounded and moving, so the legs move
+// instead of the old single-pose bob.
+const RUN_URLS = [
+  'sprites/cat_run_frame_0.png',
+  'sprites/cat_run_frame_1.png',
+  'sprites/cat_run_frame_2.png',
+  'sprites/cat_run_frame_3.png',
+];
+const JUMP_URL = 'sprites/cat_jump_1.png';
+const RUN_ORDER = [0, 1, 2, 3];
 const RUN_FPS = 12;
 
 export interface AtlasCatOpts {
@@ -51,7 +56,7 @@ interface Tight {
   top: number;
   right: number;
   bottom: number;
-  /** Tight art size and the blaster muzzle, normalised 0..1 inside it. */
+  /** Tight art size and the forward face point, normalised 0..1 inside it. */
   width: number;
   height: number;
   muzzleX: number;
@@ -60,6 +65,7 @@ interface Tight {
 
 let state: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
 let tight: Tight | null = null;
+let jumpTight: Tight | null = null;
 /** Running strides, filled in as each frame decodes; may lag `tight` briefly. */
 const runTights: (Tight | null)[] = RUN_URLS.map(() => null);
 let runStarted = false;
@@ -291,10 +297,10 @@ const buildMatte = (src: HTMLImageElement): Tight | null => {
     bottom,
     width: w - left - right,
     height: h - top - bottom,
-    // The blaster muzzle sits at the far right of the art, a little above the
-    // gun's lower edge; measured off the baked pose.
-    muzzleX: 0.925,
-    muzzleY: 0.47,
+    // The new model has no weapon; shots leave from the nose as a small
+    // in-world muzzle flash, keeping the existing shooting mechanic readable.
+    muzzleX: 0.9,
+    muzzleY: 0.45,
   };
 };
 
@@ -314,7 +320,7 @@ const loadTight = (url: string, cb: (t: Tight | null) => void) => {
 };
 
 /** Kick the four running strides. They fill `runTights` independently; the
-    game falls back to the single stance until a given frame has decoded. */
+    game falls back to the idle stance until a given frame has decoded. */
 const loadRunFrames = () => {
   if (runStarted) return;
   runStarted = true;
@@ -325,6 +331,7 @@ export const loadCatAtlas = () => {
   if (state !== 'idle') return;
   state = 'loading';
   loadRunFrames();
+  loadTight(JUMP_URL, (t) => { jumpTight = t; });
   loadTight(URL, (t) => {
     tight = t;
     state = t ? 'ready' : 'failed';
@@ -402,8 +409,8 @@ const getTinted = (src: Tight, color: string, accent: string, tag: string, origi
 
 /**
  * Pick which baked frame the cat should show for a set of motion flags, so the
- * renderer and the muzzle helper always agree on the same pose. Falls back to
- * the single stance while running frames decode, or when idle/airborne/dashing.
+ * renderer and the muzzle helper always agree on the same pose. The jump
+ * frame is preferred in the air; the run samples are used only on the ground.
  */
 const chooseFrame = (
   moving: boolean,
@@ -411,6 +418,7 @@ const chooseFrame = (
   dashing: boolean,
   t: number,
 ): { src: Tight; tag: string } => {
+  if (air && jumpTight) return { src: jumpTight, tag: 'jump' };
   if (moving && !air && !dashing) {
     const fi = RUN_ORDER[Math.floor(t * RUN_FPS) % RUN_ORDER.length];
     const rt = runTights[fi];
@@ -462,9 +470,9 @@ export const drawCatAtlasSprite = (
   const moving = o.running || Math.abs(o.speed ?? 0) > 0.35;
   const phase = o.phase ?? o.t * 11;
 
-  // While grounded and moving, cycle the baked strides so the legs actually
-  // run; otherwise fall back to the single stance (idle, air, dash, or the
-  // frames not having decoded yet).
+  // While grounded and moving, cycle the baked run samples so the legs
+  // actually move; use the model's jump pose in the air and fall back to idle
+  // only while a frame is still decoding.
   const { src, tag } = chooseFrame(moving, air, o.dashing ?? false, o.t);
 
   const art = getTinted(src, o.color, accent, tag, o.original);
@@ -507,40 +515,14 @@ export const drawCatAtlasSprite = (
   ctx.rotate(tilt);
   ctx.drawImage(art, -w / 2, -h + bob, w, h);
 
-  // Blink: in the idle stance, periodically drop a strip of the cat's own
-  // forehead fur down over the eyes. Because the lid is sampled from the same
-  // (already tinted) art it matches every skin automatically, and it lives in
-  // the sprite's own transform so it mirrors with the facing. Only in the
-  // stance - the running strides move the head too much to track the eyes.
-  if (tag === 'idle') {
-    const CYCLE = 3.6;
-    const LEN = 0.16;
-    const ph = ((o.t % CYCLE) + CYCLE) % CYCLE;
-    if (ph < LEN) {
-      const close = Math.sin(Math.PI * (ph / LEN)); // 0 -> 1 -> 0
-      const aw = art.width;
-      const ah = art.height;
-      const ex0 = 0.63;
-      const ex1 = 0.87; // eye band, normalised inside the tight art
-      const ey0 = 0.4;
-      const ey1 = 0.6;
-      const lidTop = 0.28; // helmet/forehead strip just above the eyes, used as the lid
-      const dh = (ey1 - ey0) * h * close;
-      const sh = (ey0 - lidTop) * ah;
-      if (dh > 0.6 && sh > 0.6) {
-        ctx.drawImage(
-          art,
-          ex0 * aw, lidTop * ah, (ex1 - ex0) * aw, sh,
-          -w / 2 + ex0 * w, -h + bob + ey0 * h, (ex1 - ex0) * w, dh,
-        );
-      }
-    }
-  }
+  // The Vuena idle clip is sampled from the model itself, so the baked
+  // expression is kept intact instead of covering the eyes with a hard-coded
+  // lid rectangle from the former cat art.
   ctx.restore();
 
   if (o.shooting) {
-    // The muzzle sits on the right edge of the baked pose; mirror it with the
-    // facing so the flash stays on the gun when the cat turns around.
+    // The shot point is the model's nose; mirror it with the facing so the
+    // existing blaster mechanic remains visible without adding a weapon mesh.
     const mx = x + facing * (w * (src.muzzleX - 0.5));
     const my = y - h * (1 - src.muzzleY) + bob;
     const flash = h * (0.09 + Math.sin(o.t * 60) * 0.02);

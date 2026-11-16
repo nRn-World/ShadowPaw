@@ -1,16 +1,16 @@
 /**
- * Bakes the toon cat sculpt into a sprite sheet for the game canvas.
+ * Bakes the CC0 Vuena cat into transparent sprite frames for the game canvas.
  *
- * The game runs on Canvas 2D, so the 3D model cannot be drawn live without
- * dragging WebGL into every frame. Instead this script renders the model once
- * from a few angles and writes PNGs that the game just blits with drawImage:
+ * The game runs on Canvas 2D, so the rigged GLB is rendered once with
+ * Three.js and Chrome. The runtime only blits the deterministic PNGs:
  *
  *   public/sprites/cat_<pose>_<angle>.png
  *       pose:  idle | run | jump
  *       angle: -3..4   (8 steps around the character, 45 degrees apart)
  *
- * Angle 0 faces right (the direction the sprite is drawn in), so the game can
- * flip it with ctx.scale(-1, 1) exactly like the hand-drawn cat.
+ * The source is the pinned Vuena `animal_cat.glb` model; its named `idle`,
+ * `run` and `jump` clips are sampled independently instead of borrowing a
+ * frame from an unrelated animation. See ASSET_LICENSES.md for provenance.
  *
  * Usage: node scripts/render-cat-sprites.mjs
  * Requires the three.js dependency and a local Chrome. Deterministic: the same
@@ -23,9 +23,10 @@ import { extname, join, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { resolveExecutable } from './browser.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const MODEL = join(ROOT, 'public', 'models', 'toon_cat_free.glb');
+const MODEL = join(ROOT, 'public', 'models', 'vuena', 'animal_cat.glb');
 const OUT = join(ROOT, 'public', 'sprites');
 const PORT = 4321;
 const SIZE = 256;
@@ -73,24 +74,28 @@ const sphere = box.getBoundingSphere(new THREE.Sphere());
 model.position.sub(centre);
 const group = new THREE.Group();
 group.add(model);
-// The sculpt ships in centimetres (radius ~322), so scale it to a unit sphere;
-// otherwise the camera ends up past its far plane and renders nothing.
+// The CC0 pack uses metres, but normalising the measured sphere keeps the
+// renderer stable if the source file is updated or a different LOD is loaded.
 group.scale.setScalar(1 / sphere.radius);
 scene.add(group);
 
-// One baked walk cycle drives every pose; each pose is a frozen frame of it.
-const clip = gltf.animations[0];
-const POSE_TIME = { idle: 0, run: 0.25, jump: 0.5 };
+// Use the model's own named clips. The jump pose is sampled slightly after
+// take-off so the paws tuck under the body; run is sampled mid-stride.
+const clips = Object.fromEntries(gltf.animations.map((candidate) => [candidate.name, candidate]));
+const poseClips = { idle: clips.idle, run: clips.run, jump: clips.jump };
+const POSE_TIME = { idle: 0.18, run: 0.34, jump: 0.28 };
 const mixer = new THREE.AnimationMixer(model);
-const action = mixer.clipAction(clip);
-action.play();
 
 // The sprite is blitted at hitbox size, so crop tight: the bounding sphere
 // includes the outstretched tail and would leave the cat looking small.
 const distance = (1 / Math.sin((camera.fov * Math.PI) / 360)) * 0.9;
 
-window.renderSprite = async (angleIndex, tilt, pose) => {
-  mixer.setTime(clip.duration * POSE_TIME[pose]);
+window.renderSprite = async (angleIndex, tilt, pose, normalizedTime = POSE_TIME[pose]) => {
+  const clip = poseClips[pose] || poseClips.idle;
+  mixer.stopAllAction();
+  const action = mixer.clipAction(clip);
+  action.reset().play();
+  mixer.setTime(clip.duration * normalizedTime);
   // 0 turns the model so its right side faces the camera.
   const a = (angleIndex * Math.PI) / 4;
   group.rotation.y = a;
@@ -199,6 +204,16 @@ async function main() {
       await writeFile(join(OUT, name), Buffer.from(base64, 'base64'));
       written++;
     }
+  }
+
+  // The platformer uses a readable three-quarter profile (angle 1) and gets
+  // four samples of the real run clip so the cat's legs move in-game. The
+  // eight-angle set above stays available to menu/preview callers.
+  for (let frame = 0; frame < 4; frame++) {
+    const dataUrl = await evaluate(`window.renderSprite(1, ${POSE_TILT.run}, 'run', ${frame / 4})`);
+    const base64 = String(dataUrl).split(',')[1];
+    await writeFile(join(OUT, `cat_run_frame_${frame}.png`), Buffer.from(base64, 'base64'));
+    written++;
   }
 
   ws.close();
