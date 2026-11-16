@@ -4,6 +4,7 @@ import { useT } from '../i18n';
 import { getLevelDesign } from '../game/level';
 import { RESCUE_CATS, type HideoutDecor } from '../game/rescue';
 import { CAT_QUESTS } from '../game/sideQuests';
+import { COMPANIONS } from '../game/uniqueSystems';
 
 /**
  * Chapter map for the campaign.
@@ -96,7 +97,7 @@ const LevelSelectView: React.FC<{
   onBack: () => void;
   onStart: (level: number) => void;
 }> = ({ onBack, onStart }) => {
-  const { progress, setHideoutDecor, claimCatQuest } = useProgress();
+  const { progress, setHideoutDecor, claimCatQuest, equipCompanion } = useProgress();
   const t = useT();
 
   // Beyond the last chapter the campaign is simply complete; never show a
@@ -105,6 +106,9 @@ const LevelSelectView: React.FC<{
   const nextLevel = Math.min(TOTAL_LEVELS, Math.max(1, progress.campaignLevel));
   const percent = Math.round((clearedThrough / TOTAL_LEVELS) * 100);
   const allCleared = clearedThrough >= TOTAL_LEVELS;
+  const unlockedCompanions = COMPANIONS.filter((companion) => progress.rescuedCats.includes(companion.level));
+  const fallbackCompanionId = unlockedCompanions.length ? unlockedCompanions[unlockedCompanions.length - 1].id : null;
+  const activeCompanionId = progress.equippedCompanion || fallbackCompanionId;
 
   return (
     <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-6 md:py-9">
@@ -167,6 +171,39 @@ const LevelSelectView: React.FC<{
             })}
           </div>
           <p className="mt-3 text-xs text-white/75">{t(progress.rescuedCats.length >= 5 ? 'Vilket hem vi har skapat tillsammans!' : progress.rescuedCats.length >= 2 ? 'Nya vänner gör tillhållet grönare.' : 'Vi håller utkik efter fler vänner.')}</p>
+          <div className="mt-4 rounded-2xl border border-white/15 bg-black/10 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-black uppercase tracking-[0.16em] text-violet-100">{t('Välj följeslagare')}</h3>
+              <span className="text-[10px] font-semibold text-white/55">{t('En förmåga följer med in i nästa nivå.')}</span>
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {COMPANIONS.map((companion) => {
+                const unlocked = progress.rescuedCats.includes(companion.level);
+                const active = unlocked && activeCompanionId === companion.id;
+                return (
+                  <button
+                    key={companion.id}
+                    type="button"
+                    disabled={!unlocked}
+                    aria-pressed={active}
+                    onClick={() => equipCompanion(companion.id)}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors ${
+                      active ? 'border-violet-200 bg-violet-200/25' : unlocked ? 'border-white/20 bg-white/5 enabled:hover:bg-white/15' : 'border-white/10 bg-black/10 opacity-45'
+                    } disabled:cursor-not-allowed`}
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-sm" style={{ color: companion.color, borderColor: `${companion.color}88` }}>
+                      <span className="material-symbols-outlined text-base">{companion.icon}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[11px] font-black" style={{ color: companion.color }}>{companion.name}</span>
+                      <span className="block text-[10px] leading-snug text-white/60">{t(companion.detail)}</span>
+                    </span>
+                    {active && <span className="material-symbols-outlined text-base text-violet-200">check_circle</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {CAT_QUESTS.filter(q => progress.rescuedCats.includes(q.catLevel)).map(quest => {
             const claimed = progress.claimedCatQuests.includes(quest.id);
             const ready = progress.shadowSecrets.length >= quest.target;
