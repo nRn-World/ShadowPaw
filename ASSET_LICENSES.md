@@ -1,50 +1,13 @@
 # Third-party asset licenses
 
-This file records the external art used by the modern neon-city presentation and
-hero character. The selected files are intentionally kept separate from the
-project's own code and artwork, and every model source is pinned below.
-
-## Kenney 3D kit — CC0
-
-- **Creator:** Kenney / [kenney.nl](https://kenney.nl)
-- **License:** [Creative Commons Zero 1.0 Universal (CC0)](https://creativecommons.org/publicdomain/zero/1.0/)
-- **What the license allows:** copying, modifying, combining and using the assets
-  in personal, educational and commercial projects without a required attribution.
-- **Credit included by choice:** `Kenney · kenney.nl`.
-- **Source archive:** [shorepine/kenney at pinned commit 3694c6879e487c108f55677be7dd2ca75b07cc3b](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b)
-- **License evidence:** the source repository's [README](https://github.com/shorepine/kenney/blob/3694c6879e487c108f55677be7dd2ca75b07cc3b/README.md)
-  identifies the complete art library as Kenney art released under CC0. The
-  archive's `LICENSE.txt` notice is also kept at
-  `public/models/kenney/LICENSE.txt`.
-
-The following CC0 models are included and are used by the game UI:
-
-| Local file | Source pack | Use in Shadow Paw |
-| --- | --- | --- |
-| `public/models/kenney/cube-pets/animal-cat.glb` | [Cube Pets](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/cube-pets) | Decorative menu city vignette |
-| `public/models/kenney/city-commercial/building-a.glb` | [City Commercial](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/city-commercial) | Modular neon-city backdrop |
-| `public/models/kenney/city-commercial/building-skyscraper-a.glb` | [City Commercial](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/city-commercial) | Modular neon-city backdrop |
-| `public/models/kenney/city-roads/road-straight.glb` | [City Roads](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/city-roads) | Holographic street stage |
-| `public/models/kenney/city-roads/light-square.glb` | [City Roads](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/city-roads) | Neon street lights |
-| `public/models/kenney/car/race-future.glb` | [Car](https://github.com/shorepine/kenney/tree/3694c6879e487c108f55677be7dd2ca75b07cc3b/3d/car) | Future car set dressing |
-
-### Changes made to the models in-game
-
-The original files are not overwritten. At runtime Shadow Paw composes them into
-new scenes, changes scale/rotation/material roughness and adds original lighting,
-fog, holographic floor geometry and neon colour grading. The cat's supplied
-`idle` animation is played in the studio/menu. These are permitted adaptations
-under CC0.
-
-The gameplay loop continues to use its Canvas 2D renderer and existing sprite
-fallbacks. If WebGL or a model request is unavailable, the 2D preview remains
-visible and the game is fully playable.
+This file records the external art used by Shadow Paw. The live run remains a
+Canvas 2D game for predictable mobile performance; optional 3D artwork is kept
+in the shop and loaded only when that panel is opened.
 
 ## Vuena / Popyca free cat sample — CC0 1.0
 
-The former hero cat has been replaced with the rigged low-poly cat from the
-free sample repository below. This is a separate source from Kenney and is used
-both by the live shop preview and by the offline Canvas sprite bake.
+The shop's optional 3D cat studio uses the rigged low-poly cat from the free
+sample repository below.
 
 - **Creator:** Vuena / Popyca
 - **License:** [Creative Commons Zero 1.0 Universal (CC0)](https://creativecommons.org/publicdomain/zero/1.0/)
@@ -78,5 +41,9 @@ The older `toon_cat_free.glb` and old AI-rendered atlas remain in the checkout
 as historical, unused source material; they are deliberately not described as
 CC0 and are not referenced by the runtime hero path or the new bake scripts.
 The current `cat_walk_*` diagnostic outputs are generated from the pinned Vuena
-GLB by `scripts/bake-cat-animation.mjs`. The Kenney cat remains only as separate
-CC0 city set dressing; the visible hero is the pinned Vuena model.
+GLB by `scripts/bake-cat-animation.mjs`.
+
+The former Kenney city/car kit was removed from the runtime and repository when
+the decorative city inset was removed from the live-run card. This keeps the
+menu focused on the cat gameplay and prevents a car scene from being mistaken
+for part of the game.

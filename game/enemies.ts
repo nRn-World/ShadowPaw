@@ -1,4 +1,4 @@
-import type { GameState } from './types';
+import type { EnemyState, GameState, Platform } from './types';
 
 /**
  * Enemy behaviour + the shadow-only wraith. Kept out of the render/loop
@@ -16,7 +16,7 @@ export const SHADOW_ENEMY_TYPE = 6;
  * Movement is clamped to the owning platform so no archetype can wander into
  * a pit and disappear.
  */
-export const updateEnemyMotion = (e: any, game: GameState, platform: any) => {
+export const updateEnemyMotion = (e: EnemyState, game: GameState, platform: Platform) => {
   if (!platform) return;
   const playerCx = game.player.x + game.player.width / 2;
   const dx = playerCx - (e.x + e.width / 2);

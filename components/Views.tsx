@@ -6,7 +6,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppView, ScoreEntry, RunMode } from '../types';
 import LiveRunDemo from './LiveRunDemo';
-import NeonCityStage from './NeonCityStage';
 import { drawCatSprite } from './catSprite';
 import { drawCatAtlasSprite } from './catAtlasSprite';
 
@@ -54,8 +53,8 @@ import {
   getLifeBlessing,
   isDailyContractComplete,
 } from '../game/uniqueSystems';
-import type { GameState, HudStats } from '../game/types';
-import { ShadowShiftMeter, ObjectivePill } from './GameHud';
+import type { BossState, EnemyState, GameState, HudStats, Platform } from '../game/types';
+import { ShadowShiftMeter, ObjectivePill, BossHud } from './GameHud';
 import { drawCartoonEnemy } from './enemyArt';
 import { drawCheckpointBeacons, drawBlackout, drawGoldRush } from './gameRender';
 import {
@@ -64,6 +63,7 @@ import {
   GROUND_COLOR, hashSeed, getDailySeed, dailyLevelFromSeed,
   getCheckpoints,
 } from '../game/level';
+import { readJson, writeJson } from '../game/storage';
 
 /** Permanent cinematic crop for the stage. Kept as one constant so the render
     transform and the pointer→world conversion can never drift apart. */
@@ -302,7 +302,7 @@ const InjuredCatVisual: React.FC = () => (
 /** The attract-mode card on the start screen: a live slice of play, the next
     story goal and the player's rank. It renders once in the mobile flow and
     once in the desktop hero column, so both share this single definition. */
-const HeroShowcase: React.FC<{ storyLevel: number; rank: number; withCity?: boolean }> = ({ storyLevel, rank, withCity = true }) => {
+const HeroShowcase: React.FC<{ storyLevel: number; rank: number }> = ({ storyLevel, rank }) => {
   const t = useT();
   return (
     <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#050a15] shadow-[0_40px_120px_-50px_rgba(0,0,0,1)]">
@@ -317,18 +317,7 @@ const HeroShowcase: React.FC<{ storyLevel: number; rank: number; withCity?: bool
               direction instead of a recording of an older build. */}
           <LiveRunDemo />
         </div>
-        {withCity && (
-          /* A compact 3D city inset makes the new CC0 kit visible before the
-             player even opens the shop. It is decorative and disappears on
-             narrow screens so the live run remains readable. */
-          <div className="absolute bottom-3 right-3 z-20 hidden w-40 overflow-hidden rounded-2xl border border-cyan-200/20 bg-[#071322]/80 shadow-[0_14px_40px_-20px_rgba(43,238,255,0.75)] backdrop-blur-sm sm:block md:w-44">
-            <NeonCityStage height={104} />
-            <div className="border-t border-white/10 px-2.5 py-1.5">
-              <p className="text-[8px] font-black uppercase tracking-[0.18em] text-cyan-100/70">CC0 city kit</p>
-              <p className="mt-0.5 text-[9px] font-semibold text-white/45">{t('Ny neonstad')}</p>
-            </div>
-          </div>
-        )}
+
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 backdrop-blur-md">
           <span className="size-1.5 animate-pulse rounded-full bg-red-500" />
           <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/70">{t('Live run')}</span>
@@ -391,7 +380,7 @@ export const StartMenuView: React.FC<{
           </h1>
 
           <div className="mt-5 lg:hidden">
-            <HeroShowcase storyLevel={storyLevel} rank={progress.level} withCity={false} />
+            <HeroShowcase storyLevel={storyLevel} rank={progress.level} />
           </div>
 
           <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 md:text-base">
@@ -825,6 +814,24 @@ export const SettingsView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <ToonSwitch on={progress.settings.haptics} />
           </button>
 
+          {/* A one-tap handedness option is more useful on a phone than forcing
+              players to stretch across the screen. It only changes layout; the
+              keyboard mapping and game physics stay identical. */}
+          <button
+            onClick={() => updateSettings({ leftHandedControls: !progress.settings.leftHandedControls })}
+            aria-pressed={progress.settings.leftHandedControls}
+            className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-[#12182b]/[0.07]"
+          >
+            <span className="flex min-w-0 items-start gap-2">
+              <span className="material-symbols-outlined text-base text-[#12182b]/55">swap_horiz</span>
+              <span>
+                <span className="block text-xs font-black text-[#12182b]">{t('Vänsterhänt layout: {v}', { v: progress.settings.leftHandedControls ? t('På') : t('Av') })}</span>
+                <span className="mt-0.5 block text-[10px] font-semibold leading-snug text-[#12182b]/50">{t('Byt plats på mobilknapparna för att ha handlingarna på vänster sida.')}</span>
+              </span>
+            </span>
+            <ToonSwitch on={progress.settings.leftHandedControls} />
+          </button>
+
           {/* Difficulty scales hazards, enemy pressure and the fish quota, but
               never rewards or shop prices: an accessibility dial, not a boost. */}
           <div className="mt-4 rounded-xl border-2 border-[#12182b]/20 bg-[#12182b]/[0.04] p-3">
@@ -1201,15 +1208,16 @@ export const LeaderboardView: React.FC<{ onBack: () => void, onPlay: () => void 
       { rank: 9, name: 'ShadowFox', score: 24300, level: 'Nivå 21', date: '16 okt', avatar: '' },
     ];
 
-    const savedScoresData = localStorage.getItem('shadow_paw_scores');
-    let savedScores: { name: string; score: number; date: string }[] = [];
-    if (savedScoresData) {
-      try {
-        savedScores = JSON.parse(savedScoresData);
-      } catch {
-        savedScores = [];
-      }
-    }
+    const savedScoresValue = readJson<unknown>('shadow_paw_scores', []);
+    const savedScores: { name: string; score: number; date: string }[] = Array.isArray(savedScoresValue)
+      ? savedScoresValue.filter((value): value is { name: string; score: number; date: string } => {
+        if (!value || typeof value !== 'object') return false;
+        const candidate = value as Partial<{ name: string; score: number; date: string }>;
+        return typeof candidate.name === 'string'
+          && Number.isFinite(candidate.score)
+          && typeof candidate.date === 'string';
+      })
+      : [];
 
     const userScores: ScoreEntry[] = savedScores.map((s) => ({
       rank: 0,
@@ -1370,26 +1378,25 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
   const [deathTip, setDeathTip] = useState('');
   const [dailyResult, setDailyResult] = useState<{ rank: number; streak: number; best: number } | null>(null);
   const recordedRef = React.useRef(false);
+  const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const { progress, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
-  const lastRun = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('shadow_paw_last_run') || '{}');
-    } catch {
-      return {};
-    }
-  })();
+  const lastRun = readJson<Record<string, any>>('shadow_paw_last_run', {});
+
+  useEffect(() => {
+    resultHeadingRef.current?.focus();
+  }, [score]);
 
   // Coins are already awarded live during play, so this screen only tallies XP.
-  const coinsEarned = lastRun.coins || 0;
+  const coinsEarned = Number(lastRun.coins) || 0;
   const totalCoins = progress.coins;
-  const storedBest = (() => {
-    try {
-      const scores = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
-      return Math.max(0, ...scores.map((s: { score: number }) => s.score));
-    } catch {
-      return 0;
-    }
-  })();
+  const storedScores = readJson<unknown>('shadow_paw_scores', []);
+  const storedBest = Array.isArray(storedScores)
+    ? Math.max(0, ...storedScores.map((entry) => {
+      if (!entry || typeof entry !== 'object') return 0;
+      const scoreValue = Number((entry as { score?: unknown }).score);
+      return Number.isFinite(scoreValue) ? scoreValue : 0;
+    }))
+    : 0;
   const bestScore = Math.max(score, storedBest);
   // "New record" must mean the run beat the stored best, not that it equals the
   // maximum that already includes this score.
@@ -1468,16 +1475,11 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
 
   const handleSaveScore = () => {
     if (!name.trim()) return;
-    try {
-      const raw = JSON.parse(localStorage.getItem('shadow_paw_scores') || '[]');
-      const highScores = Array.isArray(raw) ? raw : [];
-      highScores.push({ name: name.trim(), score, date: new Date().toLocaleDateString() });
-      localStorage.setItem('shadow_paw_scores', JSON.stringify(highScores));
-      setIsSaved(true);
-    } catch {
-      // Show the field again rather than claiming a save that did not happen.
-      setIsSaved(false);
-    }
+    const raw = readJson<unknown>('shadow_paw_scores', []);
+    const highScores = Array.isArray(raw) ? raw.filter((entry) => entry && typeof entry === 'object') : [];
+    highScores.push({ name: name.trim(), score, date: new Date().toLocaleDateString() });
+    // Show the field again rather than claiming a save that did not happen.
+    setIsSaved(writeJson('shadow_paw_scores', highScores));
   };
 
   const handleShareCard = async () => {
@@ -1608,7 +1610,7 @@ export const GameOverView: React.FC<{ score: number, fishesCollected?: number, o
             )}
           </div>
 
-          <h1 className="mt-3 font-display text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-6xl">
+          <h1 ref={resultHeadingRef} tabIndex={-1} className="mt-3 font-display text-4xl font-black uppercase leading-[0.95] tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-primary md:text-6xl">
             {renderRich(t('Spelet <b>över</b>'), 'text-red-400')}
           </h1>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/55 md:text-base">{taunt}</p>
@@ -1735,14 +1737,13 @@ export const CampaignCompleteView: React.FC<{
   const { progress, addXP, applyRunResults, unlockAchievement, unlockSkin } = useProgress();
   const t = useT();
   const recordedRef = useRef(false);
-  const lastRun = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('shadow_paw_last_run') || '{}');
-    } catch {
-      return {};
-    }
-  })();
+  const finalHeadingRef = useRef<HTMLHeadingElement>(null);
+  const lastRun = readJson<Record<string, any>>('shadow_paw_last_run', {});
   const finalBosses = progress.stats.bossesDefeated + (!recordedRef.current && lastRun.bossDefeated ? 1 : 0);
+
+  useEffect(() => {
+    finalHeadingRef.current?.focus();
+  }, [score]);
 
   useEffect(() => {
     if (recordedRef.current) return;
@@ -1797,7 +1798,7 @@ export const CampaignCompleteView: React.FC<{
           <span className="material-symbols-outlined text-base">workspace_premium</span>
           {t('Kampanjfinal')}
         </span>
-        <h1 className="mt-5 font-display text-5xl font-black uppercase leading-[0.9] tracking-tight text-white md:text-7xl">
+        <h1 ref={finalHeadingRef} tabIndex={-1} className="mt-5 font-display text-5xl font-black uppercase leading-[0.9] tracking-tight text-white outline-none focus-visible:ring-2 focus-visible:ring-primary md:text-7xl">
           {t('Kampanjen klar!')}
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-white/60 md:text-base">
@@ -1989,7 +1990,7 @@ const BOSS_COUNTER_HINTS: Record<BossPattern, string> = {
    logic stays readable and every boss shares the same telegraph rules. */
 const fireBossAttack = (
   game: GameState,
-  boss: any,
+  boss: BossState,
   move: BossPattern,
   profile: { speed: number; radius: number; color: string },
 ) => {
@@ -2078,14 +2079,14 @@ const fireBossAttack = (
       break;
     }
     case 'summon': {
-      const bossPlat = game.platforms.find((p: any) => p.bossArena);
+      const bossPlat = game.platforms.find((p: Platform) => p.bossArena);
       const platIndex = bossPlat ? game.platforms.indexOf(bossPlat) : -1;
       if (platIndex >= 0) {
         const alive = game.enemies.filter(
-          (e: any) => e.x > bossPlat.x - 80 && e.x < bossPlat.x + bossPlat.width + 80,
+          (e: EnemyState) => e.x > bossPlat.x - 80 && e.x < bossPlat.x + bossPlat.width + 80,
         ).length;
         for (let i = 0; i < 2 && alive + i < 4; i++) {
-          const ex = bossPlat.x + 30 + Math.random() * Math.max(30, bossPlat.width - 100);
+          const ex = bossPlat.x + 30 + game.simulationRng() * Math.max(30, bossPlat.width - 100);
           game.enemies.push({
             x: ex,
             y: bossPlat.y - 40,
@@ -2116,8 +2117,8 @@ const fireBossAttack = (
 /** Phase changes reshape the arena for a few beats. Warning zones are visible,
     deterministic and placed on the boss platform so they never create an
     invisible off-screen hit. */
-const activateBossArenaShift = (game: any, boss: any) => {
-  const platform = game.platforms.find((p: any) => p.bossArena);
+const activateBossArenaShift = (game: GameState, boss: BossState) => {
+  const platform = game.platforms.find((p: Platform) => p.bossArena);
   if (!platform) return;
   const count = Math.min(3, 1 + (boss.phase || 0));
   const width = 62;
@@ -2187,7 +2188,7 @@ const BOLT_SAFE_RADIUS = 175;
 const boltSubdivide = (
   x1: number, y1: number, x2: number, y2: number,
   displacement: number, depth: number, originX: number,
-  dxs: number[], ys: number[],
+  dxs: number[], ys: number[], rng: () => number,
 ) => {
   if (depth <= 0 || dxs.length > 400) {
     dxs.push(x2 - originX);
@@ -2197,11 +2198,11 @@ const boltSubdivide = (
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
   const len = Math.hypot(x2 - x1, y2 - y1) || 1;
-  const offset = (Math.random() * 2 - 1) * displacement;
+  const offset = (rng() * 2 - 1) * displacement;
   const px = mx + (-(y2 - y1) / len) * offset;
   const py = my + ((x2 - x1) / len) * offset;
-  boltSubdivide(x1, y1, px, py, displacement * 0.54, depth - 1, originX, dxs, ys);
-  boltSubdivide(px, py, x2, y2, displacement * 0.54, depth - 1, originX, dxs, ys);
+  boltSubdivide(x1, y1, px, py, displacement * 0.54, depth - 1, originX, dxs, ys, rng);
+  boltSubdivide(px, py, x2, y2, displacement * 0.54, depth - 1, originX, dxs, ys, rng);
 };
 
 /** Strokes a bolt path segment by segment so it can taper towards the tip. */
@@ -2290,27 +2291,27 @@ const rasteriseBolt = (main: BoltPath, branches: BoltPath[], brightSky = false) 
 /** A full strike: one thick forked trunk plus a few shorter forks that die out
     in the air. Stored relative to the landing point so it stays welded to the
     world while the camera scrolls. */
-const createLightningStrike = (targetX: number, targetY: number, brightSky = false): LightningStrike => {
-  const topX = targetX + (Math.random() - 0.5) * 260;
+const createLightningStrike = (targetX: number, targetY: number, brightSky = false, rng: () => number = () => 0.5): LightningStrike => {
+  const topX = targetX + (rng() - 0.5) * 260;
   const main: BoltPath = { dx: [topX - targetX], y: [-70] };
-  boltSubdivide(topX, -70, targetX, targetY, 46, 6, targetX, main.dx, main.y);
+  boltSubdivide(topX, -70, targetX, targetY, 46, 6, targetX, main.dx, main.y, rng);
   // The trunk has to end exactly on the surface it hits, not a pixel above it.
   main.dx[main.dx.length - 1] = 0;
   main.y[main.y.length - 1] = targetY;
 
   const branches: BoltPath[] = [];
-  const branchCount = 2 + Math.floor(Math.random() * 3);
+  const branchCount = 2 + Math.floor(rng() * 3);
   for (let b = 0; b < branchCount; b++) {
     // Forks leave the trunk from its upper two thirds and wander off sideways.
-    const idx = Math.max(1, Math.floor(main.dx.length * (0.1 + Math.random() * 0.6)));
+    const idx = Math.max(1, Math.floor(main.dx.length * (0.1 + rng() * 0.6)));
     const sx = targetX + main.dx[idx];
     const sy = main.y[idx];
-    const dir = Math.random() > 0.5 ? 1 : -1;
-    const reach = 50 + Math.random() * 150;
+    const dir = rng() > 0.5 ? 1 : -1;
+    const reach = 50 + rng() * 150;
     const ex = sx + dir * reach;
-    const ey = sy + reach * (0.5 + Math.random() * 0.9);
+    const ey = sy + reach * (0.5 + rng() * 0.9);
     const path: BoltPath = { dx: [sx - targetX], y: [sy] };
-    boltSubdivide(sx, sy, ex, ey, 22, 4, targetX, path.dx, path.y);
+    boltSubdivide(sx, sy, ex, ey, 22, 4, targetX, path.dx, path.y, rng);
     branches.push(path);
   }
 
@@ -2335,7 +2336,7 @@ const pickLightningSpot = (game: GameState, canvasWidth: number) => {
   const fallback: Array<{ x: number; y: number }> = [];
   const lastX = game.lightning?.lastX ?? -9999;
 
-  game.platforms.forEach((plat: any) => {
+  game.platforms.forEach((plat: Platform) => {
     if (!plat || plat.bossWalkway) return;
     const left = plat.x - game.scrollX;
     if (left + plat.width < 80 || left > canvasWidth - 80) return;
@@ -2343,7 +2344,7 @@ const pickLightningSpot = (game: GameState, canvasWidth: number) => {
     const x1 = Math.min(plat.x + plat.width - 30, game.scrollX + canvasWidth - 96);
     if (x1 - x0 < 46) return;
     for (let i = 0; i < 2; i++) {
-      const x = x0 + Math.random() * (x1 - x0);
+      const x = x0 + game.simulationRng() * (x1 - x0);
       if (Math.hypot(x - catX, plat.y - catY) < BOLT_SAFE_RADIUS) continue;
       (Math.abs(x - lastX) < 90 ? fallback : preferred).push({ x, y: plat.y });
     }
@@ -2351,12 +2352,12 @@ const pickLightningSpot = (game: GameState, canvasWidth: number) => {
 
   const pool = preferred.length ? preferred : fallback;
   if (!pool.length) return null;
-  return pool[Math.floor(Math.random() * pool.length)];
+  return pool[Math.floor(game.simulationRng() * pool.length)];
 };
 
 const nextLightningDelay = (game: GameState) => {
-  if (game.weather === 'STORMIGT') return 130 + Math.random() * 170;
-  return game.intensity === 'HEAVY' ? 240 + Math.random() * 280 : 520 + Math.random() * 460;
+  if (game.weather === 'STORMIGT') return 130 + game.simulationRng() * 170;
+  return game.intensity === 'HEAVY' ? 240 + game.simulationRng() * 280 : 520 + game.simulationRng() * 460;
 };
 
 const fireLightning = (game: GameState, x: number, y: number, canvasWidth: number, catX: number) => {
@@ -2364,23 +2365,23 @@ const fireLightning = (game: GameState, x: number, y: number, canvasWidth: numbe
   // Final gate, evaluated on the frame the bolt actually lands.
   if (Math.abs(x - catX) < BOLT_SAFE_RADIUS) return;
 
-  L.strikes.push(createLightningStrike(x, y, game.timeOfDay === 'DAY'));
+  L.strikes.push(createLightningStrike(x, y, game.timeOfDay === 'DAY', game.simulationRng));
   L.lastX = x;
   L.flash = 1;
-  L.scorches.push({ x, y, life: 170, maxLife: 170, size: 22 + Math.random() * 16 });
+    L.scorches.push({ x, y, life: 170, maxLife: 170, size: 22 + game.simulationRng() * 16 });
   if (L.scorches.length > 6) L.scorches.shift();
 
   // Sparks are thrown up from the impact and fall back through the global
   // particle system, so they inherit gravity and the additive glow for free.
   for (let i = 0; i < 14; i++) {
     game.particles.push({
-      x: x + (Math.random() - 0.5) * 26,
-      y: y - Math.random() * 10,
-      vx: (Math.random() - 0.5) * 9,
-      vy: -2 - Math.random() * 8,
-      life: 26 + Math.random() * 20,
-      color: ['#ffffff', '#cfe4ff', '#9dc4ff', '#e8f2ff'][Math.floor(Math.random() * 4)],
-      size: 1.5 + Math.random() * 2.5,
+      x: x + (game.simulationRng() - 0.5) * 26,
+      y: y - game.simulationRng() * 10,
+      vx: (game.simulationRng() - 0.5) * 9,
+      vy: -2 - game.simulationRng() * 8,
+      life: 26 + game.simulationRng() * 20,
+      color: ['#ffffff', '#cfe4ff', '#9dc4ff', '#e8f2ff'][Math.floor(game.simulationRng() * 4)],
+      size: 1.5 + game.simulationRng() * 2.5,
     });
   }
 
@@ -2425,7 +2426,7 @@ const updateLightning = (game: GameState, canvasWidth: number) => {
   // The cat walked into the strike zone during the charge: drop it and re-aim.
   if (Math.abs(L.pending.x - catX) < BOLT_SAFE_RADIUS) {
     L.pending = null;
-    L.nextStrike = 140 + Math.random() * 180;
+    L.nextStrike = 140 + game.simulationRng() * 180;
     return;
   }
   if (L.pending.charge >= L.pending.total) {
@@ -2639,7 +2640,7 @@ const GROUND_WORLD_W = 2600;
 
 
 /** Fisher-Yates on a copy, so callers never mutate the theme config. */
-const shuffled = <T,>(items: T[], rng: () => number = Math.random): T[] => {
+const shuffled = <T,>(items: T[], rng: () => number = () => 0.5): T[] => {
   const out = items.slice();
   for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -2659,7 +2660,7 @@ const SCALE_RANGE = { building: [0.62, 1.15] as const, animal: [0.6, 0.88] as co
 /** Gives a flying animal its own flight profile: heading, cruise speed, altitude,
     undulation and wingbeat. Every bird then flies its own line instead of
     gliding in lockstep with its neighbours. */
-const assignFlightProfile = (el: BackgroundElement, rng: () => number = Math.random) => {
+const assignFlightProfile = (el: BackgroundElement, rng: () => number = () => 0.5) => {
   if (!el.isSkyAnimal) {
     el.dir = 1;
     el.speed = 0;
@@ -2674,21 +2675,21 @@ const assignFlightProfile = (el: BackgroundElement, rng: () => number = Math.ran
     return;
   }
   // Real birds cross the sky at different speeds, some gliding and some fast.
-  el.dir = Math.random() < 0.5 ? -1 : 1;
-  el.speed = 26 + Math.random() * 46;
+    el.dir = rng() < 0.5 ? -1 : 1;
+  el.speed = 26 + rng() * 46;
   // A real place in the level, spread across a strip wider than the screen, so
   // a bird is born far from the cat and drifts out of view behind it.
-  el.worldX = Math.random() * SKY_WORLD_W;
+  el.worldX = rng() * SKY_WORLD_W;
   // Stay well above the cat's running lane, so birds never crowd the player.
-  el.skyY = -(140 + Math.random() * 150);
-  el.bobAmp = 5 + Math.random() * 11;
-  el.bobFreq = 0.5 + Math.random() * 1.1;
+  el.skyY = -(140 + rng() * 150);
+  el.bobAmp = 5 + rng() * 11;
+  el.bobFreq = 0.5 + rng() * 1.1;
   // A permanent climb or dive, so nobody flies on a perfectly flat line.
-  el.pitch = (Math.random() - 0.5) * 0.22;
-  el.flapRate = 0.75 + Math.random() * 0.8;
+  el.pitch = (rng() - 0.5) * 0.22;
+  el.flapRate = 0.75 + rng() * 0.8;
 };
 
-const generateBackgroundElements = (theme: string, rng: () => number = Math.random): BackgroundElement[] => {
+const generateBackgroundElements = (theme: string, rng: () => number = () => 0.5): BackgroundElement[] => {
   const elements: BackgroundElement[] = [];
   const config = getThemeConfig(theme);
   const count = 18;
@@ -2963,7 +2964,7 @@ export const PlayingView: React.FC<{
     };
   }, []);
 
-  const [stats, setStats] = useState<HudStats>({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossAngry: false, bossPhase: 0, shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
+  const [stats, setStats] = useState<HudStats>({ score: 0, progress: 0, collectedCount: 0, totalFish: 0, fishGoal: 0, ammo: 5, weather: 'SOLIGT', intensity: 'LIGHT', timeOfDay: 'NIGHT', combo: 0, levelType: 'Classic', timer: 0, miniEvent: 'NONE', xp: 0, runLevel: 1, xpNeeded: 120, xpIntoLevel: 0, multiplier: 1, streak: 0, dashReady: true, dashPct: 1, comboTimer: 0, noHit: true, nearMisses: 0, shadowCharge: 0, shadowActive: 0, shadowPasses: 0, toasts: [] as any[], bossHp: 0, bossMaxHp: 0, bossVisible: false, bossName: '', bossAngry: false, bossPhase: 0, bossCoreExposed: 0, bossTelegraph: 0, bossTelegraphTotal: 0, bossCounterHint: '', shield: false, magnet: 0, rapid: 0, coinsRun: 0, goalDist: 0, fishDir: 0 });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isMobile, setIsMobile] = useState(false);
@@ -2974,7 +2975,7 @@ export const PlayingView: React.FC<{
   const t = useT();
   const isMuted = progress.settings.muted;
 
-  const gameRef = useRef<any>(null);
+  const gameRef = useRef<GameState | null>(null);
   // Run-wide tallies. `game` is rebuilt for every level, so these cannot live
   // on it: the results screen and quests need the whole run, not just the last
   // stage. A new PlayingView (keyed by start level) starts a fresh run.
@@ -2984,6 +2985,8 @@ export const PlayingView: React.FC<{
   // One monitor per PlayingView mount; survives level changes within a run.
   const qualityRef = useRef(createQualityMonitor());
   const gameContainerRef = useRef<HTMLDivElement>(null);
+  const pauseDialogRef = useRef<HTMLDivElement>(null);
+  const pauseReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Use background music for levels 1-10. Mute + level follow the saved settings.
   useBackgroundMusic(currentLevel, isMuted, progress.settings.musicVolume, isPaused);
@@ -3028,6 +3031,43 @@ export const PlayingView: React.FC<{
   };
 
   useEffect(() => {
+    if (!isPaused) return;
+    pauseReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      pauseDialogRef.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+    });
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        togglePause();
+        return;
+      }
+      if (event.key !== 'Tab' || !pauseDialogRef.current) return;
+      const focusable = [...pauseDialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea')]
+        .filter((element) => !element.hasAttribute('aria-hidden'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', trapFocus);
+      if (pauseReturnFocusRef.current && document.contains(pauseReturnFocusRef.current)) {
+        pauseReturnFocusRef.current.focus();
+      }
+    };
+  }, [isPaused, togglePause]);
+
+  useEffect(() => {
     // Width alone misses a phone held sideways (844x390 is wider than md), so a
     // short viewport counts as mobile too.
     const syncViewport = () => {
@@ -3055,6 +3095,11 @@ export const PlayingView: React.FC<{
     const dailySeed = getDailySeed();
     const seedOffset = runMode === 'daily' ? hashSeed(dailySeed) : 0;
     const rng = makeRng(level * 104729 + 991 + seedOffset);
+    // Keep post-spawn gameplay rolls independent from layout generation. A
+    // restart therefore consumes the same simulation sequence even if a
+    // cosmetic particle path changes later.
+    const simulationRng = makeRng(level * 32452843 + 7919 + seedOffset);
+    const visualRng = makeRng(level * 49979687 + 104729 + seedOffset);
 
     // The stage's named rule. Boss stages and the two tutorial stages get
     // `none`; the daily run mixes its date seed in so every player faces the
@@ -3107,6 +3152,9 @@ export const PlayingView: React.FC<{
       runMode,
       dailySeed,
       seedOffset,
+      simulationRng,
+      visualRng,
+      simTime: 0,
       frame: 0,
       quality: FULL_QUALITY,
       bgCache: null as HTMLCanvasElement | null,
@@ -3447,7 +3495,7 @@ export const PlayingView: React.FC<{
       // A guaranteed, purpose-built arena avoids bosses spawning on random
       // floating platforms or in the middle of a level.
       const bossArenaStart = levelLength - 960;
-      game.holes = game.holes.filter((hole: any) => hole.x + hole.width <= bossArenaStart || hole.x >= levelLength - 280);
+      game.holes = game.holes.filter((hole: { x: number; y: number; width: number }) => hole.x + hole.width <= bossArenaStart || hole.x >= levelLength - 280);
       game.hazards = game.hazards.filter((hazard: any) => hazard.x < bossArenaStart || hazard.x > levelLength - 280);
       const bossPlatform = {
         x: levelLength - 720,
@@ -3473,7 +3521,7 @@ export const PlayingView: React.FC<{
         isGround: true,
         bossWalkway: true,
       };
-      game.platforms = game.platforms.filter((platform: any) =>
+      game.platforms = game.platforms.filter((platform: Platform) =>
         !platform.isGround || platform.x + platform.width <= approachStart || platform.x >= bossPlatform.x + bossPlatform.width
       );
       game.platforms.push(bossPlatform);
@@ -3493,7 +3541,7 @@ export const PlayingView: React.FC<{
         // tougher, faster and with a tighter attack rhythm each time.
         const bossTier = Math.max(1, Math.floor(level / 5));
         const totalHp = 10 + bossTier * 3 + Math.floor(level * 0.2);
-        game.enemies = game.enemies.filter((enemy: any) => enemy.x < bossArenaStart || enemy.x > levelLength - 280);
+        game.enemies = game.enemies.filter((enemy: EnemyState) => enemy.x < bossArenaStart || enemy.x > levelLength - 280);
         game.boss = {
           x: bossPlatform.x + (bossPlatform.width - 100) / 2,
           y: bossPlatform.y - 90,
@@ -3549,7 +3597,7 @@ export const PlayingView: React.FC<{
         shadow_titan: tr('MINIBOSS · TITAN'),
       };
       let miniPlat = game.platforms
-        .filter((pl: any) => pl.isGround && pl.x > levelLength * 0.35 && pl.x + pl.width < levelLength - 350 && !pl.bossArena)
+        .filter((pl: Platform) => pl.isGround && pl.x > levelLength * 0.35 && pl.x + pl.width < levelLength - 350 && !pl.bossArena)
         .sort((a: any, b: any) => b.width - a.width)[0];
       // A narrow-island level can have no wide slab at all. Build a small arena
       // so the third chapter always has its miniboss encounter.
@@ -3565,7 +3613,7 @@ export const PlayingView: React.FC<{
       }
       if (miniPlat) {
         const miniHp = 6 + Math.floor(level / 5) * 2;
-        game.enemies = game.enemies.filter((en: any) =>
+        game.enemies = game.enemies.filter((en: EnemyState) =>
           en.x < miniPlat.x - 120 || en.x > miniPlat.x + miniPlat.width + 120);
         game.boss = {
           x: miniPlat.x + (miniPlat.width - 88) / 2,
@@ -3656,7 +3704,7 @@ export const PlayingView: React.FC<{
       // square, is not a reward - it is an unavoidable hit or an impossible
       // detour. Both are rejected so the quota is always reachable.
       const overWideHole = game.holes.some((h: any) => h.width > 170 && clampedFx > h.x - 40 && clampedFx < h.x + h.width + 40);
-      const onEnemy = game.enemies.some((e: any) => Math.abs(e.x - clampedFx) < 55);
+      const onEnemy = game.enemies.some((e: EnemyState) => Math.abs(e.x - clampedFx) < 55);
 
       if (!fishCollision && !fishTooClose && !overWideHole && !onEnemy) {
         game.fishes.push({
@@ -3684,8 +3732,8 @@ export const PlayingView: React.FC<{
       for (let x = 340; x < levelLength - 260 && game.fishes.length < 6; x += 180) {
         if (game.holes.some((h: any) => x > h.x - 30 && x < h.x + h.width + 30)) continue;
         if (game.fishes.some((f: any) => Math.abs(f.x - x) < 100)) continue;
-        if (game.enemies.some((e: any) => Math.abs(e.x - x) < 55)) continue;
-        const groundPlat = game.platforms.find((pl: any) => pl.isGround && x >= pl.x && x <= pl.x + pl.width);
+        if (game.enemies.some((e: EnemyState) => Math.abs(e.x - x) < 55)) continue;
+        const groundPlat = game.platforms.find((pl: Platform) => pl.isGround && x >= pl.x && x <= pl.x + pl.width);
         const fy = (groundPlat ? groundPlat.y : groundY) - 44;
         game.fishes.push({
           x, baseX: x, y: fy, width: 24, height: 14, collected: false,
@@ -3731,7 +3779,7 @@ export const PlayingView: React.FC<{
 
       // Never stack a hazard on top of an enemy patrol spot: it turns the level
       // into an unavoidable hit.
-      const onEnemy = game.enemies.some((e: any) => Math.abs(e.x - hx) < 90 && Math.abs(e.y - (plat.y - 40)) < 70);
+      const onEnemy = game.enemies.some((e: EnemyState) => Math.abs(e.x - hx) < 90 && Math.abs(e.y - (plat.y - 40)) < 70);
       if (onEnemy) continue;
 
       const hazardRoll = rng();
@@ -3791,7 +3839,7 @@ export const PlayingView: React.FC<{
     let pickupAttempts = 0;
     while (game.pickups.length < pickupCount && pickupAttempts < 240) {
       pickupAttempts++;
-      const candidatePlatforms = game.platforms.filter((pl: any) => !pl.bossArena && pl.width > 74);
+      const candidatePlatforms = game.platforms.filter((pl: Platform) => !pl.bossArena && pl.width > 74);
       if (!candidatePlatforms.length) break;
       const pool = candidatePlatforms[Math.floor(rng() * candidatePlatforms.length)];
       const pxx = pool.x + 30 + rng() * Math.max(10, pool.width - 60);
@@ -3844,11 +3892,11 @@ export const PlayingView: React.FC<{
         const bias = 1 - Math.pow(rng(), 1 + difficultyProfile.inLevelRamp);
         const dsx = 560 + bias * Math.max(300, levelLength - 1500);
         if (dsx < 500 || dsx > levelLength - 900) continue;
-        if (game.enemies.some((en: any) => Math.abs(en.x - dsx) < 250)) continue;
+        if (game.enemies.some((en: EnemyState) => Math.abs(en.x - dsx) < 250)) continue;
         // Keep drones and shuttle platforms clear of each other's lane.
-        if (game.platforms.some((pl: any) => pl.mover && pl.mover.axis === 'h' && dsx > pl.x - 220 && dsx < pl.x + pl.width + 220)) continue;
+        if (game.platforms.some((pl: Platform) => pl.mover && pl.mover.axis === 'h' && dsx > pl.x - 220 && dsx < pl.x + pl.width + 220)) continue;
         const dsy = game.groundY - 150 - rng() * 110;
-        const anchorIdx = game.platforms.findIndex((pl: any) => dsx >= pl.x && dsx <= pl.x + pl.width);
+        const anchorIdx = game.platforms.findIndex((pl: Platform) => dsx >= pl.x && dsx <= pl.x + pl.width);
         game.enemies.push({
           x: dsx, y: dsy, width: 40, height: 30,
           velocityX: 0, type: 5,
@@ -3866,14 +3914,14 @@ export const PlayingView: React.FC<{
     // Shadow wraiths: immune to bullets, stomps and knockback. Only a Shadow
     // Shift pass dissolves them, which gives the ability a real target.
     if (level >= 6 && levelMode !== 'Boss Battle') {
-      const wraithPlats = game.platforms.filter((pl: any) =>
+      const wraithPlats = game.platforms.filter((pl: Platform) =>
         pl.isGround && pl.width > 180 && pl.x > 700 &&
         pl.x + pl.width < levelLength - 520 && !pl.bossArena);
       const wraithCount = Math.min(2, 1 + Math.floor((level - 6) / 12));
       for (let wi = 0; wi < wraithCount && wraithPlats.length; wi++) {
         const plat = wraithPlats[Math.floor(rng() * wraithPlats.length)];
         const wx = plat.x + plat.width * (0.3 + rng() * 0.4);
-        if (game.enemies.some((en: any) => Math.abs(en.x - wx) < 200)) continue;
+        if (game.enemies.some((en: EnemyState) => Math.abs(en.x - wx) < 200)) continue;
         game.enemies.push({
           x: wx, y: plat.y - 44, width: 42, height: 44,
           velocityX: 0, direction: 1, type: SHADOW_ENEMY_TYPE,
@@ -3892,7 +3940,7 @@ export const PlayingView: React.FC<{
     let springAttempts = 0;
     while (game.springPads.length < springCount && springAttempts < 90) {
       springAttempts++;
-      const springPlats = game.platforms.filter((pl: any) =>
+      const springPlats = game.platforms.filter((pl: Platform) =>
         pl.isGround && !pl.bossWalkway && !pl.bossArena && pl.width >= 150 &&
         pl.x > 420 && pl.x + pl.width < levelLength - (level % 5 === 0 ? 1500 : 620),
       );
@@ -3901,10 +3949,10 @@ export const PlayingView: React.FC<{
       const sxx = plat2.x + 24 + rng() * Math.max(20, plat2.width - 92);
       if (game.springPads.some((s: any) => Math.abs(s.x - sxx) < 480)) continue;
       if (game.hazards.some((h: any) => Math.abs(h.x - sxx) < 160)) continue;
-      if (game.enemies.some((en: any) => Math.abs(en.x - sxx) < 170)) continue;
+      if (game.enemies.some((en: EnemyState) => Math.abs(en.x - sxx) < 170)) continue;
       if (game.pickups.some((pk: any) => Math.abs(pk.x - sxx) < 160)) continue;
       // A pad needs empty sky above it: never inside a platform body.
-      if (game.platforms.some((pl: any) => !pl.isGround && pl.y < plat2.y && pl.y + pl.height > plat2.y && sxx > pl.x - 40 && sxx < pl.x + pl.width + 40)) continue;
+      if (game.platforms.some((pl: Platform) => !pl.isGround && pl.y < plat2.y && pl.y + pl.height > plat2.y && sxx > pl.x - 40 && sxx < pl.x + pl.width + 40)) continue;
       game.springPads.push({ x: sxx, y: plat2.y - 12, width: 46, height: 12, press: 0 });
     }
 
@@ -3943,7 +3991,7 @@ export const PlayingView: React.FC<{
       // A second, elevated shadow ledge makes Shift a route choice rather than
       // only a panic button. It is deliberately optional and never carries the
       // mandatory fish quota, so the normal path remains fair.
-      const anchor = game.platforms.find((pl: any) =>
+      const anchor = game.platforms.find((pl: Platform) =>
         pl.isGround && !pl.bossArena && !pl.bossWalkway && pl.x > 900 && pl.x < levelLength - 1200 && pl.width > 170,
       );
       if (anchor) {
@@ -3963,7 +4011,7 @@ export const PlayingView: React.FC<{
     // Shadow collectibles live on the alternate ledges and never count toward
     // the mandatory fish quota. They are valuable enough to make a Shift route
     // a deliberate choice rather than a cosmetic colour filter.
-    game.shadowFishes = game.shadowRoute.slice(0, 3).map((route: any, index: number) => ({
+    game.shadowFishes = game.shadowRoute.slice(0, 3).map((route: Platform, index: number) => ({
       x: route.x + route.width * (0.28 + (index % 2) * 0.42),
       y: route.y - 30,
       baseY: route.y - 30,
@@ -4003,7 +4051,7 @@ export const PlayingView: React.FC<{
     gameRef.current.player.jumpHeld = false;
   };
 
-  const tryPerformJump = (game: any) => {
+  const tryPerformJump = (game: GameState) => {
     const p = game.player;
     if (!p.isJumping) {
       p.velocityY = -p.jumpPower;
@@ -4019,11 +4067,11 @@ export const PlayingView: React.FC<{
       p.stretch = 1.4;
       for (let i = 0; i < 10; i++) {
         game.particles.push({
-          x: p.x + p.width / 2 + (Math.random() - 0.5) * 24,
+          x: p.x + p.width / 2 + (game.visualRng() - 0.5) * 24,
           y: p.y + p.height,
-          vx: (Math.random() - 0.5) * 3,
-          vy: Math.random() * 1.5,
-          life: 22, color: p.accent, size: Math.random() * 3 + 1.5
+          vx: (game.visualRng() - 0.5) * 3,
+          vy: game.visualRng() * 1.5,
+          life: 22, color: p.accent, size: game.visualRng() * 3 + 1.5
         });
       }
       haptic('doubleJump', progress.settings.haptics);
@@ -4039,7 +4087,7 @@ export const PlayingView: React.FC<{
    * A jump executed while touching a solid pillar: launch diagonally away from
    * the wall, restore the double jump and lock the task to avoid stick cycling.
    */
-  const doWallJump = (game: any) => {
+  const doWallJump = (game: GameState) => {
     const p = game.player;
     if (!p.wallDir) return false;
     p.velocityY = -p.jumpPower * 0.98;
@@ -4053,10 +4101,10 @@ export const PlayingView: React.FC<{
     for (let i = 0; i < 9; i++) {
       game.particles.push({
         x: p.wallDir === 1 ? p.x + p.width : p.x,
-        y: p.y + p.height * (0.2 + Math.random() * 0.7),
-        vx: -p.wallDir * (1.2 + Math.random() * 2.4),
-        vy: (Math.random() - 0.4) * 2,
-        life: 20, color: 'rgba(190, 225, 255, 0.9)', size: Math.random() * 3 + 1.2,
+        y: p.y + p.height * (0.2 + game.visualRng() * 0.7),
+        vx: -p.wallDir * (1.2 + game.visualRng() * 2.4),
+        vy: (game.visualRng() - 0.4) * 2,
+        life: 20, color: 'rgba(190, 225, 255, 0.9)', size: game.visualRng() * 3 + 1.2,
       });
     }
     haptic('wallJump', progress.settings.haptics);
@@ -4095,17 +4143,17 @@ export const PlayingView: React.FC<{
     for (let i = 0; i < 14; i++) {
       game.particles.push({
         x: p.x + p.width / 2 - p.dashDir * 10,
-        y: p.y + p.height / 2 + (Math.random() - 0.5) * 30,
-        vx: -p.dashDir * (2 + Math.random() * 4),
-        vy: (Math.random() - 0.5) * 2,
-        life: 26, color: '#2bee79', size: Math.random() * 4 + 2
+        y: p.y + p.height / 2 + (game.visualRng() - 0.5) * 30,
+        vx: -p.dashDir * (2 + game.visualRng() * 4),
+        vy: (game.visualRng() - 0.5) * 2,
+        life: 26, color: '#2bee79', size: game.visualRng() * 4 + 2
       });
     }
     haptic('dash', progress.settings.haptics);
     AudioEngine.playDash();
   };
 
-  const registerCombo = (game: any, baseScore: number, x: number, y: number) => {
+  const registerCombo = (game: GameState, baseScore: number, x: number, y: number) => {
     game.combo = (game.combo || 0) + 1;
     game.comboTimer = 150;
     game.bestComboInRun = Math.max(game.bestComboInRun || 0, game.combo);
@@ -4141,7 +4189,7 @@ export const PlayingView: React.FC<{
           x, y,
           vx: Math.cos(a) * 3.4,
           vy: Math.sin(a) * 3.4,
-          life: 18, color: i % 2 ? '#ffd166' : '#7ef7c2', size: 2.2 + Math.random() * 2,
+          life: 18, color: i % 2 ? '#ffd166' : '#7ef7c2', size: 2.2 + game.visualRng() * 2,
         });
       }
     }
@@ -4162,7 +4210,7 @@ export const PlayingView: React.FC<{
   };
 
   /** Awards XP and rolls a level-up, which is the core of the reward loop. */
-  const grantXp = (game: any, amount: number) => {
+  const grantXp = (game: GameState, amount: number) => {
     game.xp = (game.xp || 0) + amount;
     game.xpIntoLevel = (game.xpIntoLevel || 0) + amount;
     while (game.xpIntoLevel >= game.xpNeeded) {
@@ -4177,20 +4225,20 @@ export const PlayingView: React.FC<{
   };
 
   /** Queue a short celebratory banner drawn on the canvas. */
-  const pushToast = (game: any, text: string, color: string) => {
+  const pushToast = (game: GameState, text: string, color: string) => {
     game.toasts.push({ text, color, life: 90, maxLife: 90 });
     if (game.toasts.length > 3) game.toasts.shift();
   };
 
   /** Coin payout helper that keeps the counter in sync with the HUD. */
-  const awardCoins = (game: any, amount: number) => {
+  const awardCoins = (game: GameState, amount: number) => {
     game.coinsThisLevel = (game.coinsThisLevel || 0) + amount;
     addCoins(amount);
   };
 
   /** Daily contracts are run-local: a shared seed gives everyone the same
       goals, while the rewards are paid once when a goal flips complete. */
-  const bumpDailyContract = (game: any, kind: 'fish' | 'shadow' | 'stomp' | 'clean', amount = 1) => {
+  const bumpDailyContract = (game: GameState, kind: 'fish' | 'shadow' | 'stomp' | 'clean', amount = 1) => {
     if (game.runMode !== 'daily' || !game.dailyContracts?.length) return;
     const progress = game.dailyContractProgress || createContractProgress();
     const before = progress[kind] || 0;
@@ -4207,7 +4255,7 @@ export const PlayingView: React.FC<{
 
   /** One reward path for every way of defeating a boss: bullets, Shadow Shift
       and the new ammo-free stomp route all pay the same clear reward. */
-  const finishBoss = (game: any, boss: any) => {
+  const finishBoss = (game: GameState, boss: BossState) => {
     if (boss.defeatRegistered) return;
     boss.defeatRegistered = true;
     const rewardCoins = 50 + (boss.phase || 0) * 20;
@@ -4220,13 +4268,13 @@ export const PlayingView: React.FC<{
     game.slowMo = 45;
     for (let pi = 0; pi < 40; pi++) {
       game.particles.push({
-        x: boss.x + Math.random() * boss.width,
-        y: boss.y + Math.random() * boss.height,
-        vx: (Math.random() - 0.5) * 18,
-        vy: (Math.random() - 0.5) * 18,
+        x: boss.x + game.visualRng() * boss.width,
+        y: boss.y + game.visualRng() * boss.height,
+        vx: (game.visualRng() - 0.5) * 18,
+        vy: (game.visualRng() - 0.5) * 18,
         life: 50,
-        color: ['#ff6b35', '#ffcc00', '#ff2222', '#ffffff'][Math.floor(Math.random() * 4)],
-        size: Math.random() * 8 + 3,
+        color: ['#ff6b35', '#ffcc00', '#ff2222', '#ffffff'][Math.floor(game.visualRng() * 4)],
+        size: game.visualRng() * 8 + 3,
       });
     }
     pushToast(game, tr('{name} BESEGRAD! +{n} MYNT', { name: boss.name, n: rewardCoins }), '#ff9f43');
@@ -4240,7 +4288,7 @@ export const PlayingView: React.FC<{
      defeat, skim past danger) instead of by waiting or paying. */
   const SHADOW_DURATION = 240; // frames at 60 Hz = 4 seconds
 
-  const gainShadowCharge = (game: any, amount: number) => {
+  const gainShadowCharge = (game: GameState, amount: number) => {
     // No charging while transformed: otherwise a dense crowd would chain
     // shifts forever and the ability would never have a downtime.
     if (!game || game.shadowActive > 0) return;
@@ -4281,7 +4329,7 @@ export const PlayingView: React.FC<{
         x: p.x + p.width / 2 + Math.cos(a) * 18,
         y: p.y + p.height / 2 + Math.sin(a) * 26,
         vx: Math.cos(a) * 4, vy: Math.sin(a) * 4 - 1,
-        life: 34, color: i % 2 ? '#c084fc' : '#6d28d9', size: Math.random() * 3 + 2,
+        life: 34, color: i % 2 ? '#c084fc' : '#6d28d9', size: game.visualRng() * 3 + 2,
       });
     }
     pushToast(game, tr('SKUGGSKIFTE! · {n}s', { n: 4 }), '#c084fc');
@@ -4305,7 +4353,7 @@ export const PlayingView: React.FC<{
 
   /** Passing through an enemy while shifted dissolves it instead of hurting
       the cat. Uses the same reward path as a stomp, with its own colour. */
-  const shadowPassKill = (game: any, e: any) => {
+  const shadowPassKill = (game: GameState, e: EnemyState) => {
     const killX = e.x + e.width / 2;
     const killY = e.y + e.height / 2;
     e.x = -1000;
@@ -4320,8 +4368,8 @@ export const PlayingView: React.FC<{
     for (let i = 0; i < 18; i++) {
       game.particles.push({
         x: killX, y: killY,
-        vx: (Math.random() - 0.5) * 11, vy: (Math.random() - 0.5) * 11,
-        life: 32, color: i % 2 ? '#c084fc' : '#ffffff', size: Math.random() * 4 + 2,
+        vx: (game.visualRng() - 0.5) * 11, vy: (game.visualRng() - 0.5) * 11,
+        life: 32, color: i % 2 ? '#c084fc' : '#ffffff', size: game.visualRng() * 4 + 2,
       });
     }
     game.floatingTexts.push({ x: killX, y: killY - 12, text: tr('SKUGGPASS +300'), life: 45, color: '#c084fc' });
@@ -4335,63 +4383,57 @@ export const PlayingView: React.FC<{
     AudioEngine.playExplosion();
   };
 
-  const persistRunSummary = (game: any, perfectLevel: boolean) => {
-    try {
-      localStorage.setItem('shadow_paw_last_run', JSON.stringify({
-        enemiesDefeated: game.enemiesDefeatedInRun || 0,
-        levelsCompleted: game.levelsCompletedInRun || 0,
-        bestCombo: game.bestComboInRun || 0,
-        bossDefeated: game.bossDefeatedInRun || false,
-        perfectLevel,
-        bestStreak: game.bestStreak || 0,
-        nearMisses: Math.max(game.nearMisses || 0, runTotalsRef.current.nearMisses),
-        shadowPasses: runTotalsRef.current.shadowPasses,
-        shadowShifts: runTotalsRef.current.shadowShifts,
-        fishesCollected: Math.max(game.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected),
-        noHit: !!game.noHit,
-        runLevel: game.runLevel || 1,
-        coins: game.coinsThisLevel || 0,
-        deaths: game.deathsInRun || 0,
-        score: game.score || 0,
-        runMode: game.runMode || 'campaign',
-        dailySeed: game.dailySeed || '',
-        level: game.level || 1,
-        dailyContracts: game.dailyContractProgress || null,
-        dailyContractBonus: game.dailyContractBonus || 0,
-      }));
-      if (game.runMode === 'daily' && game.ghostTrace?.length) {
-        saveDailyGhost(game.dailySeed || getDailySeed(), game.level || 1, game.ghostTrace);
-      }
-    } catch {
-      // Private browsing can reject writes; losing the summary must not stop
-      // the level-complete or game-over screen from appearing.
+  const persistRunSummary = (game: GameState, perfectLevel: boolean) => {
+    writeJson('shadow_paw_last_run', {
+      enemiesDefeated: game.enemiesDefeatedInRun || 0,
+      levelsCompleted: game.levelsCompletedInRun || 0,
+      bestCombo: game.bestComboInRun || 0,
+      bossDefeated: game.bossDefeatedInRun || false,
+      perfectLevel,
+      bestStreak: game.bestStreak || 0,
+      nearMisses: Math.max(game.nearMisses || 0, runTotalsRef.current.nearMisses),
+      shadowPasses: runTotalsRef.current.shadowPasses,
+      shadowShifts: runTotalsRef.current.shadowShifts,
+      fishesCollected: Math.max(game.totalCollectedInLevel || 0, runTotalsRef.current.fishesCollected),
+      noHit: !!game.noHit,
+      runLevel: game.runLevel || 1,
+      coins: game.coinsThisLevel || 0,
+      deaths: game.deathsInRun || 0,
+      score: game.score || 0,
+      runMode: game.runMode || 'campaign',
+      dailySeed: game.dailySeed || '',
+      level: game.level || 1,
+      dailyContracts: game.dailyContractProgress || null,
+      dailyContractBonus: game.dailyContractBonus || 0,
+    });
+    if (game.runMode === 'daily' && game.ghostTrace?.length) {
+      saveDailyGhost(game.dailySeed || getDailySeed(), game.level || 1, game.ghostTrace);
     }
   };
 
   const trackDeathCause = (cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
-    try {
-      const key = 'shadow_paw_telemetry';
-      const prev = JSON.parse(localStorage.getItem(key) || '{}');
-      const next = {
-        ...prev,
-        totalRuns: (prev.totalRuns || 0) + 1,
-        deathsByCause: {
-          enemy: (prev.deathsByCause?.enemy || 0) + (cause === 'enemy' ? 1 : 0),
-          hazard: (prev.deathsByCause?.hazard || 0) + (cause === 'hazard' ? 1 : 0),
-          hole: (prev.deathsByCause?.hole || 0) + (cause === 'hole' ? 1 : 0),
-          timer: (prev.deathsByCause?.timer || 0) + (cause === 'timer' ? 1 : 0),
-          boss: (prev.deathsByCause?.boss || 0) + (cause === 'boss' ? 1 : 0),
-        },
-      };
-      localStorage.setItem(key, JSON.stringify(next));
-    } catch {
-      // ignore telemetry failures
-    }
+    const key = 'shadow_paw_telemetry';
+    const raw = readJson<unknown>(key, {});
+    const prev = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? raw as { totalRuns?: number; deathsByCause?: Record<string, number> }
+      : {};
+    const next = {
+      ...prev,
+      totalRuns: (Number(prev.totalRuns) || 0) + 1,
+      deathsByCause: {
+        enemy: (Number(prev.deathsByCause?.enemy) || 0) + (cause === 'enemy' ? 1 : 0),
+        hazard: (Number(prev.deathsByCause?.hazard) || 0) + (cause === 'hazard' ? 1 : 0),
+        hole: (Number(prev.deathsByCause?.hole) || 0) + (cause === 'hole' ? 1 : 0),
+        timer: (Number(prev.deathsByCause?.timer) || 0) + (cause === 'timer' ? 1 : 0),
+        boss: (Number(prev.deathsByCause?.boss) || 0) + (cause === 'boss' ? 1 : 0),
+      },
+    };
+    writeJson(key, next);
   };
 
   /** Single exit path for a lost run, so every death cause is recorded and the
       same summary reaches the game-over screen. */
-  const endRun = (game: any, cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
+  const endRun = (game: GameState, cause: 'enemy' | 'hazard' | 'hole' | 'timer' | 'boss') => {
     if (!game.running) return;
     game.running = false;
     trackDeathCause(cause);
@@ -4400,7 +4442,7 @@ export const PlayingView: React.FC<{
     onEndRef.current(game.score, fishes);
   };
 
-  const leaveLifeEcho = (game: any, x: number, y: number, cause: string) => {
+  const leaveLifeEcho = (game: GameState, x: number, y: number, cause: string) => {
     if (!game.lifeEchoes) game.lifeEchoes = [];
     game.lifeEchoes.push({
       x, y, cause,
@@ -4414,10 +4456,10 @@ export const PlayingView: React.FC<{
       it inside the hazard that caused the hit. The dropped echo remains at the
       old position, making the lost life a route decision: press on, or turn
       back for its bonus before the short recovery window closes. */
-  const respawnAtCheckpoint = (game: any) => {
+  const respawnAtCheckpoint = (game: GameState) => {
     const anchorX = game.checkpointX && game.checkpointX > 120 ? game.checkpointX : 100;
     const safePlatforms = game.platforms
-      .filter((pl: any) => pl.isGround && !pl.chasm && pl.x < anchorX + 40 && pl.x + pl.width > anchorX - 40)
+      .filter((pl: Platform) => pl.isGround && !pl.chasm && pl.x < anchorX + 40 && pl.x + pl.width > anchorX - 40)
       .sort((a: any, b: any) => b.x - a.x);
     const safe = safePlatforms[0];
     game.player.x = safe
@@ -4440,7 +4482,7 @@ export const PlayingView: React.FC<{
    * power-up protects against every hazard in the game, knockback is consistent,
    * and a new damage source cannot forget to handle death.
    */
-  const hurtPlayer = (game: any, cause: 'enemy' | 'hazard' | 'boss', opts?: { knock?: number; lift?: number }) => {
+  const hurtPlayer = (game: GameState, cause: 'enemy' | 'hazard' | 'boss', opts?: { knock?: number; lift?: number }) => {
     const p = game.player;
     if (!p || p.invincible) return 'ignored';
     const lift = opts?.lift ?? 5;
@@ -4461,7 +4503,7 @@ export const PlayingView: React.FC<{
           y: p.y + p.height / 2 + Math.sin(a) * 34,
           vx: Math.cos(a) * 4.5,
           vy: Math.sin(a) * 4.5 - 1,
-          life: 30, color: i % 2 ? '#7ee7ff' : '#ffffff', size: Math.random() * 3 + 2,
+          life: 30, color: i % 2 ? '#7ee7ff' : '#ffffff', size: game.visualRng() * 3 + 2,
         });
       }
       pushToast(game, tr('SKÖLDEN TOG SMÄLLEN!'), '#7ee7ff');
@@ -4505,8 +4547,8 @@ export const PlayingView: React.FC<{
     for (let i = 0; i < 20; i++) {
       game.particles.push({
         x: p.x + p.width / 2, y: p.y + p.height / 2,
-        vx: (Math.random() - 0.5) * 9, vy: (Math.random() - 0.5) * 9,
-        life: 26, color: i % 3 ? '#ff5470' : '#ffd166', size: Math.random() * 4 + 2,
+        vx: (game.visualRng() - 0.5) * 9, vy: (game.visualRng() - 0.5) * 9,
+        life: 26, color: i % 3 ? '#ff5470' : '#ffd166', size: game.visualRng() * 4 + 2,
       });
     }
     haptic('damage', progress.settings.haptics);
@@ -4517,7 +4559,7 @@ export const PlayingView: React.FC<{
   };
 
   /** Applies a collected power-up and returns the message shown to the player. */
-  const applyPickup = (game: any, pickup: any) => {
+  const applyPickup = (game: GameState, pickup: any) => {
     const p = game.player;
     let label = '';
     let color = '#7ee7ff';
@@ -4556,13 +4598,13 @@ export const PlayingView: React.FC<{
         label = '+100';
     }
     for (let i = 0; i < 22; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const speed = 1 + Math.random() * 4;
+      const a = game.visualRng() * Math.PI * 2;
+      const speed = 1 + game.visualRng() * 4;
       game.particles.push({
         x: pickup.x + 16, y: pickup.y + 16,
         vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 1,
-        life: 26 + Math.random() * 16, color: i % 3 === 0 ? '#ffffff' : color,
-        size: Math.random() * 3.5 + 1.5,
+        life: 26 + game.visualRng() * 16, color: i % 3 === 0 ? '#ffffff' : color,
+        size: game.visualRng() * 3.5 + 1.5,
       });
     }
     game.floatingTexts.push({ x: pickup.x + 16, y: pickup.y, text: label, life: 60, color });
@@ -4707,10 +4749,13 @@ export const PlayingView: React.FC<{
     const game = setupLevel(currentLevel, totalScore);
     if (!game) return;
     gameRef.current = game;
-    // Debug handles the automated play-test uses to inspect live state and jump
-    // between stages. They expose nothing the player can abuse in a local game.
-    (window as any).__SP = game;
-    (window as any).__SP_NEXT = startNextLevel;
+    // QA handles are available in development and on an explicit `?qa=1` build
+    // probe only. Do not publish a mutable game-state API in the normal bundle.
+    const debugApiEnabled = new URLSearchParams(window.location.search).get('qa') === '1';
+    if (debugApiEnabled) {
+      (window as any).__SP = game;
+      (window as any).__SP_NEXT = startNextLevel;
+    }
 
     // Convert a pointer position in the CSS-scaled canvas into the stage
     // coordinate system the game draws in. The base camera zoom sits between
@@ -4743,7 +4788,7 @@ export const PlayingView: React.FC<{
       // key, otherwise rolling from → to D would dash by accident. Facing is
       // forced forward because the movement step has not run yet this frame.
       if ((e.keyCode === 39 || e.keyCode === 68) && !e.repeat) {
-        const now = performance.now();
+        const now = game.simTime * 1000;
         const lastTap = game.lastForwardTap || { code: 0, at: 0 };
         if (lastTap.code === e.keyCode && now - lastTap.at < 280) {
           if (game.player) game.player.facing = 1;
@@ -4766,56 +4811,60 @@ export const PlayingView: React.FC<{
       fireBullet(p.x, p.y);
     };
 
-    // Touch controls for mobile
-    const handleTouchStart = (e: TouchEvent) => {
-      e.preventDefault();
-      skipIntro();
-      const touch = e.touches[0];
-      const p = screenToStage(touch.clientX, touch.clientY);
-
-      // Jump on left half of screen
-      if (p.x < canvas.width / 2) {
-        triggerJump();
-      } else {
-        // Shoot on right half of screen
-        fireBullet(p.x, p.y);
+    // Pointer input is used for touch, pen and future gamepad-like browser
+    // surfaces. Pointer capture prevents a finger leaving the canvas from
+    // leaving A/D stuck down, and pointercancel covers OS gestures/app switches.
+    const activePointers = new Set<number>();
+    const releasePointerMovement = (pointerId: number) => {
+      activePointers.delete(pointerId);
+      if (!activePointers.size) {
+        setKeyState(65, false);
+        setKeyState(68, false);
       }
     };
-
-    const handleTouchMove = (e: TouchEvent) => {
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') return;
       e.preventDefault();
-      const touch = e.touches[0];
-      const p = screenToStage(touch.clientX, touch.clientY);
-      const touchX = p.x;
-
-      // Move left/right based on touch position
-      if (touchX < canvas.width * 0.3) {
-        setKeyState(65, true); // A
-        setKeyState(68, false); // D
-      } else if (touchX > canvas.width * 0.7) {
-        setKeyState(68, true); // D
-        setKeyState(65, false); // A
+      skipIntro();
+      activePointers.add(e.pointerId);
+      canvas.setPointerCapture?.(e.pointerId);
+      const p = screenToStage(e.clientX, e.clientY);
+      if (p.x < canvas.width / 2) triggerJump();
+      else fireBullet(p.x, p.y);
+    };
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!activePointers.has(e.pointerId)) return;
+      e.preventDefault();
+      const p = screenToStage(e.clientX, e.clientY);
+      if (p.x < canvas.width * 0.3) {
+        setKeyState(65, true);
+        setKeyState(68, false);
+      } else if (p.x > canvas.width * 0.7) {
+        setKeyState(68, true);
+        setKeyState(65, false);
       } else {
         setKeyState(65, false);
         setKeyState(68, false);
       }
     };
-
-    const handleTouchEnd = (e: TouchEvent) => {
+    const handlePointerUp = (e: PointerEvent) => {
       e.preventDefault();
-      setKeyState(65, false);
-      setKeyState(68, false);
+      releasePointerMovement(e.pointerId);
+      if (canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    };
+    const handlePointerCancel = (e: PointerEvent) => {
+      releasePointerMovement(e.pointerId);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     canvas.addEventListener('mousedown', handleMouseDown);
 
-    // Add touch events for mobile
     if (isTouchDevice) {
-      canvas.addEventListener('touchstart', handleTouchStart);
-      canvas.addEventListener('touchmove', handleTouchMove);
-      canvas.addEventListener('touchend', handleTouchEnd);
+      canvas.addEventListener('pointerdown', handlePointerDown, { passive: false });
+      canvas.addEventListener('pointermove', handlePointerMove, { passive: false });
+      canvas.addEventListener('pointerup', handlePointerUp, { passive: false });
+      canvas.addEventListener('pointercancel', handlePointerCancel);
     }
 
     let animationId: number;
@@ -4863,6 +4912,7 @@ export const PlayingView: React.FC<{
       if (game.senseTimer > 0) game.senseTimer--;
       if (game.senseCooldown > 0) game.senseCooldown--;
       game.frame = (game.frame || 0) + 1;
+      game.simTime = game.frame / 60;
       if (game.runMode === 'daily' && game.frame % 6 === 0 && game.ghostTrace.length < 2400) {
         game.ghostTrace.push({
           frame: game.frame,
@@ -4904,7 +4954,7 @@ export const PlayingView: React.FC<{
       // Moving platforms step first, so a rider is carried along before physics
       // recomputes its velocity. The lift re-derives its rectangle from the
       // sine phase, which is why `baseX`/`baseY` store the resting centre.
-      game.platforms.forEach((plat: any) => {
+      game.platforms.forEach((plat: Platform) => {
         if (!plat.mover) return;
         const mv = plat.mover;
         mv.phase += mv.speed;
@@ -4968,10 +5018,10 @@ export const PlayingView: React.FC<{
 
       // Constant wind from the twist, plus a gusting surge during the event.
       if (tp.windAccel) {
-        p.velocityX += tp.windAccel * (1 + 0.35 * Math.sin(Date.now() / 340));
+        p.velocityX += tp.windAccel * (1 + 0.35 * Math.sin(game.simTime * 1000 / 340));
       }
       if (game.surprise?.id === 'gust') {
-        p.velocityX += 0.075 + Math.sin(Date.now() / 180) * 0.16;
+        p.velocityX += 0.075 + Math.sin(game.simTime * 1000 / 180) * 0.16;
       }
 
       // Clamp to level bounds so the cat can't run out of the world.
@@ -5034,10 +5084,10 @@ export const PlayingView: React.FC<{
         if (p.wallSlideTick === 0) {
           game.particles.push({
             x: p.wallDir === 1 ? p.x + p.width + 2 : p.x - 2,
-            y: p.y + p.height * 0.35 + Math.random() * p.height * 0.5,
-            vx: -p.wallDir * (0.6 + Math.random()),
-            vy: 1 + Math.random(),
-            life: 16, color: 'rgba(200, 225, 255, 0.8)', size: Math.random() * 2 + 1,
+            y: p.y + p.height * 0.35 + game.visualRng() * p.height * 0.5,
+            vx: -p.wallDir * (0.6 + game.visualRng()),
+            vy: 1 + game.visualRng(),
+            life: 16, color: 'rgba(200, 225, 255, 0.8)', size: game.visualRng() * 2 + 1,
           });
         }
       }
@@ -5059,7 +5109,7 @@ export const PlayingView: React.FC<{
 
       // Blinking
       if (!game.player.isBlinking) {
-        if (Math.random() < 0.008) {
+        if (game.visualRng() < 0.008) {
           game.player.isBlinking = true;
           game.player.blinkTimer = 10;
         }
@@ -5072,7 +5122,7 @@ export const PlayingView: React.FC<{
       game.bullets = game.bullets.filter((b: any) => b.life > 0);
       game.bullets.forEach((b: any) => {
         b.x += b.vx; b.y += b.vy; b.life--;
-        game.enemies.forEach((e: any) => {
+        game.enemies.forEach((e: EnemyState) => {
           // A spent bullet must not carry on through a second overlapping enemy.
           if (b.life <= 0 || e.isShadow) return;
           if (e.x < b.x + b.radius && e.x + e.width > b.x - b.radius && e.y < b.y + b.radius && e.y + e.height > b.y - b.radius) {
@@ -5095,8 +5145,8 @@ export const PlayingView: React.FC<{
             for (let i = 0; i < 15; i++) {
               game.particles.push({
                 x: killX, y: killY,
-                vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
-                life: 30, color: '#ff2222', size: Math.random() * 4 + 2
+                vx: (game.visualRng() - 0.5) * 10, vy: (game.visualRng() - 0.5) * 10,
+                life: 30, color: '#ff2222', size: game.visualRng() * 4 + 2
               });
             }
             // Floating score text
@@ -5125,8 +5175,8 @@ export const PlayingView: React.FC<{
             for (let pi = 0; pi < 12; pi++) {
               game.particles.push({
                 x: boss.x + boss.width/2, y: boss.y + boss.height/2,
-                vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12,
-                life: 25, color: bossCol, size: Math.random()*5+2
+                vx: (game.visualRng()-0.5)*12, vy: (game.visualRng()-0.5)*12,
+                life: 25, color: bossCol, size: game.visualRng()*5+2
               });
             }
             game.floatingTexts.push({
@@ -5248,9 +5298,9 @@ export const PlayingView: React.FC<{
         const def = EVENTS.meteor;
         const elapsed = def.warning + def.duration - game.surprise.timer;
         if (elapsed > def.warning && game.frame % 26 === 0) {
-          const mx = game.player.x + 220 + Math.random() * 420;
+          const mx = game.player.x + 220 + game.simulationRng() * 420;
           game.meteors = game.meteors || [];
-          game.meteors.push({ x: mx, y: -40, vy: 5 + Math.random() * 2.5, r: 12 + Math.random() * 8, life: 120 });
+          game.meteors.push({ x: mx, y: -40, vy: 5 + game.simulationRng() * 2.5, r: 12 + game.simulationRng() * 8, life: 120 });
         }
       }
       (game.meteors || []).forEach((m: any) => {
@@ -5265,10 +5315,10 @@ export const PlayingView: React.FC<{
           for (let i = 0; i < 16; i++) {
             game.particles.push({
               x: m.x, y: Math.min(m.y, game.groundY),
-              vx: (Math.random() - 0.5) * 8,
-              vy: -Math.random() * 6,
+              vx: (game.visualRng() - 0.5) * 8,
+              vy: -game.visualRng() * 6,
               life: 26, color: i % 3 ? '#ff9f43' : '#ffd166',
-              size: 2 + Math.random() * 3,
+              size: 2 + game.visualRng() * 3,
             });
           }
           AudioEngine.playExplosion();
@@ -5285,11 +5335,11 @@ export const PlayingView: React.FC<{
         const elapsed = def.warning + def.duration - game.surprise.timer;
         if (elapsed > def.warning && game.frame % 60 === 0) {
           game.enemies.push({
-            x: game.player.x + 620 + Math.random() * 180,
-            y: game.groundY - 170 - Math.random() * 90,
+            x: game.player.x + 620 + game.simulationRng() * 180,
+            y: game.groundY - 170 - game.simulationRng() * 90,
             width: 40, height: 30, velocityX: 0, type: 5,
             platform: 0, baseY: game.groundY - 170,
-            hover: Math.random() * Math.PI * 2, aggroTo: true,
+            hover: game.simulationRng() * Math.PI * 2, aggroTo: true,
             shootTimer: 0, chargeTimer: 0,
           });
         }
@@ -5310,7 +5360,7 @@ export const PlayingView: React.FC<{
           }
           if (p.y > canvas.height) {
             p.y = -20;
-            p.x = Math.random() * canvas.width;
+            p.x = game.visualRng() * canvas.width;
           }
         }
       });
@@ -5352,7 +5402,7 @@ export const PlayingView: React.FC<{
       game.holes.forEach(hole => {
         // A shadow bridge temporarily replaces the gap below it. Without this
         // gate the hole check wins before the bridge can catch the cat.
-        const bridged = game.shadowActive > 0 && game.shadowRoute?.some((route: any) =>
+        const bridged = game.shadowActive > 0 && game.shadowRoute?.some((route: Platform) =>
           route.shadowGate && playerFeetX > route.x && playerFeetX < route.x + route.width
           && playerFeetY >= route.y - 36 && playerFeetY <= route.y + 44,
         );
@@ -5401,13 +5451,13 @@ export const PlayingView: React.FC<{
               for (let i = 0; i < puffs; i++) {
                 const side = i % 2 === 0 ? -1 : 1;
                 game.particles.push({
-                  x: game.player.x + game.player.width / 2 + side * (6 + Math.random() * 16),
+                  x: game.player.x + game.player.width / 2 + side * (6 + game.visualRng() * 16),
                   y: game.player.y + game.player.height - 2,
-                  vx: side * (1.2 + Math.random() * 2.6),
-                  vy: -0.6 - Math.random() * 1.6,
-                  life: 14 + Math.round(Math.random() * 10),
+                  vx: side * (1.2 + game.visualRng() * 2.6),
+                  vy: -0.6 - game.visualRng() * 1.6,
+                  life: 14 + Math.round(game.visualRng() * 10),
                   color: i % 3 === 0 ? dustPal.grass : 'rgba(245,250,238,0.85)',
-                  size: 1.8 + Math.random() * 3.4,
+                  size: 1.8 + game.visualRng() * 3.4,
                 });
               }
               // A quick expanding ring sells the impact without a shake.
@@ -5444,11 +5494,11 @@ export const PlayingView: React.FC<{
           game.zoomPunch = Math.max(game.zoomPunch, 7);
           for (let i = 0; i < 12; i++) {
             game.particles.push({
-              x: s.x + s.width / 2 + (Math.random() - 0.5) * s.width,
+              x: s.x + s.width / 2 + (game.visualRng() - 0.5) * s.width,
               y: s.y,
-              vx: (Math.random() - 0.5) * 6,
-              vy: -Math.random() * 4 - 1,
-              life: 24, color: '#7ee7ff', size: Math.random() * 3.5 + 1.5,
+              vx: (game.visualRng() - 0.5) * 6,
+              vy: -game.visualRng() * 4 - 1,
+              life: 24, color: '#7ee7ff', size: game.visualRng() * 3.5 + 1.5,
             });
           }
           gainShadowCharge(game, 5);
@@ -5578,8 +5628,8 @@ export const PlayingView: React.FC<{
               for (let i = 0; i < 15; i++) {
                 game.particles.push({
                   x: enemyCenterXBeforeRemove, y: enemyCenterYBeforeRemove,
-                  vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
-                  life: 30, color: '#ff8800', size: Math.random() * 4 + 2
+                  vx: (game.visualRng() - 0.5) * 10, vy: (game.visualRng() - 0.5) * 10,
+                  life: 30, color: '#ff8800', size: game.visualRng() * 4 + 2
                 });
               }
               game.floatingTexts.push({ x: enemyCenterXBeforeRemove, y: enemyCenterYBeforeRemove, text: '+200', life: 40, color: '#ff8800' });
@@ -5783,11 +5833,11 @@ export const PlayingView: React.FC<{
             game.particles.push({
               x: boss.x + boss.width / 2,
               y: boss.y,
-              vx: Math.cos(angle) * (2 + Math.random() * 5),
-              vy: Math.sin(angle) * (2 + Math.random() * 4) - 2,
+              vx: Math.cos(angle) * (2 + game.visualRng() * 5),
+              vy: Math.sin(angle) * (2 + game.visualRng() * 4) - 2,
               life: 30,
               color: pi % 2 ? '#ffd166' : '#ff6b35',
-              size: Math.random() * 4 + 2,
+              size: game.visualRng() * 4 + 2,
             });
           }
           haptic('enemyKill', progress.settings.haptics);
@@ -5901,7 +5951,7 @@ export const PlayingView: React.FC<{
         game.screenShake = 12;
         const anchorX = game.checkpointX && game.checkpointX > 120 ? game.checkpointX : game.player.x + 20;
         const safePlatforms = game.platforms
-          .filter((pl: any) => pl.isGround && pl.x < anchorX + 30 && pl.x + pl.width > anchorX - 30 && !pl.chasm)
+          .filter((pl: Platform) => pl.isGround && pl.x < anchorX + 30 && pl.x + pl.width > anchorX - 30 && !pl.chasm)
           .sort((a: any, b: any) => b.x - a.x);
         const safe = safePlatforms[0];
         game.player.x = safe
@@ -5928,10 +5978,10 @@ export const PlayingView: React.FC<{
         haptic('checkpoint', progress.settings.haptics);
         for (let i = 0; i < 12; i++) {
           game.particles.push({
-            x: nextCheckpoint + (Math.random() - 0.5) * 40,
-            y: game.groundY - 20 - Math.random() * 60,
-            vx: (Math.random() - 0.5) * 3, vy: -1 - Math.random() * 3,
-            life: 30, color: '#7ee7ff', size: Math.random() * 3 + 1.5,
+            x: nextCheckpoint + (game.visualRng() - 0.5) * 40,
+            y: game.groundY - 20 - game.visualRng() * 60,
+            vx: (game.visualRng() - 0.5) * 3, vy: -1 - game.visualRng() * 3,
+            life: 30, color: '#7ee7ff', size: game.visualRng() * 3 + 1.5,
           });
         }
       }
@@ -6078,8 +6128,8 @@ export const PlayingView: React.FC<{
             for (let i = 0; i < 6; i++) {
               game.particles.push({
                 x: f.x + 12, y: f.y + 7,
-                vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 3 - 1,
-                life: 20, color: '#ffd166', size: Math.random() * 3 + 1.5
+                vx: (game.visualRng() - 0.5) * 5, vy: -game.visualRng() * 3 - 1,
+                life: 20, color: '#ffd166', size: game.visualRng() * 3 + 1.5
               });
             }
 
@@ -6172,8 +6222,8 @@ export const PlayingView: React.FC<{
       if (applyScreenShake) {
         game.screenShake--;
         const shakeMag = Math.min(12, 3 + game.screenShake * 0.35);
-        const shakeX = (Math.random() - 0.5) * shakeMag;
-        const shakeY = (Math.random() - 0.5) * shakeMag;
+        const shakeX = (game.visualRng() - 0.5) * shakeMag;
+        const shakeY = (game.visualRng() - 0.5) * shakeMag;
         ctx.translate(shakeX, shakeY);
       }
       if (game.zoomPunch > 0) {
@@ -6202,7 +6252,7 @@ export const PlayingView: React.FC<{
       // also lights the ground. This replaced a hazy cyberpunk sky that
       // flattened every chapter into the same blue-grey wash.
       // ------------------------------------------------------------------
-      const now = Date.now();
+      const now = (game.simTime * 1000);
       const timeSec = now / 1000;
       const timePhase: 'night' | 'sunset' | 'dawn' | 'day' =
         game.timeOfDay === 'NIGHT' ? 'night'
@@ -6286,7 +6336,7 @@ export const PlayingView: React.FC<{
               : fam === 'space' ? 'metal'
                 : fam === 'city' && game.timeOfDay === 'NIGHT' ? 'stone'
                   : 'grass';
-      game.platforms.forEach((plat: any, platIndex: number) => {
+      game.platforms.forEach((plat: Platform, platIndex: number) => {
         const platX = plat.x - game.scrollX;
         if (platX + plat.width < -40 || platX > canvas.width + 40) return;
         const platY = plat.y;
@@ -6379,7 +6429,7 @@ export const PlayingView: React.FC<{
 
       // Chasms: inked, deep and rounded, with a lit lip and hanging rock
       // spikes. A drawing with depth, not a black rectangle.
-      game.holes.forEach((hole: any) => {
+      game.holes.forEach((hole: { x: number; y: number; width: number }) => {
         const hx = hole.x - game.scrollX;
         if (hx + hole.width <= 0 || hx >= canvas.width) return;
         drawChasm(ctx, hx, hole.y, hole.width, canvas.height - hole.y, worldPal);
@@ -6457,7 +6507,7 @@ export const PlayingView: React.FC<{
       // a radar pulse, outlines scent-only hazards and makes shadow pickups
       // readable without permanently cluttering the normal route.
       if (game.senseTimer > 0) {
-        const pulse = 0.55 + 0.25 * Math.sin(Date.now() / 90);
+        const pulse = 0.55 + 0.25 * Math.sin((game.simTime * 1000) / 90);
         const cx = game.player.x + game.player.width / 2 - game.scrollX;
         const cy = game.player.y + game.player.height / 2;
         ctx.save();
@@ -6524,7 +6574,7 @@ export const PlayingView: React.FC<{
         ctx.restore();
         // Upward chevron hint: pulses until the pad is used.
         if (s.press === 0) {
-          const hint = Math.sin(Date.now() / 260) * 2;
+          const hint = Math.sin((game.simTime * 1000) / 260) * 2;
           ctx.strokeStyle = 'rgba(126, 231, 255, 0.7)';
           ctx.lineWidth = 2;
           ctx.lineCap = 'round';
@@ -6561,7 +6611,7 @@ export const PlayingView: React.FC<{
       // two flat body tones, a big readable eye and an idle animation. These
       // replaced glossy gradient props that looked like clip-art next to the
       // hand-drawn cat.
-      game.enemies.forEach((e: any) => {
+      game.enemies.forEach((e: EnemyState) => {
         if (e.x < -500 || (e.shadowOnly && game.shadowActive <= 0 && game.senseTimer <= 0)) return;
         const ex = e.x - game.scrollX;
         const ey = e.y;
@@ -6572,7 +6622,7 @@ export const PlayingView: React.FC<{
         if (e.isShadow) {
           ctx.save();
           if (e.shadowOnly && game.shadowActive <= 0) ctx.globalAlpha = 0.48;
-          drawShadowWraith(ctx, ex, ey, ew, eh, Date.now());
+          drawShadowWraith(ctx, ex, ey, ew, eh, (game.simTime * 1000));
           ctx.restore();
           return;
         }
@@ -6583,7 +6633,7 @@ export const PlayingView: React.FC<{
           y: ey,
           w: ew,
           h: eh,
-          now: Date.now(),
+          now: (game.simTime * 1000),
           facing: (e.velocityX ?? e.direction ?? 1) >= 0 ? 1 : -1,
           charging: (e.chargeTimer ?? 0) > 0,
           winding: (e.shootTimer ?? 99) < 34,
@@ -6686,7 +6736,7 @@ export const PlayingView: React.FC<{
         // Boss-kropp baserat på typ
         ctx.save();
         if (boss.stunTimer > 0) {
-          ctx.globalAlpha = 0.7 + 0.3 * Math.sin(Date.now() / 50);
+          ctx.globalAlpha = 0.7 + 0.3 * Math.sin((game.simTime * 1000) / 50);
         }
         
         // Stun-flash (vit blixt)
@@ -6702,7 +6752,7 @@ export const PlayingView: React.FC<{
         if (bType === 'rat_king') {
           // --- RÅTTE-KUNG: Royal Rat Boss ---
           // Svans (lång piskande råttsvans)
-          const tailWhip = Math.sin(Date.now() / 150) * 16;
+          const tailWhip = Math.sin((game.simTime * 1000) / 150) * 16;
           ctx.strokeStyle = '#d48898';
           ctx.lineWidth = 6;
           ctx.lineCap = 'round';
@@ -6791,7 +6841,7 @@ export const PlayingView: React.FC<{
         } else if (bType === 'cyber_dog') {
           // --- CYBER-HUND: Mechanical Cyber Hound ---
           // Jet-pack flammor bakpå
-          const thrustFlicker = Math.random() * 8;
+          const thrustFlicker = game.visualRng() * 8;
           ctx.save();
           ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
           ctx.shadowColor = '#00e1ff';
@@ -6854,7 +6904,7 @@ export const PlayingView: React.FC<{
           ctx.stroke();
 
           // Digital scanning-visir (cyborg-ögon)
-          const visorPulse = (Math.sin(Date.now() / 100) + 1) / 2;
+          const visorPulse = (Math.sin((game.simTime * 1000) / 100) + 1) / 2;
           ctx.save();
           ctx.shadowColor = boss.phase === 2 ? '#ff0055' : '#00e1ff';
           ctx.shadowBlur = 18;
@@ -6866,7 +6916,7 @@ export const PlayingView: React.FC<{
 
         } else if (bType === 'storm_eagle') {
           // --- STORM-ÖRN: Flying Thunder Raptor ---
-          const wingFlap = Math.sin(Date.now() / 120) * 22;
+          const wingFlap = Math.sin((game.simTime * 1000) / 120) * 22;
           // Stora majestätiska vingar
           ctx.save();
           ctx.fillStyle = '#2a3a5e';
@@ -6919,14 +6969,14 @@ export const PlayingView: React.FC<{
           ctx.fill();
 
           // Blixtgnistor runt örnen
-          if (Math.random() < 0.6) {
+          if (game.visualRng() < 0.6) {
             ctx.strokeStyle = '#ffe600';
             ctx.lineWidth = 2;
-            const sx = bx + Math.random() * bw;
-            const sy = by + Math.random() * bh;
+            const sx = bx + game.visualRng() * bw;
+            const sy = by + game.visualRng() * bh;
             ctx.beginPath();
             ctx.moveTo(sx, sy);
-            ctx.lineTo(sx + (Math.random() - 0.5) * 25, sy + (Math.random() - 0.5) * 25);
+            ctx.lineTo(sx + (game.visualRng() - 0.5) * 25, sy + (game.visualRng() - 0.5) * 25);
             ctx.stroke();
           }
 
@@ -6948,7 +6998,7 @@ export const PlayingView: React.FC<{
           ctx.fill(); ctx.stroke();
 
           // Drakvingar
-          const dWing = Math.sin(Date.now() / 180) * 12;
+          const dWing = Math.sin((game.simTime * 1000) / 180) * 12;
           ctx.fillStyle = 'rgba(100, 20, 140, 0.75)';
           ctx.beginPath();
           ctx.moveTo(bx + bw * 0.3, by + bh * 0.4);
@@ -6980,7 +7030,7 @@ export const PlayingView: React.FC<{
 
           // Swirling void core i bröstet
           ctx.save();
-          const coreRot = Date.now() / 300;
+          const coreRot = (game.simTime * 1000) / 300;
           ctx.translate(bx + bw/2, by + bh * 0.6);
           ctx.rotate(coreRot);
           ctx.fillStyle = '#c084fc';
@@ -7023,7 +7073,7 @@ export const PlayingView: React.FC<{
           ctx.stroke();
 
           // Svävande sten-knytnävar på sidorna
-          const fistBob = Math.sin(Date.now() / 250) * 8;
+          const fistBob = Math.sin((game.simTime * 1000) / 250) * 8;
           ctx.fillStyle = '#2a2b33';
           ctx.beginPath();
           ctx.roundRect(bx - 18, by + bh * 0.4 + fistBob, 18, 26, 6);
@@ -7195,11 +7245,11 @@ export const PlayingView: React.FC<{
         if (f.collected || (game.shadowActive <= 0 && game.senseTimer <= 0)) return;
         const fx = f.x - game.scrollX;
         if (fx < -50 || fx > canvas.width + 50) return;
-        const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 150 + (f.hoverOffset || 0));
+        const pulse = 0.65 + 0.35 * Math.sin((game.simTime * 1000) / 150 + (f.hoverOffset || 0));
         ctx.save();
         ctx.globalAlpha = game.shadowActive > 0 ? 0.95 : 0.45;
         ctx.translate(fx + f.width / 2, f.y + f.height / 2);
-        ctx.rotate(Math.sin(Date.now() / 260) * 0.12);
+        ctx.rotate(Math.sin((game.simTime * 1000) / 260) * 0.12);
         ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 16;
         ctx.fillStyle = `rgba(216, 180, 254, ${pulse})`;
         ctx.beginPath();
@@ -7226,12 +7276,12 @@ export const PlayingView: React.FC<{
         // halo. It has to read instantly against bright skies and dark caves.
         const fx2 = fx + fw / 2;
         const fy2 = fy + fh / 2;
-        const swim = Math.sin(Date.now() / 260 + (f.hoverOffset || 0)) * 0.16;
+        const swim = Math.sin((game.simTime * 1000) / 260 + (f.hoverOffset || 0)) * 0.16;
 
         ctx.save();
         // Halo
         // Pulsing neon bloom so the pickup glows instead of just sitting there.
-        const haloR = 32 + Math.sin(Date.now() / 340 + (f.hoverOffset || 0)) * 4;
+        const haloR = 32 + Math.sin((game.simTime * 1000) / 340 + (f.hoverOffset || 0)) * 4;
         const halo = ctx.createRadialGradient(fx2, fy2, 1, fx2, fy2, haloR);
         halo.addColorStop(0, 'rgba(255, 226, 140, 0.65)');
         halo.addColorStop(0.5, 'rgba(255, 186, 72, 0.24)');
@@ -7312,7 +7362,7 @@ export const PlayingView: React.FC<{
         }
 
         // Tiny sparkle
-        const sp = (Math.sin(Date.now() / 320 + (f.hoverOffset || 0)) + 1) / 2;
+        const sp = (Math.sin((game.simTime * 1000) / 320 + (f.hoverOffset || 0)) + 1) / 2;
         ctx.fillStyle = `rgba(255,255,255,${0.35 + sp * 0.55})`;
         ctx.beginPath();
         ctx.arc(fw * 0.1, -fh * 0.5, 1.2 + sp, 0, Math.PI * 2);
@@ -7520,7 +7570,7 @@ export const PlayingView: React.FC<{
       const jx = game.jerry.x - game.scrollX; const jy = game.jerry.y; const jw = game.jerry.width; const jh = game.jerry.height;
 
       // Jerry - Animerad söt mus
-      const jerryBounce = Math.sin(Date.now() / 300) * 4; // Hoppar upp och ner
+      const jerryBounce = Math.sin((game.simTime * 1000) / 300) * 4; // Hoppar upp och ner
       const jxs = game.jerry.x - game.scrollX;
       const jy2 = game.jerry.y + jerryBounce;
       const jw2 = game.jerry.width;
@@ -7529,7 +7579,7 @@ export const PlayingView: React.FC<{
       if (jxs > -60 && jxs < canvas.width + 60) {
         // Guldgul aura
         ctx.save();
-        ctx.globalAlpha = 0.4 + 0.15 * Math.sin(Date.now() / 200);
+        ctx.globalAlpha = 0.4 + 0.15 * Math.sin((game.simTime * 1000) / 200);
         const jerryAura = ctx.createRadialGradient(jxs + jw2/2, jy2 + jh2/2, 0, jxs + jw2/2, jy2 + jh2/2, 50);
         jerryAura.addColorStop(0, '#ffd700');
         jerryAura.addColorStop(1, 'transparent');
@@ -7600,14 +7650,14 @@ export const PlayingView: React.FC<{
         ctx.strokeStyle = '#b06020';
         ctx.lineWidth = 4;
         ctx.lineCap = 'round';
-        const tailWig = Math.sin(Date.now() / 200) * 8;
+        const tailWig = Math.sin((game.simTime * 1000) / 200) * 8;
         ctx.beginPath();
         ctx.moveTo(jxs + jw2, jy2 + jh2 * 0.7);
         ctx.bezierCurveTo(jxs + jw2 + 15, jy2 + jh2 * 0.8 + tailWig, jxs + jw2 + 20, jy2 + jh2 * 0.5, jxs + jw2 + 10, jy2 + jh2 * 0.3);
         ctx.stroke();
         
         // "RÄDDAS!" text med animation
-        const textBob = Math.sin(Date.now() / 400) * 3;
+        const textBob = Math.sin((game.simTime * 1000) / 400) * 3;
         ctx.font = 'bold 11px Outfit, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffd700';
@@ -7666,7 +7716,7 @@ export const PlayingView: React.FC<{
         if (echo.life <= 0) return;
         const ex = echo.x - game.scrollX;
         if (ex < -50 || ex > canvas.width + 50) return;
-        const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 180 + echo.x);
+        const pulse = 0.65 + 0.35 * Math.sin((game.simTime * 1000) / 180 + echo.x);
         ctx.save();
         ctx.globalAlpha = Math.min(0.9, echo.life / 180) * pulse;
         ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 18;
@@ -7694,13 +7744,13 @@ export const PlayingView: React.FC<{
           ctx.globalCompositeOperation = 'lighter';
           const ghostDrawn = drawCatAtlasSprite(ctx, gx, gy, {
             color: '#d8b4fe', accent: '#f5e9ff', original: false,
-            t: Date.now() / 1000, running: true, jumping: false, grounded: true,
+            t: (game.simTime * 1000) / 1000, running: true, jumping: false, grounded: true,
             speed: 1.5, vy: 0, phase: ghost.frame * 0.04, dashing: false,
             shooting: false, facing: ghost.facing, w: 66,
           });
           if (!ghostDrawn) {
             drawCatSprite(ctx, gx, gy, {
-              color: '#d8b4fe', accent: '#f5e9ff', t: Date.now() / 1000,
+              color: '#d8b4fe', accent: '#f5e9ff', t: (game.simTime * 1000) / 1000,
               running: true, jumping: false, grounded: true, speed: 1.5, vy: 0,
               phase: ghost.frame * 0.04, dashing: false, blinking: false,
               shooting: false, facing: ghost.facing, sx: 1.2, sy: 1.1,
@@ -7780,7 +7830,7 @@ export const PlayingView: React.FC<{
       ctx.save();
       const shifted = game.shadowActive > 0;
       if (shifted) ctx.globalAlpha = 0.84;
-      else if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Date.now() / 55);
+      else if (game.player.invincible) ctx.globalAlpha = 0.55 + 0.45 * Math.sin((game.simTime * 1000) / 55);
       // The hero cat is the baked atlas sprite again - the same drawing the
       // game shipped with. The origin is the paw line (py + ph), so the cat
       // stands on the exact top of the platform instead of hovering above it.
@@ -7791,7 +7841,7 @@ export const PlayingView: React.FC<{
         color: shifted ? '#7c3aed' : game.player.color,
         accent: shifted ? '#e9d5ff' : game.player.accent,
         original: game.player.original && !shifted,
-        t: Date.now() / 1000,
+        t: (game.simTime * 1000) / 1000,
         running: Math.abs(catSpeed) > 0.4 && catGrounded,
         jumping: !catGrounded,
         grounded: catGrounded,
@@ -7812,7 +7862,7 @@ export const PlayingView: React.FC<{
         drawCatSprite(ctx, px + pw / 2, py + ph, {
           color: shifted ? '#7c3aed' : game.player.color,
           accent: shifted ? '#e9d5ff' : game.player.accent,
-          t: Date.now() / 1000,
+          t: (game.simTime * 1000) / 1000,
           running: Math.abs(catSpeed) > 0.4 && catGrounded,
           jumping: !catGrounded,
           grounded: catGrounded,
@@ -7832,7 +7882,7 @@ export const PlayingView: React.FC<{
       // Shadow Shift reads as a different character, not just a HUD number:
       // a violet bloom, a broken orbit ring and a fading purple afterimage.
       if (shifted) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 110);
+        const pulse = 0.5 + 0.5 * Math.sin((game.simTime * 1000) / 110);
         const gx = px + pw / 2;
         const gy = py + ph / 2;
         ctx.save();
@@ -7849,7 +7899,7 @@ export const PlayingView: React.FC<{
         ctx.strokeStyle = `rgba(216, 180, 254, ${0.45 + pulse * 0.45})`;
         ctx.lineWidth = 2;
         ctx.setLineDash([9, 6]);
-        ctx.lineDashOffset = -Date.now() / 40;
+        ctx.lineDashOffset = -(game.simTime * 1000) / 40;
         ctx.beginPath();
         ctx.ellipse(gx, gy, pw * 1.05, ph * 0.82, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -7860,7 +7910,7 @@ export const PlayingView: React.FC<{
       // coloured ring that pulses so the active timers are readable in-world.
       if (game.shield) {
         ctx.save();
-        const shieldPulse = 0.5 + 0.2 * Math.sin(Date.now() / 180);
+        const shieldPulse = 0.5 + 0.2 * Math.sin((game.simTime * 1000) / 180);
         ctx.strokeStyle = `rgba(126, 231, 255, ${shieldPulse + 0.25})`;
         ctx.lineWidth = 2.5;
         ctx.shadowColor = '#7ee7ff';
@@ -7868,7 +7918,7 @@ export const PlayingView: React.FC<{
         ctx.beginPath();
         ctx.ellipse(px + pw / 2, py + ph / 2, pw * 0.86, ph * 0.66, 0, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = `rgba(126, 231, 255, ${0.06 + 0.03 * Math.sin(Date.now() / 220)})`;
+        ctx.fillStyle = `rgba(126, 231, 255, ${0.06 + 0.03 * Math.sin((game.simTime * 1000) / 220)})`;
         ctx.fill();
         ctx.restore();
       }
@@ -7877,7 +7927,7 @@ export const PlayingView: React.FC<{
         ctx.strokeStyle = 'rgba(255, 209, 102, 0.55)';
         ctx.lineWidth = 2;
         ctx.setLineDash([3, 7]);
-        ctx.lineDashOffset = -Date.now() / 90;
+        ctx.lineDashOffset = -(game.simTime * 1000) / 90;
         ctx.beginPath();
         ctx.ellipse(px + pw / 2, py + ph / 2, pw * 0.95, ph * 0.75, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -7888,7 +7938,7 @@ export const PlayingView: React.FC<{
         ctx.strokeStyle = 'rgba(255, 157, 107, 0.6)';
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 5]);
-        ctx.lineDashOffset = Date.now() / 70;
+        ctx.lineDashOffset = (game.simTime * 1000) / 70;
         ctx.beginPath();
         ctx.ellipse(px + pw / 2, py + ph / 2, pw * 1.02, ph * 0.8, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -8107,7 +8157,7 @@ export const PlayingView: React.FC<{
       }
 
       // Throttle React state updates to prevent infinite loops and improve performance
-      if (Date.now() - game.lastStatUpdate > 250) {
+      if ((game.simTime * 1000) - game.lastStatUpdate > 250) {
         setStats({
           score: game.score, progress: Math.min(100, Math.floor((game.player.x / game.levelLength) * 100)),
           collectedCount: collectedCountInFrame, totalFish: game.fishes.length, fishGoal: game.fishGoal ?? game.fishes.length, ammo: game.ammo,
@@ -8145,6 +8195,10 @@ export const PlayingView: React.FC<{
           bossName: game.boss?.name || '',
           bossAngry: !!game.boss?.angry,
           bossPhase: game.boss?.phase || 0,
+          bossCoreExposed: game.boss?.coreExposed || 0,
+          bossTelegraph: game.boss?.telegraph || 0,
+          bossTelegraphTotal: game.boss?.telegraphTotal || 0,
+          bossCounterHint: game.boss?.counterHint || '',
           xpIntoLevel: game.xpIntoLevel || 0,
           shield: !!game.shield,
           magnet: game.buffs?.magnet || 0,
@@ -8174,7 +8228,7 @@ export const PlayingView: React.FC<{
         setLives(game.lives);
         setTotalScore(game.score);
         setCombo(game.combo || 0);
-        game.lastStatUpdate = Date.now();
+        game.lastStatUpdate = (game.simTime * 1000);
       }
     };
 
@@ -8198,14 +8252,19 @@ export const PlayingView: React.FC<{
 
     return () => {
       game.running = false;
+      if (debugApiEnabled && (window as any).__SP === game) {
+        delete (window as any).__SP;
+        delete (window as any).__SP_NEXT;
+      }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       canvas.removeEventListener('mousedown', handleMouseDown);
 
       if (isTouchDevice) {
-        canvas.removeEventListener('touchstart', handleTouchStart);
-        canvas.removeEventListener('touchmove', handleTouchMove);
-        canvas.removeEventListener('touchend', handleTouchEnd);
+        canvas.removeEventListener('pointerdown', handlePointerDown);
+        canvas.removeEventListener('pointermove', handlePointerMove);
+        canvas.removeEventListener('pointerup', handlePointerUp);
+        canvas.removeEventListener('pointercancel', handlePointerCancel);
       }
 
       if (animationId) {
@@ -8680,9 +8739,10 @@ export const PlayingView: React.FC<{
           // Scroll container + centred wrapper: a landscape phone has less
           // height than the card, and centring a child inside an overflowing
           // flex box makes its top unreachable.
-          <div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up">
+          <div className="fixed inset-0 z-[120] overflow-y-auto bg-[#04060f]/80 p-4 backdrop-blur-xl animate-fade-in-up" role="presentation">
             <div className="flex min-h-full items-center justify-center">
-            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-6 shadow-[0_30px_90px_-30px_rgba(0,0,0,0.9)]">
+            <div ref={pauseDialogRef} role="dialog" aria-modal="true" aria-labelledby="shadow-paw-pause-title" className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-6 shadow-[0_30px_90px_-30px_rgba(0,0,0,0.9)]">
+              <span id="shadow-paw-pause-title" className="sr-only">{t('Spelet pausat')}</span>
               <p className="eyebrow text-primary">{t('Spelet pausat')}</p>
               <h2 className="mt-1 font-display text-3xl font-black uppercase tracking-tight text-white">{t('Andhämtning')}</h2>
               <p className="mt-1 text-xs font-medium text-white/45">
@@ -8741,50 +8801,28 @@ export const PlayingView: React.FC<{
           </div>
         )}
 
-        {/* Boss HP Bar - Large prominent bar shown during boss fights */}
-        {stats.bossVisible && stats.bossHp > 0 && stats.bossMaxHp > 0 && (
-          <div className="absolute top-[86px] left-1/2 z-20 w-full max-w-xs -translate-x-1/2 px-3 pointer-events-none md:top-[96px]">
-            <div
-              className="rounded-xl bg-black/80 backdrop-blur-md border border-red-500/40 px-3 py-2 text-center"
-              style={{ boxShadow: '0 0 24px rgba(255,50,30,0.4)' }}
-            >
-              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
-                stats.bossAngry ? 'text-rose-300' : stats.bossPhase >= 2 ? 'text-pink-400' : stats.bossPhase === 1 ? 'text-red-400' : 'text-orange-400'
-              }`}>
-                {stats.bossAngry ? '😡' : '⚔️'} {stats.bossAngry
-                  ? t('{name} är arg! – FAS {n}', { name: stats.bossName || t('BOSS'), n: (stats.bossPhase || 0) + 1 })
-                  : t('{name} – FAS {n}', { name: stats.bossName || t('BOSS'), n: (stats.bossPhase || 0) + 1 })}
-              </p>
-              <div className="h-3 w-full rounded-full bg-black/50 overflow-hidden border border-white/10">
-                <div
-                  className="h-full rounded-full transition-[width] duration-200"
-                  style={{
-                    width: `${Math.max(0, (stats.bossHp / Math.max(1, stats.bossMaxHp)) * 100)}%`,
-                    background: stats.bossPhase >= 2
-                      ? 'linear-gradient(90deg, #aa00aa, #ff00ff)'
-                      : stats.bossPhase === 1
-                        ? 'linear-gradient(90deg, #880000, #ff2222)'
-                        : 'linear-gradient(90deg, #882200, #ff6b35)',
-                    boxShadow: stats.bossPhase >= 2
-                      ? '0 0 12px rgba(255,0,255,0.8)'
-                      : '0 0 12px rgba(255,80,20,0.8)',
-                  }}
-                />
-              </div>
-              <p className="text-[9px] text-white/50 font-bold mt-0.5 tabular-nums">
-                {stats.bossHp} / {stats.bossMaxHp}
-              </p>
-            </div>
-          </div>
-        )}
+        <BossHud stats={stats} />
 
         {!showLevelComplete && !isPaused && <ObjectivePill stats={stats} />}
+
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {stats.toasts.map((toast: any) => toast.text).join(' · ')}
+        </div>
+        <div className="sr-only" aria-live="assertive" aria-atomic="true">
+          {stats.bossVisible && stats.bossCoreExposed && stats.bossCoreExposed > 0
+            ? t('KÄRNAN BLOTTAD · DUBBEL SKADA')
+            : stats.bossVisible && stats.bossTelegraph && stats.bossTelegraph > 0
+              ? t('VARNING · {m}', { m: t(stats.bossCounterHint || 'HÅLL DIG I RÖRELSE') })
+              : stats.bossVisible && stats.bossAngry
+                ? t('{name} är arg!', { name: stats.bossName || t('BOSS') })
+                : ''}
+        </div>
 
         <canvas
           ref={canvasRef}
           role="img"
           aria-label={t('Spelplan: katten, fiskarna, fienden och Jerry')}
-          className="w-full h-full max-w-full max-h-full object-contain cursor-crosshair bg-[#102217]"
+          className="w-full h-full max-w-full max-h-full touch-none object-contain cursor-crosshair bg-[#102217]"
           style={{ filter: progress.settings.colorBlindMode ? 'contrast(1.15) saturate(0.85)' : 'none' }}
         />
         {/* Cinematic edge shading: settles the frame and separates the stage
@@ -9028,30 +9066,43 @@ export const PlayingView: React.FC<{
         </button>
       )}
 
-      {/* TOUCH CONTROLS - UNDER spelrutan */}
+      {/* POINTER CONTROLS - UNDER spelrutan */}
       {isTouchDevice && !showLevelComplete && (
         <div
-          className={`flex w-full shrink-0 items-center justify-between select-none ${
+          dir="ltr"
+          className={`flex w-full shrink-0 flex-row items-center justify-between select-none ${progress.settings.leftHandedControls ? 'flex-row-reverse' : ''} ${
             immersive
-              ? 'pointer-events-none fixed inset-x-0 bottom-0 z-[110] px-4 pb-3'
+              ? 'pointer-events-none fixed inset-x-0 bottom-0 z-[110] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]'
               : `max-w-4xl pointer-events-auto px-3 py-1 lg:px-4 lg:py-2 ${stackControlsAtBottom ? 'mt-auto' : ''}`
           }`}
         >
           {/* Vänster sida: Styrning (Move vänster/höger) */}
           <div className="pointer-events-auto flex items-center gap-3">
             <button
+              type="button"
+              aria-label={t('Gå vänster')}
               className="size-14 lg:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); setKeyState(65, true); }}
-              onTouchEnd={(e) => { e.preventDefault(); setKeyState(65, false); }}
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setKeyState(65, true); }}
+              onPointerUp={(e) => { e.preventDefault(); setKeyState(65, false); }}
+              onPointerCancel={() => setKeyState(65, false)}
+              onKeyDown={(e) => { if (!e.repeat) setKeyState(65, true); }}
+              onKeyUp={() => setKeyState(65, false)}
+              onBlur={() => setKeyState(65, false)}
             >
-              <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_back</span>
+              <span className="material-symbols-outlined text-3xl text-white group-active:text-primary" aria-hidden="true">arrow_back</span>
             </button>
             <button
+              type="button"
+              aria-label={t('Gå höger')}
               className="size-14 lg:size-16 bg-[#16291e]/90 backdrop-blur-md rounded-2xl flex items-center justify-center border-b-4 border-black/60 shadow-xl active:translate-y-1 active:border-b-0 active:bg-primary/40 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); setKeyState(68, true); }}
-              onTouchEnd={(e) => { e.preventDefault(); setKeyState(68, false); }}
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setKeyState(68, true); }}
+              onPointerUp={(e) => { e.preventDefault(); setKeyState(68, false); }}
+              onPointerCancel={() => setKeyState(68, false)}
+              onKeyDown={(e) => { if (!e.repeat) setKeyState(68, true); }}
+              onKeyUp={() => setKeyState(68, false)}
+              onBlur={() => setKeyState(68, false)}
             >
-              <span className="material-symbols-outlined text-3xl text-white group-active:text-primary">arrow_forward</span>
+              <span className="material-symbols-outlined text-3xl text-white group-active:text-primary" aria-hidden="true">arrow_forward</span>
             </button>
           </div>
 
@@ -9059,33 +9110,48 @@ export const PlayingView: React.FC<{
           <div className="pointer-events-auto flex items-center gap-3">
             {/* Hopp-knapp */}
             <button
+              type="button"
+              aria-label={t('HOPPA')}
               className="size-16 lg:size-20 bg-primary/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); requestJump(); }}
-              onTouchEnd={(e) => { e.preventDefault(); releaseJump(); }}
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); requestJump(); }}
+              onPointerUp={(e) => { e.preventDefault(); releaseJump(); }}
+              onPointerCancel={releaseJump}
+              onKeyDown={(e) => { if (!e.repeat) requestJump(); }}
+              onKeyUp={releaseJump}
+              onBlur={releaseJump}
             >
-              <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">arrow_upward</span>
+              <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform" aria-hidden="true">arrow_upward</span>
               <span className="text-[10px] font-black uppercase tracking-widest opacity-90">{t('HOPPA')}</span>
             </button>
 
             {/* Dash-knapp */}
             <button
+              type="button"
+              aria-label={t('DASH')}
               className="size-12 sm:size-14 lg:size-16 bg-cyan-400/20 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-cyan-300/40 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-cyan-300/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); triggerDash(); }}
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); triggerDash(); }}
+              onPointerCancel={() => undefined}
+              onKeyDown={(e) => { if (!e.repeat) triggerDash(); }}
             >
-              <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform">bolt</span>
+              <span className="material-symbols-outlined text-2xl group-active:scale-110 transition-transform" aria-hidden="true">bolt</span>
               <span className="text-[9px] font-black uppercase tracking-widest opacity-90">{t('DASH')}</span>
             </button>
 
             {/* Shoot-knapp */}
             <button
+              type="button"
+              aria-label={t('SKJUT')}
               className="size-16 lg:size-20 bg-primary-red/30 backdrop-blur-md rounded-full flex flex-col items-center justify-center border-4 border-primary-red/50 border-b-8 border-b-black/40 text-white shadow-2xl active:translate-y-2 active:border-b-0 active:bg-primary-red/60 transition-all group"
-              onTouchStart={(e) => { e.preventDefault(); startTouchShoot(); }}
-              onTouchEnd={(e) => { e.preventDefault(); stopTouchShoot(); }}
-              onTouchCancel={stopTouchShoot}
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); startTouchShoot(); }}
+              onPointerUp={(e) => { e.preventDefault(); stopTouchShoot(); }}
+              onPointerCancel={stopTouchShoot}
+              onKeyDown={(e) => { if (!e.repeat) startTouchShoot(); }}
+              onKeyUp={stopTouchShoot}
+              onBlur={stopTouchShoot}
             >
               {/* The dash button uses a bolt too; the shot needs its own mark
                   or the two thumbs buttons look identical. */}
-              <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform">my_location</span>
+              <span className="material-symbols-outlined text-3xl group-active:scale-110 transition-transform" aria-hidden="true">my_location</span>
               <span className="text-[10px] font-black uppercase tracking-widest opacity-90">{t('SKJUT')}</span>
             </button>
           </div>
@@ -9166,9 +9232,8 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {/* Studio: the cat as it will look in the game */}
         <aside className="toon-card-dark overflow-hidden lg:sticky lg:top-20 lg:self-start">
           <div className="relative flex h-56 items-center justify-center overflow-hidden bg-[#071322] lg:h-64">
-            {/* Holographic studio floor: the same cyan/magenta language as the
-                city kit, with the 2D cat kept underneath as a guaranteed
-                fallback for devices without WebGL. */}
+            {/* Holographic studio floor, with the 2D cat kept underneath as a
+                guaranteed fallback for devices without WebGL. */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(43,238,255,0.18),transparent_38%),linear-gradient(180deg,#0b1930_0%,#071322_60%,#050b18_100%)]" aria-hidden="true" />
             <div className="absolute inset-x-0 bottom-0 h-24 bg-[linear-gradient(rgba(43,238,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(43,238,255,0.12)_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:linear-gradient(to_top,black,transparent)]" aria-hidden="true" />
             <div className={`relative z-[1] transition-opacity duration-500 ${cat3DReady ? 'opacity-0' : 'opacity-100'}`}>
@@ -9177,6 +9242,7 @@ export const ShopView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <Cat3DPreview
               size={240}
               className="absolute left-1/2 top-1/2 z-[2] -translate-x-1/2 -translate-y-1/2"
+              reduceMotion={progress.settings.reduceMotion}
               onReady={() => setCat3DReady(true)}
             />
             <span className="pointer-events-none absolute right-3 top-3 z-10 rounded-full border border-cyan-200/20 bg-[#071322]/70 px-2 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-cyan-100/70">

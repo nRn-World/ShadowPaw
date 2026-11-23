@@ -93,6 +93,8 @@ export interface PlayerProgress {
     cinematicEffects: boolean;
     /** Adds a subtle combo-driven music layer and positional SFX. */
     adaptiveAudio: boolean;
+    /** Swaps movement and action clusters on touch screens for left-handed play. */
+    leftHandedControls: boolean;
     /** Master switch: when true nothing is audible, whatever the volumes are. */
     muted: boolean;
     musicVolume: number;

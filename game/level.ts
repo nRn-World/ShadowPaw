@@ -7,6 +7,8 @@
  * shapes, difficulty curve and seeds it runs on.
  */
 
+import type { Platform } from './types';
+
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 /** A stable, stateless hash used to mix a date or a run id into a level seed. */
@@ -236,8 +238,8 @@ export interface LayoutBuildArgs {
     afterwards, so every layout only has to answer "where can the cat stand?". */
 export const buildLevelLayout = ({ level, layout, levelLength, groundY, profile, bossLevel, seedOffset = 0 }: LayoutBuildArgs) => {
   const rng = makeRng(level * 7919 + 17 + seedOffset);
-  const platforms: any[] = [];
-  const holes: any[] = [];
+  const platforms: Platform[] = [];
+  const holes: Array<{ x: number; y: number; width: number }> = [];
 
   const ground = (x: number, width: number) => {
     if (width <= 4) return;

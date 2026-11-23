@@ -3,6 +3,8 @@
  * play streak. Nothing here talks to a server; everything lives in
  * localStorage and degrades to empty data in private browsing.
  */
+import { readJson, safeRemove, writeJson } from './storage.ts';
+
 export type DailyEntry = { score: number; level: number; date: string };
 
 const DAILY_KEY = 'shadow_paw_daily_scores_v1';
@@ -12,71 +14,86 @@ const STREAK_KEY = 'shadow_paw_daily_streak_v1';
 
 // The old replay format was an unbounded, incompatible blob. Remove it once;
 // the v2 trace below is separate, capped and validated.
-try {
-  localStorage.removeItem(LEGACY_GHOST_KEY);
-} catch {
-  // Storage can be unavailable in private browsing or unit tests.
-}
+safeRemove(LEGACY_GHOST_KEY);
 
 export type GhostFrame = { frame: number; x: number; y: number; facing: 1 | -1 };
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 /** A tiny local replay: no account or server is required, and it is capped so
     a daily run can never fill localStorage. */
 const cleanGhostFrames = (value: unknown): GhostFrame[] => {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 2400).filter((frame): frame is GhostFrame => {
+  return value.filter((frame): frame is GhostFrame => {
     if (!frame || typeof frame !== 'object') return false;
     const candidate = frame as Partial<GhostFrame>;
     return typeof candidate.frame === 'number' && Number.isFinite(candidate.frame)
+      && candidate.frame >= 0
       && typeof candidate.x === 'number' && Number.isFinite(candidate.x)
       && typeof candidate.y === 'number' && Number.isFinite(candidate.y)
       && (candidate.facing === 1 || candidate.facing === -1);
-  });
+  }).slice(-2400);
 };
 
-export const loadDailyGhost = (date: string, level: number): GhostFrame[] => {
-  const all = read<Record<string, unknown>>(GHOST_KEY, {});
-  return cleanGhostFrames(all[`${date}:${level}`]);
+const cleanDailyEntry = (value: unknown, date: string): DailyEntry | null => {
+  const candidate = asRecord(value);
+  const score = Number(candidate.score);
+  const level = Number(candidate.level);
+  if (!Number.isFinite(score) || !Number.isFinite(level)) return null;
+  return {
+    score: Math.max(0, Math.floor(score)),
+    level: Math.max(1, Math.floor(level)),
+    date,
+  };
 };
+
+const read = <T,>(key: string, fallback: T): T => readJson(key, fallback);
+const write = (key: string, value: unknown) => writeJson(key, value);
+
+const readGhostStore = (): Record<string, GhostFrame[]> => {
+  const raw = readJson<unknown>(GHOST_KEY, {});
+  const source = asRecord(raw);
+  return Object.fromEntries(Object.entries(source)
+    .map(([key, value]) => [key, cleanGhostFrames(value)] as const)
+    .filter(([, value]) => value.length > 0));
+};
+
+export const loadDailyGhost = (date: string, level: number): GhostFrame[] =>
+  readGhostStore()[`${date}:${level}`] || [];
 
 export const saveDailyGhost = (date: string, level: number, frames: GhostFrame[]): boolean => {
   const clean = cleanGhostFrames(frames);
   if (!clean.length) return false;
-  const all = read<Record<string, unknown>>(GHOST_KEY, {});
-  all[`${date}:${level}`] = clean.slice(-2400);
+  const all = readGhostStore();
+  all[`${date}:${level}`] = clean;
   const keys = Object.keys(all).sort();
   if (keys.length > 14) keys.slice(0, keys.length - 14).forEach((key) => delete all[key]);
   return write(GHOST_KEY, all);
 };
 
-const read = <T,>(key: string, fallback: T): T => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const write = (key: string, value: unknown) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
+const readDailyStore = (): Record<string, DailyEntry[]> => {
+  const source = asRecord(readJson<unknown>(DAILY_KEY, {}));
+  return Object.fromEntries(Object.entries(source).map(([date, value]) => [
+    date,
+    Array.isArray(value)
+      ? value.map((entry) => cleanDailyEntry(entry, date)).filter((entry): entry is DailyEntry => entry !== null)
+      : [],
+  ]));
 };
 
 export const loadDailyScores = (date: string): DailyEntry[] => {
-  const all = read<Record<string, DailyEntry[]>>(DAILY_KEY, {});
+  const all = readDailyStore();
   return (all[date] || []).slice().sort((a, b) => b.score - a.score).slice(0, 10);
 };
 
 /** Returns the 1-based rank on that day, or 0 when storage was unavailable. */
 export const recordDailyScore = (date: string, score: number, level: number): number => {
-  const all = read<Record<string, DailyEntry[]>>(DAILY_KEY, {});
+  const all = readDailyStore();
   const list = all[date] || [];
-  list.push({ score, level, date });
+  const safeScore = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
+  const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+  list.push({ score: safeScore, level: safeLevel, date });
   all[date] = list.sort((a, b) => b.score - a.score).slice(0, 10);
   // Only a handful of days is interesting; prune the rest.
   const days = Object.keys(all).sort();
@@ -87,8 +104,12 @@ export const recordDailyScore = (date: string, score: number, level: number): nu
 
 export type DailyStreak = { last: string; count: number };
 
-export const readDailyStreak = (): DailyStreak =>
-  read<DailyStreak>(STREAK_KEY, { last: '', count: 0 });
+export const readDailyStreak = (): DailyStreak => {
+  const raw = asRecord(readJson<unknown>(STREAK_KEY, {}));
+  const last = typeof raw.last === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.last) ? raw.last : '';
+  const count = Number(raw.count);
+  return { last, count: Number.isFinite(count) ? Math.max(0, Math.min(9999, Math.floor(count))) : 0 };
+};
 
 /** Consecutive calendar days. A missed day resets to one, not to zero. */
 export const touchDailyStreak = (date: string): DailyStreak => {

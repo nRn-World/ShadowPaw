@@ -11,7 +11,9 @@
     "bake:cat-sprites": "node scripts/render-cat-sprites.mjs",
     "bake:cat-atlas": "node scripts/bake-cat-atlas.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
     "test:smoke": "node scripts/qa-smoke.mjs",
+    "test:offline": "node scripts/verify-offline.mjs",
     "check": "npm run typecheck && npm run check:i18n && npm run build",
     "test:units": "node --experimental-strip-types --test scripts/test-units.mjs",
     "test:ui": "node scripts/qa-ui.mjs"

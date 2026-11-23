@@ -1,8 +1,20 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import Header from './components/Header';
-import { StartMenuView, SettingsView, HowToPlayView, LeaderboardView, GameOverView, CampaignCompleteView, ShopView, QuestsView, PlayingView } from './components/Views';
 import LevelSelectView from './components/LevelSelectView';
+
+// Keep the canvas simulation, shop and results artwork out of the first menu
+// bundle. Vite de-duplicates these named imports into one async Views chunk,
+// while its 3D components still load Three.js only when their panels mount.
+const StartMenuView = lazy(() => import('./components/Views').then((module) => ({ default: module.StartMenuView })));
+const SettingsView = lazy(() => import('./components/Views').then((module) => ({ default: module.SettingsView })));
+const HowToPlayView = lazy(() => import('./components/Views').then((module) => ({ default: module.HowToPlayView })));
+const LeaderboardView = lazy(() => import('./components/Views').then((module) => ({ default: module.LeaderboardView })));
+const GameOverView = lazy(() => import('./components/Views').then((module) => ({ default: module.GameOverView })));
+const CampaignCompleteView = lazy(() => import('./components/Views').then((module) => ({ default: module.CampaignCompleteView })));
+const ShopView = lazy(() => import('./components/Views').then((module) => ({ default: module.ShopView })));
+const QuestsView = lazy(() => import('./components/Views').then((module) => ({ default: module.QuestsView })));
+const PlayingView = lazy(() => import('./components/Views').then((module) => ({ default: module.PlayingView })));
 import { AppView, RunMode } from './types';
 import { ProgressProvider, useProgress } from './context/ProgressContext';
 import { InstallProvider } from './context/InstallContext';
@@ -212,7 +224,13 @@ const App: React.FC = () => {
           isPhone && currentView === AppView.PLAYING ? 'p-0' : 'px-4 pb-24 md:pb-16'
         }`}
       >
-        {renderView()}
+        <Suspense fallback={(
+          <div className="flex min-h-[40vh] w-full items-center justify-center" role="status" aria-live="polite" aria-busy="true">
+            <span className="material-symbols-outlined animate-spin text-3xl text-primary" aria-hidden="true">progress_activity</span>
+          </div>
+        )}>
+          {renderView()}
+        </Suspense>
       </main>
 
       {/* Mobile tab bar: the desktop nav is hidden below md, so this is the

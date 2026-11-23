@@ -14,7 +14,8 @@
 import assert from 'node:assert/strict';
 import { launchBrowser, noCanvasPainting } from './browser.mjs';
 
-const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const rawBase = process.env.BASE_URL || 'http://localhost:3000';
+const BASE = `${rawBase}${rawBase.includes('?') ? '&' : '?'}qa=1`;
 const FAST_CANVAS = process.env.FAST_CANVAS !== '0';
 
 const levelSnapshot = () => {
@@ -234,6 +235,15 @@ try {
     g.enemies.length = 0;
     g.enemyBullets.length = 0;
     b.projectiles.length = 0;
+    // The injected shot should exercise boss collision, not depend on whether
+    // the live camera has already crossed the encounter threshold or whether
+    // the boss walks away during the twelve simulated frames.
+    b.encountered = true;
+    b.platformX = b.x;
+    b.platformW = b.width;
+    b.attackTimer = 9999;
+    b.telegraph = 0;
+    b.pendingMove = null;
     b.stunTimer = 60;
     b.coreExposed = 0;
     g.bullets.length = 0;
@@ -417,6 +427,11 @@ try {
         g.enemyBullets.length = 0;
         b.projectiles.length = 0;
         b.encountered = true;
+        b.platformX = b.x;
+        b.platformW = b.width;
+        b.attackTimer = 9999;
+        b.telegraph = 0;
+        b.pendingMove = null;
         b.stunTimer = 60;
         b.coreExposed = 0;
         g.bullets.length = 0;

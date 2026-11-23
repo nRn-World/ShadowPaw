@@ -13,6 +13,8 @@ type Props = {
   /** Pixel size of the square stage. */
   size?: number;
   className?: string;
+  /** Player motion preference; `system` follows the OS setting. */
+  reduceMotion?: boolean | 'system';
   /** Told when the model is actually on screen, so the parent can hide its 2D stand-in. */
   onReady?: () => void;
 };
@@ -20,7 +22,7 @@ type Props = {
 // Vuena's free sample cat is CC0; see ASSET_LICENSES.md for the pinned source.
 const MODEL_URL = 'models/vuena/animal_cat.glb';
 
-const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
+const Cat3DPreview: React.FC<Props> = ({ size = 260, className, reduceMotion = 'system', onReady }) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   // Kept in a ref so a new callback identity on the parent's render does not
@@ -32,15 +34,20 @@ const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
     const host = hostRef.current;
     if (!host) return;
 
-    // Respect the player's motion preference: a still pose on a static camera.
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    // Respect the player's explicit setting first, then the OS preference.
+    const motionSetting = reduceMotion as boolean | 'system';
+    const still = motionSetting === true
+      || (motionSetting !== false && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false));
     let disposed = false;
     let frame = 0;
     let cleanupViewer: (() => void) | undefined;
 
     const boot = async () => {
       try {
-        const THREE = await import('three');
+        // Keep the optional Three.js work behind one dynamic import. The local
+        // runtime module exposes named primitives only, so the initial menu
+        // never downloads the full Three.js namespace.
+        const THREE = await import('./cat3dRuntime');
         const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
         if (disposed) return;
 
@@ -174,7 +181,7 @@ const Cat3DPreview: React.FC<Props> = ({ size = 260, className, onReady }) => {
       disposed = true;
       cleanupViewer?.();
     };
-  }, [size]);
+  }, [size, reduceMotion]);
 
   return (
     <div

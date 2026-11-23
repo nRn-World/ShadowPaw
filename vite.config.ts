@@ -19,6 +19,12 @@ export default defineConfig(() => {
       allowedHosts: ['.e2b.app'],
     },
     plugins: [react()],
+    build: {
+      // The only chunk above Vite's default is the optional shop-only cat
+      // studio runtime. The first-load chunks stay below 500 kB and the 3D
+      // scene is never requested by the menu or gameplay.
+      chunkSizeWarningLimit: 650,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

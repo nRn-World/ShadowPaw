@@ -1,7 +1,13 @@
 name: Deploy GitHub Pages
 
 on:
+  # Deploy only from main, but run the exact same verification on Arena
+  # branches so a branch push cannot look successful merely because no CI ran.
   push:
+    branches:
+      - main
+      - 'arena/**'
+  pull_request:
     branches: [main]
   workflow_run:
     workflows: ["pages build and deployment"]
@@ -19,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Delay to avoid deployment race
@@ -39,6 +45,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # The development tree is intentionally reported separately; production
+      # dependencies must remain clean so the shipped PWA has no known high-risk
+      # runtime advisories.
+      - name: Production dependency audit
+        run: npm run audit:prod
 
       # Fail before deploying instead of shipping a broken bundle. `check`
       # bundles typecheck, the translation-table guard and the production build.
@@ -66,6 +78,9 @@ jobs:
       - name: UI smoke test (pause, results, game over, shop, 5 languages / RTL)
         run: npm run test:ui
 
+      - name: Offline production verification
+        run: npm run test:offline
+
       - name: Stop dev server
         if: always()
         run: |
@@ -81,6 +96,10 @@ jobs:
           path: ./dist
 
   deploy:
+    # Pull requests and Arena branch pushes verify the build but must never
+    # replace the public Pages deployment. Only main (or an explicit/manual
+    # Pages workflow event) is allowed to publish.
+    if: github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

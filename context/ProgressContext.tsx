@@ -6,6 +6,7 @@ import { cleanRescues, cleanDecor, type HideoutDecor } from '../game/rescue';
 import { cleanCatQuestClaims, claimCatQuest as applyCatQuest } from '../game/sideQuests';
 import { getCompanionById } from '../game/uniqueSystems';
 import { CAMPAIGN_LEVEL_COUNT } from '../game/constants';
+import { readUnknownJson, safeGet, writeJsonWithBackup } from '../game/storage';
 
 const STORAGE_KEY = 'shadow_paw_progress_v2';
 const STORAGE_BACKUP_KEY = 'shadow_paw_progress_backup_v2';
@@ -81,6 +82,7 @@ const defaultProgress: PlayerProgress = {
     autoQuality: true,
     cinematicEffects: true,
     adaptiveAudio: true,
+    leftHandedControls: false,
     muted: false,
     musicVolume: 75,
     sfxVolume: 50,
@@ -142,8 +144,8 @@ const ProgressContext = createContext<ProgressContextType | undefined>(undefined
 const migrateLegacyAudio = (settings: PlayerProgress['settings']): PlayerProgress['settings'] => {
   if (typeof window === 'undefined') return settings;
   try {
-    const legacyMusic = localStorage.getItem('shadow_paw_music');
-    const legacySfx = localStorage.getItem('shadow_paw_sfx');
+    const legacyMusic = safeGet('shadow_paw_music');
+    const legacySfx = safeGet('shadow_paw_sfx');
     return {
       ...settings,
       musicVolume: legacyMusic !== null && settings.musicVolume === defaultProgress.settings.musicVolume
@@ -162,7 +164,7 @@ const migrateLegacyAudio = (settings: PlayerProgress['settings']): PlayerProgres
     Read it once so a returning player keeps the chapter they unlocked. */
 const readLegacyCheckpoint = () => {
   try {
-    const n = Number(localStorage.getItem('shadow_paw_checkpoint'));
+    const n = Number(safeGet('shadow_paw_checkpoint'));
     return Number.isFinite(n) && n > 1 ? Math.min(CAMPAIGN_LEVEL_COUNT, Math.floor(n)) : 1;
   } catch {
     return 1;
@@ -190,59 +192,163 @@ export const isReducedMotion = (value: boolean | 'system' | undefined) =>
   value === true || (value !== false && prefersReducedMotion());
 
 const LANG_CODES = ['en', 'sv', 'tr', 'es', 'ar'];
-const cleanLang = (s: PlayerProgress['settings']): PlayerProgress['settings'] =>
-  LANG_CODES.includes(s.language) ? s : { ...s, language: 'en' };
 
 /** Old saves predate these three switches; fall back to the friendly default
     instead of crashing on `undefined` deep inside the game loop. */
-const cleanGameSettings = (s: PlayerProgress['settings']): PlayerProgress['settings'] => ({
-  ...s,
-  difficulty: s.difficulty === 'easy' || s.difficulty === 'hard' ? s.difficulty : 'normal',
-  autoQuality: s.autoQuality !== false,
-  cinematicEffects: s.cinematicEffects !== false,
-  adaptiveAudio: s.adaptiveAudio !== false,
-});
+const clampVolume = (v: number, fallback = 50) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : fallback);
 
-const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 50);
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+const finiteNumber = (value: unknown, fallback: number) => {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const cleanStringList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0))]
+    : [];
+
+type Quest = PlayerProgress['dailyQuests'][number];
+const cleanQuestList = (value: unknown, fallback: Quest[]): Quest[] => {
+  if (!Array.isArray(value)) return fallback.map((quest) => ({ ...quest }));
+  const quests = value.map((item): Quest | null => {
+    const raw = asRecord(item);
+    if (typeof raw.id !== 'string' || !raw.id) return null;
+    const template = fallback.find((quest) => quest.id === raw.id);
+    const target = Math.max(1, Math.floor(finiteNumber(raw.target, template?.target || 1)));
+    const current = Math.min(target, Math.max(0, Math.floor(finiteNumber(raw.current, 0))));
+    return {
+      id: raw.id,
+      description: typeof raw.description === 'string' ? raw.description : template?.description || raw.id,
+      target,
+      current,
+      reward: Math.max(0, Math.floor(finiteNumber(raw.reward, template?.reward || 0))),
+      completed: raw.completed === true || current >= target,
+      claimed: raw.claimed === true,
+    };
+  }).filter((quest): quest is Quest => quest !== null);
+  return quests.length ? quests : fallback.map((quest) => ({ ...quest }));
+};
+
+const cleanSettings = (value: unknown): PlayerProgress['settings'] => {
+  const raw = asRecord(value);
+  const language = LANG_CODES.includes(String(raw.language))
+    ? String(raw.language) as PlayerProgress['settings']['language']
+    : defaultProgress.settings.language;
+  const reduceMotion = raw.reduceMotion === true || raw.reduceMotion === false || raw.reduceMotion === 'system'
+    ? raw.reduceMotion
+    : defaultProgress.settings.reduceMotion;
+  return {
+    language,
+    uiScale: Math.min(1.5, Math.max(0.75, finiteNumber(raw.uiScale, defaultProgress.settings.uiScale))),
+    textScale: Math.min(2, Math.max(0.75, finiteNumber(raw.textScale, defaultProgress.settings.textScale))),
+    colorBlindMode: raw.colorBlindMode === true,
+    reduceMotion,
+    debugOverlay: raw.debugOverlay === true,
+    haptics: raw.haptics !== false,
+    difficulty: raw.difficulty === 'easy' || raw.difficulty === 'hard' ? raw.difficulty : 'normal',
+    autoQuality: raw.autoQuality !== false,
+    cinematicEffects: raw.cinematicEffects !== false,
+    adaptiveAudio: raw.adaptiveAudio !== false,
+    leftHandedControls: raw.leftHandedControls === true,
+    muted: raw.muted === true,
+    musicVolume: clampVolume(finiteNumber(raw.musicVolume, defaultProgress.settings.musicVolume), defaultProgress.settings.musicVolume),
+    sfxVolume: clampVolume(finiteNumber(raw.sfxVolume, defaultProgress.settings.sfxVolume), defaultProgress.settings.sfxVolume),
+  };
+};
+
+const cleanStats = (value: unknown): PlayerProgress['stats'] => {
+  const raw = asRecord(value);
+  const nonNegative = (key: string) => Math.max(0, Math.floor(finiteNumber(raw[key], 0)));
+  return {
+    totalEnemiesDefeated: nonNegative('totalEnemiesDefeated'),
+    totalFishCollected: nonNegative('totalFishCollected'),
+    totalDeaths: nonNegative('totalDeaths'),
+    perfectLevels: nonNegative('perfectLevels'),
+    bestCombo: nonNegative('bestCombo'),
+    bossesDefeated: nonNegative('bossesDefeated'),
+    shadowPasses: nonNegative('shadowPasses'),
+  };
+};
+
+export const PROGRESS_SCHEMA_VERSION = 3;
+
+export const isProgressSaveCandidate = (value: unknown): boolean => {
+  const outer = asRecord(value);
+  const version = Math.floor(finiteNumber(outer.schemaVersion, 1));
+  const source = asRecord(version >= 3 && outer.data ? outer.data : value);
+  return ['coins', 'xp', 'settings', 'upgrades', 'dailySeed', 'campaignLevel'].some((key) => key in source);
+};
+
+/**
+ * Migrate and validate every value crossing the save boundary. Older releases
+ * stored a plain progress object, while schema 3 adds an explicit version
+ * marker. The optional `{ schemaVersion, data }` envelope is also accepted so
+ * imported backups from experiments cannot inject arbitrary top-level fields.
+ */
+export const normalizeProgressSave = (value: unknown): PlayerProgress => {
+  const outer = asRecord(value);
+  const version = Math.floor(finiteNumber(outer.schemaVersion, 1));
+  const source = asRecord(version >= 3 && outer.data ? outer.data : value);
+  const rescuedCats = cleanRescues(source.rescuedCats);
+  const unlockedSkins = cleanStringList(source.unlockedSkins);
+  if (!unlockedSkins.includes('default')) unlockedSkins.unshift('default');
+  const equippedSkin = typeof source.equippedSkin === 'string' && unlockedSkins.includes(source.equippedSkin)
+    ? source.equippedSkin
+    : 'default';
+  const upgrades = asRecord(source.upgrades);
+  const campaignLevel = source.campaignLevel === undefined && version < 3
+    ? readLegacyCheckpoint()
+    : clampCampaignLevel(source.campaignLevel);
+
+  return {
+    coins: Math.max(0, Math.floor(finiteNumber(source.coins, 0))),
+    totalCoinsEarned: Math.max(0, Math.floor(finiteNumber(source.totalCoinsEarned, 0))),
+    xp: Math.max(0, Math.floor(finiteNumber(source.xp, 0))),
+    level: Math.max(1, Math.floor(finiteNumber(source.level, 1))),
+    campaignLevel,
+    shadowSecrets: cleanSecrets(source.shadowSecrets),
+    rescuedCats,
+    equippedCompanion: getCompanionById(source.equippedCompanion, rescuedCats)?.id || null,
+    claimedCatQuests: cleanCatQuestClaims(source.claimedCatQuests),
+    hideoutDecor: cleanDecor(source.hideoutDecor, rescuedCats.length),
+    unlockedSkins,
+    equippedSkin,
+    upgrades: {
+      maxAmmo: Math.max(1, Math.floor(finiteNumber(upgrades.maxAmmo, defaultProgress.upgrades.maxAmmo))),
+      jumpPower: Math.max(1, finiteNumber(upgrades.jumpPower, defaultProgress.upgrades.jumpPower)),
+      speed: Math.max(1, finiteNumber(upgrades.speed, defaultProgress.upgrades.speed)),
+    },
+    achievements: cleanStringList(source.achievements),
+    dailyQuests: cleanQuestList(source.dailyQuests, defaultProgress.dailyQuests),
+    weeklyQuests: cleanQuestList(source.weeklyQuests, defaultProgress.weeklyQuests),
+    dailySeed: typeof source.dailySeed === 'string' && source.dailySeed ? source.dailySeed : defaultProgress.dailySeed,
+    weeklySeed: typeof source.weeklySeed === 'string' && source.weeklySeed ? source.weeklySeed : defaultProgress.weeklySeed,
+    settings: cleanSettings(migrateLegacyAudio(cleanSettings(source.settings))),
+    stats: cleanStats(source.stats),
+  };
+};
 
 export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [progress, setProgress] = useState<PlayerProgress>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('shadow_paw_progress_v1');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          const rescuedCats = cleanRescues(parsed.rescuedCats);
-          return {
-            ...defaultProgress,
-            ...parsed,
-            campaignLevel: parsed.campaignLevel === undefined
-              ? readLegacyCheckpoint()
-              : clampCampaignLevel(parsed.campaignLevel),
-            shadowSecrets: cleanSecrets(parsed.shadowSecrets),
-            rescuedCats,
-            equippedCompanion: getCompanionById(parsed.equippedCompanion, rescuedCats)?.id || null,
-            claimedCatQuests: cleanCatQuestClaims(parsed.claimedCatQuests),
-            hideoutDecor: cleanDecor(parsed.hideoutDecor, rescuedCats.length),
-            upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-            settings: cleanGameSettings(cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) }))),
-            stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
-            dailyQuests: parsed.dailyQuests || defaultProgress.dailyQuests,
-            weeklyQuests: parsed.weeklyQuests || defaultProgress.weeklyQuests,
-            dailySeed: parsed.dailySeed || defaultProgress.dailySeed,
-            weeklySeed: parsed.weeklySeed || defaultProgress.weeklySeed,
-          };
-        } catch {
-          return defaultProgress;
-        }
-      }
-    }
-    return defaultProgress;
+    // Prefer a structurally valid primary save, then the last known good backup,
+    // then the pre-versioned file. A syntactically valid `[]` must not hide a
+    // recoverable backup.
+    const saved = [
+      readUnknownJson(STORAGE_KEY),
+      readUnknownJson(STORAGE_BACKUP_KEY),
+      readUnknownJson('shadow_paw_progress_v1'),
+    ].find(isProgressSaveCandidate);
+    return saved === undefined ? defaultProgress : normalizeProgressSave(saved);
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_BACKUP_KEY, localStorage.getItem(STORAGE_KEY) || '');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    writeJsonWithBackup(STORAGE_KEY, STORAGE_BACKUP_KEY, {
+      ...progress,
+      schemaVersion: PROGRESS_SCHEMA_VERSION,
+    });
   }, [progress]);
 
   useEffect(() => {
@@ -495,7 +601,7 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const exportProgressCode = () => {
     try {
-      return btoa(unescape(encodeURIComponent(JSON.stringify(progress))));
+      return btoa(unescape(encodeURIComponent(JSON.stringify({ ...progress, schemaVersion: PROGRESS_SCHEMA_VERSION }))));
     } catch {
       return '';
     }
@@ -504,22 +610,8 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
   const importProgressCode = (encoded: string) => {
     try {
       const parsed = JSON.parse(decodeURIComponent(escape(atob(encoded.trim()))));
-      const rescuedCats = cleanRescues(parsed.rescuedCats);
-      setProgress({
-        ...defaultProgress,
-        ...parsed,
-        campaignLevel: clampCampaignLevel(parsed.campaignLevel),
-        shadowSecrets: cleanSecrets(parsed.shadowSecrets),
-        rescuedCats,
-        equippedCompanion: getCompanionById(parsed.equippedCompanion, rescuedCats)?.id || null,
-        claimedCatQuests: cleanCatQuestClaims(parsed.claimedCatQuests),
-        hideoutDecor: cleanDecor(parsed.hideoutDecor, rescuedCats.length),
-        upgrades: { ...defaultProgress.upgrades, ...(parsed.upgrades || {}) },
-        settings: cleanLang(migrateLegacyAudio({ ...defaultProgress.settings, ...(parsed.settings || {}) })),
-        stats: { ...defaultProgress.stats, ...(parsed.stats || {}) },
-        dailySeed: parsed.dailySeed || defaultProgress.dailySeed,
-        weeklySeed: parsed.weeklySeed || defaultProgress.weeklySeed,
-      });
+      if (!isProgressSaveCandidate(parsed)) return false;
+      setProgress(normalizeProgressSave(parsed));
       return true;
     } catch {
       return false;

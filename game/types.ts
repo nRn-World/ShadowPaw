@@ -25,7 +25,13 @@ export interface Platform extends Rect {
   shadowGate?: boolean;
   neonPhase?: number;
   chasm?: boolean;
-  mover?: { axis: 'h' | 'v'; range: number; speed: number; phase: number; originX?: number; originY?: number };
+  baseX?: number;
+  baseY?: number;
+  moverDx?: number;
+  moverDy?: number;
+  amp?: number;
+  mover?: { axis: 'h' | 'v'; range?: number; speed: number; phase: number; amp?: number; originX?: number; originY?: number };
+  [key: string]: any;
 }
 
 export interface PlayerState extends Rect {
@@ -84,9 +90,10 @@ export interface BossState extends Rect {
   telegraph: number;
   telegraphTotal?: number;
   pendingMove: string | null;
+  counterHint?: string;
   attackTimer: number;
   attackCooldown: number;
-  projectiles: Array<Rect & { vx: number; vy: number; radius: number; life: number; color: string; kind: string }>;
+  projectiles: Array<{ x: number; y: number; vx: number; vy: number; radius: number; life: number; color: string; kind: string }>;
   stunTimer: number;
   auraAngle: number;
   encountered: boolean;
@@ -102,6 +109,7 @@ export interface BossState extends Rect {
   stompCount?: number;
   stompCooldown?: number;
   defeatRegistered?: boolean;
+  [key: string]: any;
 }
 
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
@@ -113,6 +121,12 @@ export interface GameState {
   runMode: RunMode;
   dailySeed: string;
   seedOffset: number;
+  /** Gameplay-only random stream. Cosmetic randomness must not use this stream. */
+  simulationRng: () => number;
+  /** Seeded visual stream, isolated so particles cannot change gameplay rolls. */
+  visualRng: () => number;
+  /** Fixed-step simulation time in seconds; never read wall-clock time here. */
+  simTime: number;
   frame: number;
   /* Score & progression ------------------------------------------------- */
   score: number;
@@ -241,6 +255,10 @@ export interface HudStats {
   bossMaxHp: number;
   bossName: string;
   bossAngry?: boolean;
+  bossCoreExposed?: number;
+  bossTelegraph?: number;
+  bossTelegraphTotal?: number;
+  bossCounterHint?: string;
   bossVisible: boolean;
   collectedCount: number;
   fishGoal: number;

@@ -14,6 +14,7 @@ import {
 } from '../game/level.ts';
 import { PERKS, offerPerks, combinePerkEffects } from '../game/perks.ts';
 import { createQualityMonitor } from '../game/quality.ts';
+import { readJson, safeGet, safeRemove, safeSet, writeJsonWithBackup } from '../game/storage.ts';
 import { CAMPAIGN_LEVEL_COUNT, MAX_PLAYER_LIVES } from '../game/constants.ts';
 import { mergeLevelMastery } from '../game/mastery.ts';
 import { updateEnemyMotion } from '../game/enemies.ts';
@@ -83,6 +84,28 @@ test('difficulty scales hazards, speed, quota and timer but keeps levels winnabl
     assert.ok(p.enemyCount >= 1);
   }
   assert.equal(getDifficultyProfile(1, 1, 'hard').holeChance, 0, 'level 1 never has pits');
+});
+
+test('all 40 shipped layouts have a safe start, goal and two respawn anchors', () => {
+  for (let level = 1; level <= CAMPAIGN_LEVEL_COUNT; level++) {
+    const profile = getDifficultyProfile(level, 1);
+    const { platforms, holes } = buildLevelLayout({
+      level,
+      layout: getLevelLayout(level),
+      levelLength: profile.levelLength,
+      groundY: 600,
+      profile,
+      bossLevel: level % 5 === 0,
+    });
+    const onGround = (x) => platforms.some((platform) => platform.isGround && x >= platform.x + 30 && x <= platform.x + platform.width - 60);
+    assert.ok(onGround(120), `level ${level} must have a safe spawn`);
+    assert.ok(onGround(profile.levelLength - 120), `level ${level} must have a safe goal approach`);
+    assert.ok(holes.every((hole) => hole.width > 0), `level ${level} has an invalid pit`);
+    const checkpoints = getCheckpoints(profile.levelLength, platforms, holes);
+    assert.equal(checkpoints.length, 2, `level ${level} must have two safe checkpoints`);
+    assert.ok(checkpoints[0] < checkpoints[1], `level ${level} checkpoints must be ordered`);
+    assert.ok(checkpoints.every(onGround), `level ${level} checkpoint must be on solid ground`);
+  }
 });
 
 test('level layouts are reproducible and the daily seed changes them', () => {
@@ -172,6 +195,38 @@ test('auto-quality steps down under sustained slow frames and recovers', () => {
   assert.equal(q.current().tier, 1);
   // Disabled means full quality, always.
   assert.equal(q.sample(100, false).tier, 0);
+});
+
+test('storage helpers survive corrupt, missing and quota-blocked browser storage', () => {
+  const previous = globalThis.localStorage;
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  };
+  try {
+    store.set('corrupt', '{not json');
+    assert.deepEqual(readJson('corrupt', { safe: true }), { safe: true });
+    assert.equal(safeGet('missing'), null);
+    assert.equal(safeSet('answer', '42'), true);
+    assert.equal(safeGet('answer'), '42');
+    assert.equal(writeJsonWithBackup('answer', 'answer_backup', { value: 1 }), true);
+    assert.equal(readJson('answer_backup', null), 42, 'the previous payload is backed up');
+    assert.equal(safeRemove('answer'), true);
+
+    globalThis.localStorage = {
+      getItem: () => { throw new Error('blocked'); },
+      setItem: () => { throw new Error('quota'); },
+      removeItem: () => { throw new Error('blocked'); },
+    };
+    assert.equal(safeGet('blocked'), null);
+    assert.equal(safeSet('blocked', 'x'), false);
+    assert.equal(safeRemove('blocked'), false);
+  } finally {
+    if (previous === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previous;
+  }
 });
 
 test('telemetry picks the dominant death cause with a stable tie-break', async () => {
