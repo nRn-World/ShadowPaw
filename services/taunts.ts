@@ -23,10 +23,12 @@ const HIGH_SCORE = [
   "Det där var en rekordtyp av jakt. En runda till?",
 ];
 
-const pick = (list: string[]): string => tr(list[Math.floor(Math.random() * list.length)]);
+// Results are reproducible for a replay/screenshot: score is a stable, local
+// selector instead of a wall-clock/global-random source.
+const pick = (list: string[], score: number): string => tr(list[Math.abs(Math.floor(score)) % list.length]);
 
 export const getJerryTaunt = (score: number): string => {
-  if (score > 2000) return pick(HIGH_SCORE);
-  if (score > 100) return pick(MID_SCORE);
-  return pick(LOW_SCORE);
+  if (score > 2000) return pick(HIGH_SCORE, score);
+  if (score > 100) return pick(MID_SCORE, score);
+  return pick(LOW_SCORE, score);
 };

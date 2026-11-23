@@ -9,7 +9,8 @@
 import assert from 'node:assert/strict';
 import { launchBrowser, noCanvasPainting } from './browser.mjs';
 
-const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const rawBase = process.env.BASE_URL || 'http://localhost:3000';
+const BASE = `${rawBase}${rawBase.includes('?') ? '&' : '?'}qa=1`;
 const LANGUAGES = [
   { code: 'en', name: 'English', dir: 'ltr' },
   { code: 'sv', name: 'Svenska', dir: 'ltr' },
@@ -38,6 +39,11 @@ try {
   await page.addInitScript(noCanvasPainting);
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await waitFor(page, () => !!document.querySelector('header'), 'the app shell');
+  await waitFor(page, () => /live run|play yourself/i.test(document.body.innerText), 'the live run card');
+  const heroText = await page.evaluate(() => document.body.innerText);
+  check('live run stays focused on cat gameplay', () => {
+    assert.doesNotMatch(heroText, /CC0 city kit|new neon city/i);
+  });
 
   // --- Shared daily seed --------------------------------------------------
   // A separate tab keeps the campaign checks below untouched.
@@ -96,6 +102,32 @@ try {
     });
   }
 
+  // A narrow, touch-capable viewport exercises the actual pointer controls and
+  // catches accidental horizontal overflow before a phone user reaches a run.
+  const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  mobilePage.on('pageerror', (e) => errors.push(`mobile pageerror: ${e.message}`));
+  await mobilePage.addInitScript(noCanvasPainting);
+  await mobilePage.addInitScript(() => {
+    Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 1 });
+    Object.defineProperty(window, 'ontouchstart', { configurable: true, value: null });
+  });
+  await mobilePage.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await waitFor(mobilePage, () => /play now|spela nu|şimdi oyna|jugar ahora|العب الآن/i.test(document.body.innerText), 'mobile play CTA');
+  await mobilePage.getByRole('button', { name: /play now|spela nu|şimdi oyna|jugar ahora|العب الآن/i }).first().click();
+  await waitFor(mobilePage, () => !!window.__SP, 'mobile game state');
+  await waitFor(mobilePage, () => [...document.querySelectorAll('button')].some((button) => /move left|gå vänster|sola git|mover a la izquierda|تحرك يساراً/i.test(button.getAttribute('aria-label') || '')), 'mobile pointer control');
+  const mobileState = await mobilePage.evaluate(() => ({
+    width: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    leftControl: [...document.querySelectorAll('button')].some((button) => /move left|gå vänster|sola git|mover a la izquierda|تحرك يساراً/i.test(button.getAttribute('aria-label') || '')),
+    liveRegion: !!document.querySelector('[aria-live]'),
+  }));
+  check('small touch viewport exposes pointer controls without overflow', () => {
+    assert.ok(mobileState.leftControl, 'mobile movement control should be keyboard and screen-reader addressable');
+    assert.ok(mobileState.liveRegion, 'gameplay should expose a live status region');
+    assert.ok(mobileState.scrollWidth <= mobileState.width + 1, `${mobileState.scrollWidth}px page wider than ${mobileState.width}px viewport`);
+  });
+
   // Back to English for the stable text assertions below.
   await page.locator('button[aria-haspopup="listbox"]').first().click();
   await page.getByRole('button', { name: 'English' }).first().click();
@@ -142,9 +174,21 @@ try {
     assert.equal(equipped, 'true');
   });
 
+  // --- Settings + touch handedness ----------------------------------------
+  await page.getByRole('button', { name: /settings|inställningar/i }).first().click();
+  await waitFor(page, () => /left-handed layout|vänsterhänt layout/i.test(document.body.innerText), 'touch layout setting');
+  const handedness = page.getByRole('button', { name: /left-handed layout|vänsterhänt layout/i }).first();
+  await handedness.click();
+  const handedState = await handedness.getAttribute('aria-pressed');
+  check('settings can move mobile actions to the left hand', () => {
+    assert.equal(handedState, 'true');
+  });
+  await page.getByRole('button', { name: /back to (the )?menu|till menyn/i }).last().click();
+  await waitFor(page, () => /play now|spela nu/i.test(document.body.innerText), 'home after settings');
+
   // --- Shop ---------------------------------------------------------------
   await page.getByRole('button', { name: /shop|butik/i }).first().click();
-  await waitFor(page, () => /shop|skins|butik/i.test(document.body.innerText), 'the shop view');
+  await waitFor(page, () => document.body.innerText.length > 200 && /skins|upgrades|uppgraderingar/i.test(document.body.innerText), 'the shop view');
   const shopText = await page.evaluate(() => document.body.innerText);
   check('shop renders its catalog and coin balance', () => {
     assert.ok(/skins|upgrades|shop/i.test(shopText), 'expected the shop sections');

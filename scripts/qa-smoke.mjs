@@ -14,7 +14,8 @@
 import assert from 'node:assert/strict';
 import { launchBrowser, noCanvasPainting } from './browser.mjs';
 
-const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const rawBase = process.env.BASE_URL || 'http://localhost:3000';
+const BASE = `${rawBase}${rawBase.includes('?') ? '&' : '?'}qa=1`;
 const FAST_CANVAS = process.env.FAST_CANVAS !== '0';
 
 const levelSnapshot = () => {

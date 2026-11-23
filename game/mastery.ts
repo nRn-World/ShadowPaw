@@ -5,6 +5,7 @@
  * not only their account XP. Records stay local and offline-friendly, just like
  * the existing daily board; they never affect deterministic level generation.
  */
+import { readJson, writeJson } from './storage.ts';
 
 export type MasteryGrade = 'S' | 'A' | 'B' | 'C';
 
@@ -87,16 +88,11 @@ export const mergeLevelMastery = (
 };
 
 export const readMasteryRecords = (): MasteryRecords => {
-  if (typeof window === 'undefined') return {};
-  try {
-    const parsed = JSON.parse(localStorage.getItem(KEY) || '{}');
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter(([level]) => /^\d+$/.test(level)).map(([level, value]) => [level, cleanRecord(value)]),
-    );
-  } catch {
-    return {};
-  }
+  const parsed = readJson<unknown>(KEY, {});
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter(([level]) => /^\d+$/.test(level)).map(([level, value]) => [level, cleanRecord(value)]),
+  );
 };
 
 export const getLevelMastery = (level: number, records = readMasteryRecords()): LevelMastery | null =>
@@ -108,11 +104,8 @@ export const recordLevelMastery = (level: number, result: LevelMasteryResult): L
   const records = readMasteryRecords();
   const next = mergeLevelMastery(records[key], result);
   records[key] = next;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(records));
-  } catch {
-    // Private browsing/storage limits must never block a level clear.
-  }
+  // Private browsing/storage limits must never block a level clear.
+  writeJson(KEY, records);
   return next;
 };
 

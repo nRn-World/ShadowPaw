@@ -38,7 +38,7 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🃏 **Risk/Reward Cards** - Choose 1 of 3 seeded cards between levels; every card has both an upside and a cost, and restarting never rerolls the offer
 - 🎧 **Adaptive Audio & Haptics** - Combo-driven music layers, ducking under boss warnings, enemy-position stereo panning and a distinct vibration signature per event
 - ⚡ **Auto Quality** - Measures real frame time, trims particles and weather, caches the static skyline offscreen and makes bloom/atmosphere optional
-- 🏙️ **CC0 3D Neon Kit** - A Kenney cat, future car, street lights, road and modular towers are composed into the menu studio and city vignette; the assets are recoloured, lit and arranged at runtime without touching the Canvas 2D gameplay fallback
+- 🐈 **Optional 3D Cat Studio** - A rigged CC0 cat can be previewed in the shop; it is loaded on demand and never touches the Canvas 2D gameplay renderer
 - ❤️ **Fair Campaigns** - Every level starts with exactly three lives; checkpoints are safe, and the intro card can be skipped with any key or tap
 - 🏅 **Level Mastery** - Every cleared stage records best score, best time, grade, full catch and no-hit medals for replayable mastery
 - 🗺️ **Chapter Map** - See your progress, mastery grades and jump back into any cleared level
@@ -49,7 +49,7 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 - 🐰 **Defeat Enemies** - Jump on enemies or shoot them from a distance
 - 🐟 **Collect Fish** - Gather fish, extend the timer and earn coins
 - 💰 **Shop System** - Upgrade your cat with better stats
-- 📱 **Mobile Support** - Hold-to-fire touch controls, portrait and landscape
+- 📱 **Mobile Support** - Pointer Events with capture/cancel cleanup, hold-to-fire controls, keyboard equivalents, portrait and landscape, plus a left-handed touch layout
 - 🌅 **Living Skies** - Dawn, sunset, rain, snow, storms and firefly nights
 - 🎵 **Epic Soundtrack** - Background music and sound effects
 - ♿ **Comfort Options** - Reduced motion, colour-blind mode, text and UI scaling
@@ -58,20 +58,20 @@ Shadow Paw: Neon Mission is an exciting neon-themed platformer game where you co
 
 ## 🧩 Third-party assets
 
-The modern 3D city presentation uses selected Kenney models under CC0. They can
-be copied, modified and used commercially; Shadow Paw composes and recolours
-them at runtime. The pinned source commit, local files and license evidence are
-listed in [`ASSET_LICENSES.md`](ASSET_LICENSES.md), with the archive license
-notice in [`public/models/kenney/LICENSE.txt`](public/models/kenney/LICENSE.txt).
+The optional 3D shop preview uses the pinned Vuena/Popyca cat sample under
+CC0. The source commit, local license evidence and generated sprite paths are
+listed in [`ASSET_LICENSES.md`](ASSET_LICENSES.md).
 
 ## 🧪 Quality checks
 
 ```bash
 npm run check         # TypeScript, translation table and production build
-npm run test:units    # pure level/difficulty/perk/quality/daily/telemetry tests
+npm run audit:prod    # production-only dependency audit
+npm run test:units    # pure level/difficulty/perk/quality/daily/storage/telemetry tests
 npm run dev           # http://localhost:3000  (needed for the browser suites)
 npm run test:smoke    # headless gameplay test against the running dev server
-npm run test:ui       # pause, results, game over, shop and all 5 languages / RTL
+npm run test:ui       # pause, results, shop, small touch viewport and all 5 languages / RTL
+npm run test:offline  # build first, then verify the installed PWA with Chrome offline
 ```
 
 Requires Node 22+ (the unit runner uses native TypeScript stripping).
@@ -87,16 +87,28 @@ Every harness shares `scripts/browser.mjs`: it uses `CHROME_PATH` (or `--chrome`
 if you have a local Chrome, otherwise the Chromium bundled with
 `@sparticuz/chromium` - no Windows-only paths, so CI works out of the box. Set
 `BASE_URL` to test a deploy, and `FAST_CANVAS=0` to keep real canvas painting
-(much slower in headless).
+(much slower in headless). `test:offline` uses the production `dist/` and a
+separate Chrome profile, so it must run after `npm run build` (the CI check does
+that automatically).
+
+Saves are local-only and defensive: progress is stored with schema version 3,
+legacy checkpoints/audio are migrated, malformed values are clamped, and a
+last-known-good backup is used when the primary write is corrupt or unavailable.
+Daily scores, ghosts, mastery and telemetry use the same safe storage boundary;
+no account or network is required.
 
 ### Architecture
 
-The game loop lives in `components/Views.tsx`, with pure, unit-testable modules
-under `game/`: `level.ts` (seeds, layouts, difficulty, weather, checkpoints),
-`types.ts` (real `GameState` / `HudStats` instead of `any`), `enemies.ts`,
-`perks.ts`, `daily.ts`, `quality.ts`, `telemetry.ts` and `haptics.ts`. HUD and
-canvas helpers are split into `components/GameHud.tsx` and
-`components/gameRender.ts`.
+The game loop remains in `components/Views.tsx` for gameplay compatibility, but
+its state boundary is typed through `game/types.ts`, its seeded simulation and
+visual streams are isolated, and persistence is centralised in `game/storage.ts`
+and the progress normaliser in `context/ProgressContext.tsx`. Pure,
+unit-testable modules under `game/` cover `level.ts` (seeds, layouts,
+difficulty, weather, checkpoints), `enemies.ts`, `perks.ts`, `daily.ts`,
+`mastery.ts`, `quality.ts`, `telemetry.ts` and `haptics.ts`. HUD and canvas
+helpers are split into `components/GameHud.tsx` and `components/gameRender.ts`.
+Menu/game views are loaded as an async chunk; Three.js is imported only by the
+3D preview components when those panels are opened.
 
 ---
 

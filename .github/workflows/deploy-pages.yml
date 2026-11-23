@@ -40,6 +40,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The development tree is intentionally reported separately; production
+      # dependencies must remain clean so the shipped PWA has no known high-risk
+      # runtime advisories.
+      - name: Production dependency audit
+        run: npm run audit:prod
+
       # Fail before deploying instead of shipping a broken bundle. `check`
       # bundles typecheck, the translation-table guard and the production build.
       - name: Check (types + translations + build)
@@ -65,6 +71,9 @@ jobs:
 
       - name: UI smoke test (pause, results, game over, shop, 5 languages / RTL)
         run: npm run test:ui
+
+      - name: Offline production verification
+        run: npm run test:offline
 
       - name: Stop dev server
         if: always()

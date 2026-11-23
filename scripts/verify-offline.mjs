@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { resolveExecutable } from './browser.mjs';
 
 // fileURLToPath handles Windows drive letters correctly; URL.pathname gives
 // "/D:/..." and would make every read fail.
@@ -139,7 +140,7 @@ async function main() {
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
 
-  const appUrl = `http://localhost:${PORT}/`;
+  const appUrl = `http://localhost:${PORT}/?sw=1&qa=1`;
   const results = [];
 
   // 1. First visit: installs the worker and precaches the build.
@@ -188,7 +189,7 @@ async function main() {
     await new Promise(r => setTimeout(r, 4000));
     return { started: !!window.__SP, level: window.__SP?.level ?? null, running: !!window.__SP?.running };
   })()`);
-  results.push(['offline: a level starts', played.started && played.working !== false, JSON.stringify(played)]);
+  results.push(['offline: a level starts', played.started && played.running, JSON.stringify(played)]);
 
   ws.close();
   chrome.kill();
