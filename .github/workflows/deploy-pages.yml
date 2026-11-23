@@ -1,7 +1,13 @@
 name: Deploy GitHub Pages
 
 on:
+  # Deploy only from main, but run the exact same verification on Arena
+  # branches so a branch push cannot look successful merely because no CI ran.
   push:
+    branches:
+      - main
+      - 'arena/**'
+  pull_request:
     branches: [main]
   workflow_run:
     workflows: ["pages build and deployment"]
@@ -19,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Delay to avoid deployment race
@@ -90,6 +96,10 @@ jobs:
           path: ./dist
 
   deploy:
+    # Pull requests and Arena branch pushes verify the build but must never
+    # replace the public Pages deployment. Only main (or an explicit/manual
+    # Pages workflow event) is allowed to publish.
+    if: github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
